@@ -1,0 +1,21 @@
+# 交易復盤顧問 Phase 0
+
+本機優先的交易資料原型。成交、行情與設定均可用 JSON 匯入／匯出，瀏覽器會以 `localStorage` 保存目前資料。
+
+## 功能
+
+- 建立、刪除與備份成交紀錄
+- 依帳戶與股票代號進行 FIFO 閉環配對
+- 計算實現損益、報酬率、持倉日數、MAE 與 MFE
+- 顯示尚未平倉部位與資料品質
+- 內建瀏覽器測試中心及 Node 自動測試
+- 行情來源抽象化：Phase 0 使用 JSON 日線，預留 TradingView MCP 介接
+
+## 本機驗證
+
+```bash
+pnpm test
+pnpm build
+```
+
+示範檔位於 `public/sample-trading-data.json`，不含真實個人交易資料。

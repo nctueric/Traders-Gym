@@ -1,0 +1,14 @@
+{
+  "version": "0.1.0",
+  "profile": { "name": "示範帳本", "baseCurrency": "USD", "costMethod": "FIFO" },
+  "accounts": [{ "id": "demo", "name": "示範帳戶", "currency": "USD" }],
+  "fills": [
+    { "id": "demo-buy-1", "accountId": "demo", "symbol": "DEMO", "market": "NASDAQ", "currency": "USD", "side": "BUY", "quantity": 10, "price": 100, "fee": 1, "timestamp": "2026-07-01T09:30:00Z" },
+    { "id": "demo-sell-1", "accountId": "demo", "symbol": "DEMO", "market": "NASDAQ", "currency": "USD", "side": "SELL", "quantity": 10, "price": 110, "fee": 1, "timestamp": "2026-07-08T09:30:00Z" }
+  ],
+  "marketBars": [
+    { "symbol": "DEMO", "date": "2026-07-02", "open": 100, "high": 104, "low": 96, "close": 102, "volume": 100000 },
+    { "symbol": "DEMO", "date": "2026-07-07", "open": 106, "high": 112, "low": 103, "close": 109, "volume": 120000 }
+  ],
+  "settings": { "quoteProvider": "json" }
+}
