@@ -5,6 +5,7 @@ import { normalizeYahooChart, QUOTE_REFRESH_MS, toProviderSymbol } from "../lib/
 test("quote refresh interval is exactly 30 seconds", () => assert.equal(QUOTE_REFRESH_MS, 30_000));
 test("US symbol stays unchanged", () => assert.equal(toProviderSymbol("aapl", "NASDAQ"), "AAPL"));
 test("TWSE ticker receives .TW suffix", () => assert.equal(toProviderSymbol("2330", "TWSE"), "2330.TW"));
+test("TWSE alphanumeric ETF receives .TW suffix", () => assert.equal(toProviderSymbol("00981A", "TWSE"), "00981A.TW"));
 test("TPEX ticker receives .TWO suffix", () => assert.equal(toProviderSymbol("3675", "TPEX"), "3675.TWO"));
 test("Yahoo chart payload is normalized", () => {
   const quote = normalizeYahooChart("AAPL", { chart: { result: [{ meta: { regularMarketPrice: 110, chartPreviousClose: 100, currency: "USD", regularMarketTime: 1_700_000_000 } }] } });

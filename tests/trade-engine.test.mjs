@@ -14,6 +14,12 @@ test("FIFO cycle calculates realized P&L including fees", () => assert.equal(sum
 test("partial sell keeps an open position", () => assert.equal(buildCycles({ fills: [fills[0], { ...fills[2], quantity: 4 }], marketBars: bars }).positions[0].quantity, 6));
 test("same account and symbol are paired while other symbols remain isolated", () => assert.equal(buildCycles({ fills: [...fills, { ...fills[0], id: "other", symbol: "ABC" }], marketBars: bars }).positions[0].symbol, "ABC"));
 test("duplicate fill id is invalid", () => assert.ok(validateDataset({ fills: [fills[0], fills[0]], marketBars: [] }).some((issue) => issue.code === "DUPLICATE_ID")));
-test("oversell is rejected", () => assert.equal(buildCycles({ fills: [fills[2]], marketBars: [] }).issues[0].code, "OVERSELL"));
+test("short sale followed by buy forms a short cycle", () => { const cycle = buildCycles({ fills: [{ ...fills[0], side: "SELL", price: 120 }, { ...fills[2], side: "BUY", quantity: 10, price: 100 }], marketBars: [] }).cycles[0]; assert.equal(cycle.direction, "SHORT"); assert.equal(cycle.pnl, 197); });
+test("oversized reverse fill is rejected", () => assert.equal(buildCycles({ fills: [fills[0], { ...fills[2], quantity: 11 }], marketBars: [] }).issues[0].code, "POSITION_FLIP"));
 test("missing bars do not fabricate MAE or MFE", () => { const cycle = buildCycles({ fills, marketBars: [] }).cycles[0]; assert.equal(cycle.maePct, null); assert.equal(cycle.mfePct, null); });
 test("open position weighted average is deterministic", () => assert.equal(buildCycles({ fills: fills.slice(0,2), marketBars: [] }).positions[0].averageCost, 1550 / 15));
+test("realized P&L is separated by currency", () => {
+  const twd = fills.map((fill) => ({ ...fill, id: `${fill.id}-tw`, symbol: "2330", accountId: "tw", currency: "TWD" }));
+  const result = summarize({ fills: [...fills, ...twd], marketBars: bars });
+  assert.equal(result.realizedPnlByCurrency.USD, 246); assert.equal(result.realizedPnlByCurrency.TWD, 246);
+});
