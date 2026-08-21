@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "交易復盤顧問 · Phase 0",
-  description: "本機優先的個人交易資料、閉環分析與測試工作台。",
+  title: "交易復盤顧問 · Phase 1",
+  description: "本機優先的個人交易資料、美元換算、閉環分析與資金活動工作台。",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
