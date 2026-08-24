@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FX_STALE_MS, isQuoteStale, normalizeYahooChart, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, twdToUsd, USDTWD_SYMBOL } from "../lib/quote-engine.mjs";
+import { FX_STALE_MS, isQuoteStale, normalizeYahooChart, normalizeYahooHistory, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, twdToUsd, USDTWD_SYMBOL } from "../lib/quote-engine.mjs";
 
 test("quote refresh interval is exactly 30 seconds", () => assert.equal(QUOTE_REFRESH_MS, 30_000));
 test("US symbol stays unchanged", () => assert.equal(toProviderSymbol("aapl", "NASDAQ"), "AAPL"));
@@ -12,6 +12,11 @@ test("Yahoo chart payload is normalized", () => {
   assert.equal(quote.price, 110); assert.ok(Math.abs(quote.changePct - 0.1) < 1e-12); assert.equal(quote.currency, "USD");
 });
 test("missing quote data throws instead of fabricating price", () => assert.throws(() => normalizeYahooChart("BAD", { chart: { result: [] } })));
+test("Yahoo history prefers adjusted closes and skips invalid rows", () => {
+  const bars = normalizeYahooHistory("SPY", { chart: { result: [{ timestamp: [1_700_000_000, 1_700_086_400, 1_700_172_800], indicators: { adjclose: [{ adjclose: [100, null, 102] }], quote: [{ close: [99, 100, 101] }] } }] } });
+  assert.deepEqual(bars.map((bar) => bar.close), [100, 102]);
+});
+test("missing history data throws instead of fabricating bars", () => assert.throws(() => normalizeYahooHistory("BAD", { chart: { result: [] } })));
 test("USDTWD provider symbol is explicit", () => assert.equal(USDTWD_SYMBOL, "USDTWD=X"));
 test("TWD converts to USD by division", () => assert.equal(twdToUsd(3200, 32), 100));
 test("mixed currency P&L converts to USD", () => assert.equal(pnlToUsd({ USD: 250, TWD: -3200 }, 32), 150));
