@@ -63,7 +63,13 @@ test("monthly scorecard filters by close month and calculates average and win ra
   ], "2026-08");
   assert.equal(score.cycles.length, 2);
   assert.ok(Math.abs(score.averageReturn - 0.03) < 1e-12);
+  assert.equal(score.averageWinningReturn, 0.1);
   assert.equal(score.winners, 1);
   assert.equal(score.losers, 1);
   assert.equal(score.winRate, 0.5);
+});
+
+test("monthly average winning return is empty when there are no profitable cycles", () => {
+  const score = monthlyCycleScore([{ closeAt: "2026-08-20T00:00:00Z", returnPct: -0.04, pnl: -4 }], "2026-08");
+  assert.equal(score.averageWinningReturn, null);
 });

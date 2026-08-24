@@ -191,10 +191,10 @@ export default function TradeWorkspace() {
 }
 
 type PerformancePoint = { weekStart: string; asOf: string; totalUsd: number | null; portfolioPct: number | null; benchmarkPct: number | null };
-type MonthScore = { cycles: any[]; averageReturn: number | null; winners: number; losers: number; flat: number; winRate: number | null };
+type MonthScore = { cycles: any[]; averageReturn: number | null; averageWinningReturn: number | null; winners: number; losers: number; flat: number; winRate: number | null };
 
 function MonthScorecard({ score, monthKey }: { score: MonthScore; monthKey: string }) {
-  return <article className="panel score-panel"><div className="panel-head"><div><p className="eyebrow">MONTHLY SCORECARD</p><h2>{monthKey.slice(5)}月交易計分表</h2></div><span className="muted">依出場日歸屬月份</span></div><div className="score-grid"><div><span>當月平均報酬率</span><b className={score.averageReturn != null && score.averageReturn >= 0 ? "positive" : "negative"}>{pct(score.averageReturn)}</b></div><div><span>獲利：虧損</span><b>{score.winners}：{score.losers}</b><small>{score.flat ? `${score.flat} 筆損益兩平` : "不含損益兩平"}</small></div><div><span>獲利交易率</span><b>{score.winRate == null ? "—" : `${(score.winRate * 100).toFixed(1)}%`}</b><small>{score.cycles.length} 筆當月閉環</small></div></div></article>;
+  return <article className="panel score-panel"><div className="panel-head"><div><p className="eyebrow">MONTHLY SCORECARD</p><h2>{monthKey.slice(5)}月交易計分表</h2></div><span className="muted">依出場日歸屬月份</span></div><div className="score-grid"><div><span>當月平均報酬率</span><b className={score.averageReturn != null && score.averageReturn >= 0 ? "positive" : "negative"}>{pct(score.averageReturn)}</b><small>包含全部當月閉環</small></div><div><span>平均交易獲利率</span><b className="positive">{pct(score.averageWinningReturn)}</b><small>只計損益為正的閉環</small></div><div><span>獲利：虧損</span><b>{score.winners}：{score.losers}</b><small>{score.flat ? `${score.flat} 筆損益兩平` : "不含損益兩平"}</small></div><div><span>獲利交易率</span><b>{score.winRate == null ? "—" : `${(score.winRate * 100).toFixed(1)}%`}</b><small>{score.cycles.length} 筆當月閉環</small></div></div></article>;
 }
 
 function PerformancePanel({ points, monthAssetDelta, monthKey, benchmarkSymbol, benchmarkInput, setBenchmarkInput, benchmarkState, applyBenchmark, fxRate }: { points: PerformancePoint[]; monthAssetDelta: number | null; monthKey: string; benchmarkSymbol: string; benchmarkInput: string; setBenchmarkInput: (value: string) => void; benchmarkState: string; applyBenchmark: (event: React.FormEvent) => void; fxRate: number | null }) {
