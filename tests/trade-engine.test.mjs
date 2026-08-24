@@ -11,6 +11,7 @@ const bars = [{ symbol: "XYZ", date: "2026-07-03", open: 103, high: 125, low: 90
 
 test("browser self-tests all pass", () => assert.equal(runSelfTests().every((item) => item.passed), true));
 test("FIFO cycle calculates realized P&L including fees", () => assert.equal(summarize({ fills, marketBars: bars }).cycles[0].pnl, 246));
+test("closed cycle exposes weighted entry and exit prices", () => { const cycle = summarize({ fills, marketBars: bars }).cycles[0]; assert.equal(cycle.averageEntry, 1550 / 15); assert.equal(cycle.averageExit, 120); });
 test("partial sell keeps an open position", () => assert.equal(buildCycles({ fills: [fills[0], { ...fills[2], quantity: 4 }], marketBars: bars }).positions[0].quantity, 6));
 test("same account and symbol are paired while other symbols remain isolated", () => assert.equal(buildCycles({ fills: [...fills, { ...fills[0], id: "other", symbol: "ABC" }], marketBars: bars }).positions[0].symbol, "ABC"));
 test("duplicate fill id is invalid", () => assert.ok(validateDataset({ fills: [fills[0], fills[0]], marketBars: [] }).some((issue) => issue.code === "DUPLICATE_ID")));

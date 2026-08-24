@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { runSelfTests, STORAGE_KEY, summarize } from "@/lib/trade-engine.mjs";
 import { isQuoteStale, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
 import { classifyCashActivities, importTradingViewCsv } from "@/lib/trader-x2-importer.mjs";
+import { buildWeeklyEquitySeries } from "@/lib/portfolio-engine.mjs";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string };
@@ -81,6 +82,7 @@ export default function TradeWorkspace() {
   const totalPnlByCurrency = useMemo(() => addCurrencyValues(report.realizedPnlByCurrency, unrealizedByCurrency), [report.realizedPnlByCurrency, unrealizedByCurrency]);
   const realizedUsd = pnlToUsd(report.realizedPnlByCurrency, fxRate);
   const totalUsd = pnlToUsd(totalPnlByCurrency, fxRate);
+  const weeklyEquity = useMemo(() => buildWeeklyEquitySeries(data, fxQuote?.price > 0 ? fxQuote.price : null), [data, fxQuote]);
 
   async function prepareImport(file?: File) {
     if (!file) return;
@@ -126,12 +128,12 @@ export default function TradeWorkspace() {
     ["成交紀錄", data.fills.length, `${(data.cashActivities || []).length} 筆資金活動`],
     ["測試結果", `${tests.filter((test: any) => test.passed).length}/${tests.length}`, tests.every((test: any) => test.passed) ? "目前全部通過" : "需要修正"],
   ];
-  const title = tab === "overview" ? "交易資料工作台" : tab === "trades" ? "成交與資金資料" : tab === "cycles" ? "交易閉環" : "測試中心";
+  const title = tab === "overview" ? "持倉總覽" : tab === "trades" ? "成交與資金資料" : tab === "cycles" ? "交易閉環" : "測試中心";
 
   return <main className="shell">
     <aside className="sidebar">
       <div className="brand"><span>TR</span><strong>交易復盤顧問</strong></div>
-      <nav aria-label="主要導覽">{[["overview", "總覽"], ["trades", "成交資料"], ["cycles", "交易閉環"], ["tests", "測試中心"]].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
+      <nav aria-label="主要導覽">{[["overview", "持倉總覽"], ["trades", "成交資料"], ["cycles", "交易閉環"], ["tests", "測試中心"]].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
       <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環路徑使用本機日線。</small></div>
       <div className="local-note">個人資料只保存在此瀏覽器<br/><b>本機 JSON／CSV 模式</b></div>
     </aside>
@@ -141,8 +143,9 @@ export default function TradeWorkspace() {
       {tab === "overview" && <>
         <section className="quote-bar"><div><span className="live-dot"/> <b>即時持倉報價</b><small>{quoteState}</small></div><div className="fx-rate"><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "匯率已過期" : "目前匯率" : "正在取得匯率"}</small></div><div><b>{lastQuoteAt ? new Date(lastQuoteAt).toLocaleTimeString("zh-TW") : "—"}</b><small>{lastQuoteAt ? `${nextRefresh} 秒後更新` : "正在取得報價"}</small></div></section>
         <section className="metrics">{metrics.map(([label, value, hint]) => <article key={String(label)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></article>)}</section>
-        <CycleTable cycles={report.cycles} title="最近交易閉環"/>
-        <section className="split"><article className="panel"><p className="eyebrow">OPEN POSITIONS</p><h2>目前持倉</h2>{report.positions.length ? report.positions.map((position: any) => { const providerSymbol = toProviderSymbol(position.symbol, position.market); const quote = quotes[providerSymbol]; const direction = position.direction === "SHORT" ? -1 : 1; const unrealized = quote ? (quote.price - position.averageCost) * position.quantity * direction : null; return <div className="position live" key={`${position.accountId}-${position.symbol}`}><div><b>{position.symbol} <span className={`direction ${position.direction.toLowerCase()}`}>{position.direction === "SHORT" ? "空" : "多"}</span></b><small>{position.quantity} 股・均價 {money(position.averageCost, position.currency)}</small></div><div><b>{quote ? money(quote.price, quote.currency) : "更新中"}</b><small className={quote?.changePct != null && quote.changePct >= 0 ? "positive" : "negative"}>{quote?.changePct == null ? "—" : pct(quote.changePct)}</small></div><div><b className={unrealized != null && unrealized >= 0 ? "positive" : "negative"}>{unrealized == null ? "—" : money(unrealized, position.currency)}</b><small>未實現損益</small></div></div>; }) : <Empty text="目前沒有未平倉部位"/>}</article><article className="panel"><p className="eyebrow">DATA HEALTH</p><h2>資料品質</h2><div className="quality"><strong>{report.qualityPct}%</strong><div><span style={{ width: `${report.qualityPct}%` }}/></div><small>具備持倉期間日線行情的閉環比例</small></div></article></section>
+        <section className="asset-grid"><EquityPanel points={weeklyEquity} fxRate={fxQuote?.price || null}/><article className="panel"><p className="eyebrow">DATA HEALTH</p><h2>資料品質</h2><div className="quality"><strong>{report.qualityPct}%</strong><div><span style={{ width: `${report.qualityPct}%` }}/></div><small>具備持倉期間日線行情的閉環比例</small></div><div className="quality-note"><b>{weeklyEquity.at(-1)?.missingSymbols.length || 0}</b><small>最近週資產估值缺少收盤價的標的</small></div></article></section>
+        <article className="panel"><div className="panel-head"><div><p className="eyebrow">OPEN POSITIONS</p><h2>目前持倉</h2></div><span className="muted">{report.positions.length} 個未平倉部位</span></div>{report.positions.length ? report.positions.map((position: any) => { const providerSymbol = toProviderSymbol(position.symbol, position.market); const quote = quotes[providerSymbol]; const direction = position.direction === "SHORT" ? -1 : 1; const unrealized = quote ? (quote.price - position.averageCost) * position.quantity * direction : null; return <div className="position live" key={`${position.accountId}-${position.symbol}`}><div><b>{position.symbol} <span className={`direction ${position.direction.toLowerCase()}`}>{position.direction === "SHORT" ? "空" : "多"}</span></b><small>{position.quantity} 股・均價 {money(position.averageCost, position.currency)}</small></div><div><b>{quote ? money(quote.price, quote.currency) : "更新中"}</b><small className={quote?.changePct != null && quote.changePct >= 0 ? "positive" : "negative"}>{quote?.changePct == null ? "—" : pct(quote.changePct)}</small></div><div><b className={unrealized != null && unrealized >= 0 ? "positive" : "negative"}>{unrealized == null ? "—" : money(unrealized, position.currency)}</b><small>未實現損益</small></div></div>; }) : <Empty text="目前沒有未平倉部位"/>}</article>
+        <CycleTable cycles={report.cycles.slice(-8)} title="最近交易閉環"/>
       </>}
       {tab === "trades" && <><section className="panel"><div className="panel-head"><div><p className="eyebrow">LEDGER</p><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><div className="table-wrap"><table><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th></th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{fill.timestamp.slice(0, 10)}</td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section><CashLedger activities={data.cashActivities || []} accounts={data.accounts}/></>}
       {tab === "cycles" && <CycleTable cycles={report.cycles} title="全部交易閉環"/>}
@@ -153,6 +156,72 @@ export default function TradeWorkspace() {
   </main>;
 }
 
+type EquityPoint = { weekStart: string; weekEnd: string; asOf: string; totalUsd: number | null; changeUsd: number | null; changePct: number | null; missingSymbols: string[] };
+
+function EquityPanel({ points, fxRate }: { points: EquityPoint[]; fxRate: number | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const validPoints = points.filter((point) => point.totalUsd != null);
+  const first = validPoints[0];
+  const latest = validPoints.at(-1);
+  const periodChange = first && latest ? Number(latest.totalUsd) - Number(first.totalUsd) : null;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || validPoints.length === 0) return;
+    const draw = () => {
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(320, rect.width);
+      const height = Math.max(190, rect.height);
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.scale(scale, scale);
+      context.clearRect(0, 0, width, height);
+      const values = validPoints.map((point) => Number(point.totalUsd));
+      let minimum = Math.min(...values);
+      let maximum = Math.max(...values);
+      if (minimum === maximum) { minimum -= 1; maximum += 1; }
+      const range = maximum - minimum;
+      const padding = { top: 18, right: 16, bottom: 24, left: 16 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+      const coordinates = values.map((value, index) => ({
+        x: padding.left + (validPoints.length === 1 ? chartWidth / 2 : index * chartWidth / (validPoints.length - 1)),
+        y: padding.top + (maximum - value) / range * chartHeight,
+      }));
+      context.strokeStyle = "#dfe3da";
+      context.lineWidth = 1;
+      [0, 0.5, 1].forEach((ratio) => { const y = padding.top + ratio * chartHeight; context.beginPath(); context.moveTo(padding.left, y); context.lineTo(width - padding.right, y); context.stroke(); });
+      const gradient = context.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+      gradient.addColorStop(0, "rgba(23,107,80,.22)");
+      gradient.addColorStop(1, "rgba(23,107,80,0)");
+      context.beginPath();
+      context.moveTo(coordinates[0].x, height - padding.bottom);
+      coordinates.forEach((point) => context.lineTo(point.x, point.y));
+      context.lineTo(coordinates.at(-1)!.x, height - padding.bottom);
+      context.closePath();
+      context.fillStyle = gradient;
+      context.fill();
+      context.beginPath();
+      coordinates.forEach((point, index) => index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y));
+      context.strokeStyle = "#176b50";
+      context.lineWidth = 3;
+      context.lineJoin = "round";
+      context.lineCap = "round";
+      context.stroke();
+      coordinates.forEach((point) => { context.beginPath(); context.arc(point.x, point.y, 4, 0, Math.PI * 2); context.fillStyle = "#fffef9"; context.fill(); context.strokeStyle = "#176b50"; context.lineWidth = 2; context.stroke(); });
+    };
+    draw();
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [validPoints]);
+
+  return <article className="panel equity-panel"><div className="panel-head"><div><p className="eyebrow">WEEKLY TOTAL ASSETS</p><h2>每週總資產變化</h2></div>{latest && <div className="equity-total"><b>{money(Number(latest.totalUsd))}</b><small>截至 {latest.asOf}</small></div>}</div>{validPoints.length ? <><canvas ref={canvasRef} className="equity-canvas" role="img" aria-label={`每週總資產由${money(Number(first.totalUsd))}變化至${money(Number(latest?.totalUsd))}`}>每週總資產變化圖</canvas><div className="chart-weeks">{validPoints.map((point) => <span key={point.weekStart}>{point.weekStart.slice(5)}<b>{money(Number(point.totalUsd))}</b></span>)}</div><div className="chart-foot"><span className={periodChange != null && periodChange >= 0 ? "positive" : "negative"}>期間變化 {periodChange == null ? "—" : money(periodChange)}</span><small>以各週最後可用收盤價估值；TWD依目前USDTWD {fxRate ? fxRate.toFixed(4) : "待更新"} 換算。缺少換匯、費用或行情時屬估算值。</small></div></> : <Empty text="需要有效匯率與交易行情才能建立每週總資產曲線"/>}</article>;
+}
+
 function CashLedger({ activities, accounts }: { activities: CashActivity[]; accounts: Dataset["accounts"] }) { const accountNames = Object.fromEntries(accounts.map((account) => [account.id, account.name])); return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CASH ACTIVITIES</p><h2>資金活動帳本</h2></div><span className="muted">不計入交易損益</span></div>{activities.length ? <div className="table-wrap"><table><thead><tr><th>日期</th><th>類型</th><th>帳戶</th><th>金額</th><th>狀態</th><th>來源</th></tr></thead><tbody>{[...activities].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((activity) => <tr key={activity.id}><td>{activity.timestamp.slice(0, 10)}</td><td>{activity.type === "DEPOSIT" ? "入金" : activity.type}</td><td>{activity.accountId ? accountNames[activity.accountId] || activity.accountId : "待指定"}</td><td>{activity.currency ? money(activity.amount, activity.currency) : activity.amount.toLocaleString("zh-TW")}</td><td><span className={activity.requiresReview ? "status warn" : "status ok"}>{activity.requiresReview ? "待確認" : "已確認"}</span></td><td>{activity.source || "本機資料"}</td></tr>)}</tbody></table></div> : <Empty text="尚無入金、出金或其他資金活動"/>}</section>; }
-function CycleTable({ cycles, title }: { cycles: any[]; title: string }) { return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CLOSED CYCLES</p><h2>{title}</h2></div><span className="muted">FIFO・多空雙向・日曆日</span></div>{cycles.length ? <div className="table-wrap"><table><thead><tr><th>標的</th><th>方向</th><th>期間</th><th>持倉</th><th>損益</th><th>報酬</th><th>MAE</th><th>MFE</th><th>行情</th></tr></thead><tbody>{cycles.map((cycle) => <tr key={cycle.id}><td><b>{cycle.symbol}</b></td><td><span className={`direction ${cycle.direction.toLowerCase()}`}>{cycle.direction === "SHORT" ? "空" : "多"}</span></td><td>{cycle.openAt.slice(0, 10)} → {cycle.closeAt.slice(0, 10)}</td><td>{cycle.holdingDays} 天</td><td className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</td><td>{pct(cycle.returnPct)}</td><td>{pct(cycle.maePct)}</td><td>{pct(cycle.mfePct)}</td><td><span className={cycle.quality === "完整" ? "status ok" : "status warn"}>{cycle.quality}</span></td></tr>)}</tbody></table></div> : <Empty text="尚未形成完整交易閉環"/>}</section>; }
+function CycleTable({ cycles, title }: { cycles: any[]; title: string }) { return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CLOSED CYCLES</p><h2>{title}</h2></div><span className="muted">FIFO・多空雙向・日曆日</span></div>{cycles.length ? <div className="table-wrap"><table><thead><tr><th>標的</th><th>方向</th><th>期間</th><th>進場價</th><th>出場價</th><th>持倉</th><th>損益</th><th>報酬</th><th>MAE</th><th>MFE</th><th>行情</th></tr></thead><tbody>{cycles.map((cycle) => <tr key={cycle.id}><td><b>{cycle.symbol}</b></td><td><span className={`direction ${cycle.direction.toLowerCase()}`}>{cycle.direction === "SHORT" ? "空" : "多"}</span></td><td>{cycle.openAt.slice(0, 10)} → {cycle.closeAt.slice(0, 10)}</td><td>{money(cycle.averageEntry, cycle.currency)}</td><td>{money(cycle.averageExit, cycle.currency)}</td><td>{cycle.holdingDays} 天</td><td className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</td><td>{pct(cycle.returnPct)}</td><td>{pct(cycle.maePct)}</td><td>{pct(cycle.mfePct)}</td><td><span className={cycle.quality === "完整" ? "status ok" : "status warn"}>{cycle.quality}</span></td></tr>)}</tbody></table></div> : <Empty text="尚未形成完整交易閉環"/>}</section>; }
 function Empty({ text }: { text: string }) { return <div className="empty"><span>○</span><p>{text}</p></div>; }
