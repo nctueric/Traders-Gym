@@ -5,16 +5,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { runSelfTests, STORAGE_KEY, summarize } from "@/lib/trade-engine.mjs";
 import { isQuoteStale, mergeMarketBars, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
 import { classifyCashActivities, importTradingViewCsv } from "@/lib/trader-x2-importer.mjs";
-import { buildCurrentEquity, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "@/lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "@/lib/portfolio-engine.mjs";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string };
-type Dataset = { version: string; profile: { name: string; baseCurrency: string; costMethod: string }; accounts: { id: string; name: string; currency: string }[]; fills: Fill[]; cashActivities?: CashActivity[]; marketBars: Record<string, unknown>[]; settings: { quoteProvider: string; benchmarkSymbol?: string }; source?: { fileName?: string; format?: string } };
+type PositionPlan = { takeProfit?: number | null; stopLoss?: number | null };
+type Dataset = { version: string; profile: { name: string; baseCurrency: string; costMethod: string }; accounts: { id: string; name: string; currency: string }[]; fills: Fill[]; cashActivities?: CashActivity[]; marketBars: Record<string, unknown>[]; settings: { quoteProvider: string; benchmarkSymbol?: string }; positionPlans?: Record<string, PositionPlan>; source?: { fileName?: string; format?: string } };
 type Quote = { symbol: string; price: number; previousClose: number | null; changePct: number | null; currency: string; marketState: string; updatedAt: string; source: string };
 type HistoryBar = { symbol: string; date: string; close: number; open?: number; high?: number; low?: number; volume?: number | null };
 type PendingImport = { dataset: Dataset; fileName: string; kind: "JSON" | "TradingView CSV"; duplicateCount: number; warnings: string[] };
 
-const emptyData: Dataset = { version: "0.1.0", profile: { name: "我的交易帳本", baseCurrency: "USD", costMethod: "FIFO" }, accounts: [{ id: "main", name: "主要帳戶", currency: "USD" }], fills: [], cashActivities: [], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" } };
+const emptyData: Dataset = { version: "0.1.0", profile: { name: "我的交易帳本", baseCurrency: "USD", costMethod: "FIFO" }, accounts: [{ id: "main", name: "主要帳戶", currency: "USD" }], fills: [], cashActivities: [], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" }, positionPlans: {} };
 const demoData: Dataset = { ...emptyData, fills: [
   { id: "nvts-buy", accountId: "main", symbol: "NVTS", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 100, price: 10, fee: 1, timestamp: "2026-07-01T09:30:00Z", note: "示範資料" },
   { id: "nvts-sell", accountId: "main", symbol: "NVTS", market: "NASDAQ", currency: "USD", side: "SELL", quantity: 100, price: 12.5, fee: 1, timestamp: "2026-07-10T09:30:00Z" },
@@ -42,6 +43,7 @@ function cycleHistoryTargets(cycles: any[]) {
   }
   return [...grouped.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
+function positionPlanKey(position: { accountId: string; symbol: string }) { return `${position.accountId}:${position.symbol}`; }
 
 export default function TradeWorkspace() {
   const [data, setData] = useState<Dataset>(demoData);
@@ -203,6 +205,11 @@ export default function TradeWorkspace() {
   function addFill(event: React.FormEvent) { event.preventDefault(); const fill = { ...form, id: form.id || `fill-${Date.now()}`, symbol: form.symbol.toUpperCase(), timestamp: new Date(form.timestamp).toISOString(), quantity: Number(form.quantity), price: Number(form.price), fee: Number(form.fee) }; setData({ ...data, fills: [...data.fills, fill] }); setDialog(false); setMessage(`已新增 ${fill.symbol} ${fill.side === "BUY" ? "買進" : "賣出"}紀錄。`); }
   function deleteFill(id: string) { setData({ ...data, fills: data.fills.filter((fill) => fill.id !== id) }); setMessage("成交紀錄已刪除。"); }
   function applyBenchmark(event: React.FormEvent) { event.preventDefault(); const symbol = benchmarkInput.trim().toUpperCase(); if (!/^[A-Z0-9.^=-]{1,20}$/.test(symbol)) { setBenchmarkState("請輸入有效的 ETF 代號"); return; } setData({ ...data, settings: { ...(data.settings || { quoteProvider: "json" }), benchmarkSymbol: symbol } }); }
+  function updatePositionPlan(position: { accountId: string; symbol: string }, field: keyof PositionPlan, rawValue: string) {
+    const key = positionPlanKey(position);
+    const value = rawValue === "" ? null : Number(rawValue);
+    setData((current) => ({ ...current, positionPlans: { ...(current.positionPlans || {}), [key]: { ...(current.positionPlans?.[key] || {}), [field]: Number.isFinite(value) ? value : null } } }));
+  }
 
   const metrics = [
     ["目前總資產", currentEquity.totalUsd == null ? "匯率待更新" : money(currentEquity.totalUsd), `現金＋即時持倉；${currentEquity.liveQuoteCount}/${currentEquity.positionCount} 個持倉使用即時報價`],
@@ -225,10 +232,10 @@ export default function TradeWorkspace() {
       <header className="topbar"><div><p className="eyebrow">PHASE 1 · LOCAL FIRST</p><h1>{title}</h1></div><div className="actions"><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => prepareImport(event.target.files?.[0])}/><button className="ghost" onClick={() => inputRef.current?.click()}>匯入 JSON／CSV</button><button className="ghost" onClick={exportJson}>匯出備份</button><button className="primary" onClick={() => setDialog(true)}>新增交易</button></div></header>
       <div className="notice"><span>●</span><div><b>{report.issues.some((issue: any) => issue.level === "error") ? "資料需要處理" : "資料計算完成"}</b><p>{message}</p></div></div>
       {tab === "overview" && <>
-        <section className="quote-bar"><div><span className="live-dot"/> <b>即時持倉報價</b><small>{quoteState}</small></div><div className="fx-rate"><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "匯率已過期" : "目前匯率" : "正在取得匯率"}</small></div><div><b>{lastQuoteAt ? new Date(lastQuoteAt).toLocaleTimeString("zh-TW") : "—"}</b><small>{lastQuoteAt ? `${nextRefresh} 秒後更新` : "正在取得報價"}</small></div></section>
+        <section className="quote-bar"><div><span className="live-dot"/> <b>即時持倉報價</b><small>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate"><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "匯率已過期" : "目前匯率" : "正在取得匯率"}</small></div><div><b>{lastQuoteAt ? new Date(lastQuoteAt).toLocaleTimeString("zh-TW") : "—"}</b><small>{lastQuoteAt ? `${nextRefresh} 秒後更新` : "正在取得報價"}</small></div></section>
         <section className="metrics">{metrics.map(([label, value, hint]) => <article key={String(label)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></article>)}</section>
-        <section className="asset-grid"><MonthScorecard score={monthScore} monthKey={monthKey}/><article className="panel"><p className="eyebrow">DATA HEALTH</p><h2>資料品質</h2><div className="quality"><strong>{report.qualityPct}%</strong><div><span style={{ width: `${report.qualityPct}%` }}/></div><small>具備持倉期間日線行情的閉環比例</small></div><div className="quality-note"><b>{weeklyEquity.at(-1)?.missingSymbols.length || 0}</b><small>最近週資產估值缺少收盤價的標的</small></div></article></section>
-        <article className="panel"><div className="panel-head"><div><p className="eyebrow">OPEN POSITIONS</p><h2>目前持倉</h2></div><span className="muted">{report.positions.length} 個未平倉部位</span></div>{report.positions.length ? report.positions.map((position: any) => { const providerSymbol = toProviderSymbol(position.symbol, position.market); const quote = quotes[providerSymbol]; const direction = position.direction === "SHORT" ? -1 : 1; const unrealized = quote ? (quote.price - position.averageCost) * position.quantity * direction : null; return <div className="position live" key={`${position.accountId}-${position.symbol}`}><div><b>{position.symbol} <span className={`direction ${position.direction.toLowerCase()}`}>{position.direction === "SHORT" ? "空" : "多"}</span></b><small>{position.quantity} 股・均價 {money(position.averageCost, position.currency)}</small></div><div><b>{quote ? money(quote.price, quote.currency) : "更新中"}</b><small className={quote?.changePct != null && quote.changePct >= 0 ? "positive" : "negative"}>{quote?.changePct == null ? "—" : pct(quote.changePct)}</small></div><div><b className={unrealized != null && unrealized >= 0 ? "positive" : "negative"}>{unrealized == null ? "—" : money(unrealized, position.currency)}</b><small>未實現損益</small></div></div>; }) : <Empty text="目前沒有未平倉部位"/>}</article>
+        <MonthScorecard score={monthScore} monthKey={monthKey}/>
+        <PositionsPanel positions={report.positions} quotes={quotes} plans={data.positionPlans || {}} totalAssetUsd={currentEquity.totalUsd} fxRate={fxRate} onPlanChange={updatePositionPlan}/>
         <CycleTable cycles={monthScore.cycles} title={`${monthKey.slice(0, 4)}年${monthKey.slice(5)}月交易閉環`}/>
       </>}
       {tab === "performance" && <PerformancePanel points={weeklyPerformance} currentEquity={currentEquity} monthAssetDelta={monthAssetDelta} monthKey={monthKey} benchmarkSymbol={benchmarkSymbol} benchmarkInput={benchmarkInput} setBenchmarkInput={setBenchmarkInput} benchmarkState={benchmarkState} applyBenchmark={applyBenchmark} fxRate={fxQuote?.price || null}/>}
@@ -243,6 +250,17 @@ export default function TradeWorkspace() {
 
 type PerformancePoint = { weekStart: string; asOf: string; totalUsd: number | null; portfolioPct: number | null; benchmarkPct: number | null };
 type MonthScore = { cycles: any[]; averageReturn: number | null; averageWinningReturn: number | null; averageLosingReturn: number | null; averageWinningAmountUsd: number | null; averageLosingAmountUsd: number | null; totalPnlUsd: number | null; winners: number; losers: number; flat: number; winRate: number | null };
+
+function PositionsPanel({ positions, quotes, plans, totalAssetUsd, fxRate, onPlanChange }: { positions: any[]; quotes: Record<string, Quote>; plans: Record<string, PositionPlan>; totalAssetUsd: number | null; fxRate: number | null; onPlanChange: (position: { accountId: string; symbol: string }, field: keyof PositionPlan, value: string) => void }) {
+  const rows = positions.map((position) => {
+    const quote = quotes[toProviderSymbol(position.symbol, position.market)];
+    const plan = plans[positionPlanKey(position)] || {};
+    const metrics = buildPositionMetrics(position, quote?.price, plan.stopLoss, totalAssetUsd, fxRate);
+    return { position, quote, plan, metrics };
+  }).sort((a, b) => (b.metrics.allocationPct ?? -1) - (a.metrics.allocationPct ?? -1));
+
+  return <article className="panel positions-panel"><div className="panel-head"><div><p className="eyebrow">OPEN POSITIONS</p><h2>目前持倉</h2></div><span className="muted">依持倉佔比排序・{positions.length} 個未平倉部位</span></div>{rows.length ? <div className="table-wrap positions-wrap"><table className="positions-table"><thead><tr><th>排名</th><th>狀態</th><th>標的／部位</th><th>即時價</th><th>未實現損益</th><th>停利價</th><th>停損價</th><th>即時風險報酬比</th><th>持倉佔比</th></tr></thead><tbody>{rows.map(({ position, quote, plan, metrics }, index) => <tr key={positionPlanKey(position)} className={metrics.stopBreached ? "stop-breached" : ""}><td className="rank-cell">{index + 1}</td><td><span className={`stop-light ${metrics.stopBreached ? "breach" : "safe"}`} title={metrics.stopBreached ? "即時價格已超過停損價位" : "尚未觸發停損"}/><small className={metrics.stopBreached ? "negative block" : "muted block"}>{metrics.stopBreached ? "停損觸發" : "正常"}</small></td><td><b>{position.symbol} <span className={`direction ${position.direction.toLowerCase()}`}>{position.direction === "SHORT" ? "空" : "多"}</span></b><small className="block">{position.quantity} 股・均價 {money(position.averageCost, position.currency)}</small></td><td><b>{quote ? money(quote.price, position.currency) : "更新中"}</b><small className={quote?.changePct != null && quote.changePct >= 0 ? "positive block" : "negative block"}>{quote?.changePct == null ? "—" : pct(quote.changePct)}</small></td><td><b className={metrics.unrealized != null && metrics.unrealized >= 0 ? "positive" : "negative"}>{metrics.unrealized == null ? "—" : money(metrics.unrealized, position.currency)}</b></td><td><label className="position-price-input"><input aria-label={`${position.symbol} 停利價`} type="number" min="0" step="any" value={plan.takeProfit ?? ""} placeholder="—" onChange={(event) => onPlanChange(position, "takeProfit", event.target.value)}/><small>{position.currency}</small></label></td><td><label className="position-price-input"><input aria-label={`${position.symbol} 停損價`} type="number" min="0" step="any" value={plan.stopLoss ?? ""} placeholder="—" onChange={(event) => onPlanChange(position, "stopLoss", event.target.value)}/><small>{position.currency}</small></label></td><td><b className={metrics.riskReward == null ? "" : metrics.riskReward >= 0 ? "positive" : "negative"}>{metrics.riskReward == null ? "—" : `${metrics.riskReward.toFixed(2)}x`}</b><small className="block">當下損益 ÷ 停損損失</small></td><td><b>{metrics.allocationPct == null ? "—" : `${(metrics.allocationPct * 100).toFixed(1)}%`}</b><small className="block">市值 ÷ 總資產</small></td></tr>)}</tbody></table></div> : <Empty text="目前沒有未平倉部位"/>}</article>;
+}
 
 function MonthScorecard({ score, monthKey }: { score: MonthScore; monthKey: string }) {
   return <article className="panel score-panel">

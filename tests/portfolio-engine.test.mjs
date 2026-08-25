@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCurrentEquity, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "../lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "../lib/portfolio-engine.mjs";
 
 test("weekly equity marks open holdings to the last weekly close", () => {
   const data = {
@@ -42,6 +42,30 @@ test("current equity falls back to the latest close and reports missing live quo
   const equity = buildCurrentEquity(data, {}, 32);
   assert.equal(equity.totalUsd, 10);
   assert.deepEqual(equity.missingSymbols, ["AAA"]);
+});
+
+test("long position metrics calculate allocation, risk reward, and stop breach", () => {
+  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 100, quantity: 10, currency: "USD" }, 90, 95, 2_000, 32);
+  assert.equal(metrics.unrealized, -100);
+  assert.equal(metrics.marketValueUsd, 900);
+  assert.equal(metrics.allocationPct, 0.45);
+  assert.equal(metrics.stopLossAmount, 50);
+  assert.equal(metrics.riskReward, -2);
+  assert.equal(metrics.stopBreached, true);
+});
+
+test("short position metrics use the inverse stop direction", () => {
+  const metrics = buildPositionMetrics({ direction: "SHORT", averageCost: 100, quantity: 10, currency: "USD" }, 112, 110, 2_000, 32);
+  assert.equal(metrics.unrealized, -120);
+  assert.equal(metrics.stopLossAmount, 100);
+  assert.equal(metrics.riskReward, -1.2);
+  assert.equal(metrics.stopBreached, true);
+});
+
+test("TWD position allocation converts market value to USD", () => {
+  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 90, quantity: 100, currency: "TWD" }, 96, 80, 10_000, 32);
+  assert.equal(metrics.marketValueUsd, 300);
+  assert.equal(metrics.allocationPct, 0.03);
 });
 
 test("weekly performance aligns portfolio and benchmark week-over-week returns", () => {
