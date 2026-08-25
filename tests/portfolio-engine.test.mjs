@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "../lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "../lib/portfolio-engine.mjs";
 
 test("weekly equity marks open holdings to the last weekly close", () => {
   const data = {
@@ -23,6 +23,25 @@ test("weekly equity converts TWD assets with USDTWD", () => {
 test("weekly equity fails closed when TWD exists without FX", () => {
   const data = { cashActivities: [{ id: "cash", type: "DEPOSIT", amount: 3200, currency: "TWD", timestamp: "2026-07-01T00:00:00Z" }], fills: [], marketBars: [] };
   assert.equal(buildWeeklyEquitySeries(data, null)[0].totalUsd, null);
+});
+
+test("current equity uses live quotes for open positions", () => {
+  const data = {
+    cashActivities: [{ id: "cash", type: "DEPOSIT", amount: 1000, currency: "USD", timestamp: "2026-07-01T00:00:00Z" }],
+    fills: [{ id: "buy", accountId: "a", symbol: "AAA", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 10, price: 10, fee: 0, timestamp: "2026-07-01T09:00:00Z" }],
+    marketBars: [{ symbol: "AAA", date: "2026-07-01", close: 11 }],
+  };
+  const equity = buildCurrentEquity(data, { AAA: { price: 12 } }, 32, new Date("2026-08-25T00:00:00Z"));
+  assert.equal(equity.totalUsd, 1020);
+  assert.equal(equity.liveQuoteCount, 1);
+  assert.deepEqual(equity.missingSymbols, []);
+});
+
+test("current equity falls back to the latest close and reports missing live quotes", () => {
+  const data = { cashActivities: [], fills: [{ id: "buy", accountId: "a", symbol: "AAA", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 10, price: 10, fee: 0, timestamp: "2026-07-01T09:00:00Z" }], marketBars: [{ symbol: "AAA", date: "2026-07-02", close: 11 }] };
+  const equity = buildCurrentEquity(data, {}, 32);
+  assert.equal(equity.totalUsd, 10);
+  assert.deepEqual(equity.missingSymbols, ["AAA"]);
 });
 
 test("weekly performance aligns portfolio and benchmark week-over-week returns", () => {
