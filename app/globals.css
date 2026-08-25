@@ -17,3 +17,7 @@
 @media(max-width:980px){.performance-summary{grid-template-columns:1fr}.performance-head{align-items:flex-start;display:grid}.benchmark-form{grid-template-columns:auto 1fr auto}.trade-score-split{grid-template-columns:1fr}.performance-panel .chart-foot small{text-align:left}}
 @media(max-width:520px){.benchmark-form{grid-template-columns:1fr}.performance-canvas{height:240px}.chart-legend{flex-wrap:wrap}.chart-legend small{width:100%;margin-left:0}}
 @media(max-width:620px){.trade-score-metrics,.score-summary{grid-template-columns:1fr}.trade-score-metrics>div{border-right:0;border-bottom:1px solid var(--line)}.trade-score-metrics>div:last-child{border-bottom:0}}
+.score-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:760px){.score-summary{grid-template-columns:1fr}}
+.trade-score-split{grid-template-columns:1fr}.trade-score-group{display:grid;grid-template-columns:190px minmax(0,1fr)}.trade-score-title{display:grid;align-content:center;border-bottom:0;border-right:1px solid var(--line)}
+@media(max-width:760px){.trade-score-group{grid-template-columns:1fr}.trade-score-title{display:flex;border-right:0;border-bottom:1px solid var(--line)}}

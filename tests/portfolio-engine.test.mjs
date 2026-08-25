@@ -86,6 +86,10 @@ test("monthly scorecard filters by close month and calculates average and win ra
   assert.equal(score.averageLosingReturn, -0.04);
   assert.deepEqual(score.averageWinningAmountByCurrency, { USD: 10 });
   assert.deepEqual(score.averageLosingAmountByCurrency, { USD: -4 });
+  assert.deepEqual(score.totalPnlByCurrency, { USD: 6 });
+  assert.equal(score.averageWinningAmountUsd, 10);
+  assert.equal(score.averageLosingAmountUsd, -4);
+  assert.equal(score.totalPnlUsd, 6);
   assert.equal(score.winners, 1);
   assert.equal(score.losers, 1);
   assert.equal(score.winRate, 0.5);
@@ -96,14 +100,24 @@ test("monthly average winning return is empty when there are no profitable cycle
   assert.equal(score.averageWinningReturn, null);
 });
 
-test("monthly scorecard keeps average profit and loss amounts separated by currency", () => {
+test("monthly scorecard converts mixed-currency profit and loss amounts to USD", () => {
   const score = monthlyCycleScore([
     { closeAt: "2026-08-02T00:00:00Z", returnPct: 0.1, pnl: 10, currency: "USD" },
     { closeAt: "2026-08-03T00:00:00Z", returnPct: 0.2, pnl: 30, currency: "USD" },
     { closeAt: "2026-08-04T00:00:00Z", returnPct: 0.05, pnl: 1_000, currency: "TWD" },
     { closeAt: "2026-08-05T00:00:00Z", returnPct: -0.05, pnl: -8, currency: "USD" },
     { closeAt: "2026-08-06T00:00:00Z", returnPct: -0.1, pnl: -2_000, currency: "TWD" },
-  ], "2026-08");
+  ], "2026-08", 32);
   assert.deepEqual(score.averageWinningAmountByCurrency, { USD: 20, TWD: 1_000 });
   assert.deepEqual(score.averageLosingAmountByCurrency, { USD: -8, TWD: -2_000 });
+  assert.deepEqual(score.totalPnlByCurrency, { USD: 32, TWD: -1_000 });
+  assert.equal(score.averageWinningAmountUsd, 23.75);
+  assert.equal(score.averageLosingAmountUsd, -35.25);
+  assert.equal(score.totalPnlUsd, 0.75);
+});
+
+test("monthly USD score amounts fail closed when TWD exists without FX", () => {
+  const score = monthlyCycleScore([{ closeAt: "2026-08-02T00:00:00Z", returnPct: 0.1, pnl: 1_000, currency: "TWD" }], "2026-08", null);
+  assert.equal(score.averageWinningAmountUsd, null);
+  assert.equal(score.totalPnlUsd, null);
 });
