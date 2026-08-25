@@ -76,13 +76,16 @@ test("monthly asset change falls back to the first point inside the month", () =
 
 test("monthly scorecard filters by close month and calculates average and win rate", () => {
   const score = monthlyCycleScore([
-    { closeAt: "2026-08-01T00:00:00Z", returnPct: 0.1, pnl: 10 },
-    { closeAt: "2026-08-20T00:00:00Z", returnPct: -0.04, pnl: -4 },
-    { closeAt: "2026-07-31T00:00:00Z", returnPct: 0.2, pnl: 20 },
+    { closeAt: "2026-08-01T00:00:00Z", returnPct: 0.1, pnl: 10, currency: "USD" },
+    { closeAt: "2026-08-20T00:00:00Z", returnPct: -0.04, pnl: -4, currency: "USD" },
+    { closeAt: "2026-07-31T00:00:00Z", returnPct: 0.2, pnl: 20, currency: "USD" },
   ], "2026-08");
   assert.equal(score.cycles.length, 2);
   assert.ok(Math.abs(score.averageReturn - 0.03) < 1e-12);
   assert.equal(score.averageWinningReturn, 0.1);
+  assert.equal(score.averageLosingReturn, -0.04);
+  assert.deepEqual(score.averageWinningAmountByCurrency, { USD: 10 });
+  assert.deepEqual(score.averageLosingAmountByCurrency, { USD: -4 });
   assert.equal(score.winners, 1);
   assert.equal(score.losers, 1);
   assert.equal(score.winRate, 0.5);
@@ -91,4 +94,16 @@ test("monthly scorecard filters by close month and calculates average and win ra
 test("monthly average winning return is empty when there are no profitable cycles", () => {
   const score = monthlyCycleScore([{ closeAt: "2026-08-20T00:00:00Z", returnPct: -0.04, pnl: -4 }], "2026-08");
   assert.equal(score.averageWinningReturn, null);
+});
+
+test("monthly scorecard keeps average profit and loss amounts separated by currency", () => {
+  const score = monthlyCycleScore([
+    { closeAt: "2026-08-02T00:00:00Z", returnPct: 0.1, pnl: 10, currency: "USD" },
+    { closeAt: "2026-08-03T00:00:00Z", returnPct: 0.2, pnl: 30, currency: "USD" },
+    { closeAt: "2026-08-04T00:00:00Z", returnPct: 0.05, pnl: 1_000, currency: "TWD" },
+    { closeAt: "2026-08-05T00:00:00Z", returnPct: -0.05, pnl: -8, currency: "USD" },
+    { closeAt: "2026-08-06T00:00:00Z", returnPct: -0.1, pnl: -2_000, currency: "TWD" },
+  ], "2026-08");
+  assert.deepEqual(score.averageWinningAmountByCurrency, { USD: 20, TWD: 1_000 });
+  assert.deepEqual(score.averageLosingAmountByCurrency, { USD: -8, TWD: -2_000 });
 });
