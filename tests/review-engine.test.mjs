@@ -62,3 +62,14 @@ test("cycle analysis does not invent post-exit or R data", () => {
   assert.equal(result.ruleModificationCost, null);
   assert.equal(result.precision, "缺行情");
 });
+
+test("losing cycles still calculate every available post-exit horizon", () => {
+  const losingCycle = { ...cycle, pnl: -50, returnPct: -0.05, averageExit: 95 };
+  const bars = Array.from({ length: 20 }, (_, index) => ({ symbol: "AAA", date: `2026-09-${String(index + 1).padStart(2, "0")}`, close: 96 + index }));
+  const result = analyzeCycle(losingCycle, bars, {});
+  assert.equal(result.postExitReturns[1], 1 / 95);
+  assert.equal(result.postExitReturns[3], 3 / 95);
+  assert.equal(result.postExitReturns[5], 5 / 95);
+  assert.equal(result.postExitReturns[10], 10 / 95);
+  assert.equal(result.postExitReturns[20], 20 / 95);
+});
