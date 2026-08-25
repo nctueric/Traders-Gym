@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FX_STALE_MS, isQuoteStale, normalizeYahooChart, normalizeYahooHistory, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, twdToUsd, USDTWD_SYMBOL } from "../lib/quote-engine.mjs";
+import { FX_STALE_MS, isQuoteStale, mergeMarketBars, normalizeYahooChart, normalizeYahooHistory, normalizeYahooOhlcHistory, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, twdToUsd, USDTWD_SYMBOL } from "../lib/quote-engine.mjs";
 
 test("quote refresh interval is exactly 30 seconds", () => assert.equal(QUOTE_REFRESH_MS, 30_000));
 test("US symbol stays unchanged", () => assert.equal(toProviderSymbol("aapl", "NASDAQ"), "AAPL"));
@@ -17,6 +17,14 @@ test("Yahoo history prefers adjusted closes and skips invalid rows", () => {
   assert.deepEqual(bars.map((bar) => bar.close), [100, 102]);
 });
 test("missing history data throws instead of fabricating bars", () => assert.throws(() => normalizeYahooHistory("BAD", { chart: { result: [] } })));
+test("Yahoo OHLC history preserves dataset symbol and rejects empty candles", () => {
+  const bars = normalizeYahooOhlcHistory("3675", { chart: { result: [{ timestamp: [1_700_000_000, 1_700_086_400], indicators: { quote: [{ open: [100, 0], high: [110, 0], low: [95, 0], close: [105, 0], volume: [1000, 0] }] } }] } });
+  assert.deepEqual(bars, [{ symbol: "3675", date: "2023-11-14", open: 100, high: 110, low: 95, close: 105, volume: 1000 }]);
+});
+test("market bars merge by dataset symbol and date with incoming data winning", () => {
+  const merged = mergeMarketBars([{ symbol: "AAA", date: "2026-01-01", close: 1 }], [{ symbol: "AAA", date: "2026-01-01", close: 2 }, { symbol: "BBB", date: "2026-01-01", close: 3 }]);
+  assert.deepEqual(merged.map((bar) => [bar.symbol, bar.close]), [["AAA", 2], ["BBB", 3]]);
+});
 test("USDTWD provider symbol is explicit", () => assert.equal(USDTWD_SYMBOL, "USDTWD=X"));
 test("TWD converts to USD by division", () => assert.equal(twdToUsd(3200, 32), 100));
 test("mixed currency P&L converts to USD", () => assert.equal(pnlToUsd({ USD: 250, TWD: -3200 }, 32), 150));

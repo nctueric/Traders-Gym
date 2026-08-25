@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { runSelfTests, STORAGE_KEY, summarize } from "@/lib/trade-engine.mjs";
-import { isQuoteStale, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
+import { isQuoteStale, mergeMarketBars, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
 import { classifyCashActivities, importTradingViewCsv } from "@/lib/trader-x2-importer.mjs";
 import { buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "@/lib/portfolio-engine.mjs";
 
@@ -11,7 +11,7 @@ type Fill = { id: string; accountId: string; symbol: string; market: string; cur
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string };
 type Dataset = { version: string; profile: { name: string; baseCurrency: string; costMethod: string }; accounts: { id: string; name: string; currency: string }[]; fills: Fill[]; cashActivities?: CashActivity[]; marketBars: Record<string, unknown>[]; settings: { quoteProvider: string; benchmarkSymbol?: string }; source?: { fileName?: string; format?: string } };
 type Quote = { symbol: string; price: number; previousClose: number | null; changePct: number | null; currency: string; marketState: string; updatedAt: string; source: string };
-type HistoryBar = { symbol: string; date: string; close: number };
+type HistoryBar = { symbol: string; date: string; close: number; open?: number; high?: number; low?: number; volume?: number | null };
 type PendingImport = { dataset: Dataset; fileName: string; kind: "JSON" | "TradingView CSV"; duplicateCount: number; warnings: string[] };
 
 const emptyData: Dataset = { version: "0.1.0", profile: { name: "我的交易帳本", baseCurrency: "USD", costMethod: "FIFO" }, accounts: [{ id: "main", name: "主要帳戶", currency: "USD" }], fills: [], cashActivities: [], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" } };
@@ -30,6 +30,17 @@ function money(value: number, currency = "USD") { return new Intl.NumberFormat("
 function moneyByCurrency(values: Record<string, number>) { const rows = Object.entries(values).filter(([, value]) => Math.abs(value) > 1e-9); return rows.length ? rows.map(([currency, value]) => money(value, currency)).join(" · ") : money(0); }
 function addCurrencyValues(...groups: Record<string, number>[]) { return groups.reduce<Record<string, number>>((result, group) => { Object.entries(group).forEach(([currency, value]) => { result[currency] = (result[currency] || 0) + value; }); return result; }, {}); }
 function currentMonthKey(now = new Date()) { const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit" }).formatToParts(now); return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`; }
+function cycleHistoryTargets(cycles: any[]) {
+  const grouped = new Map<string, { symbol: string; market: string; start: string; end: string }>();
+  for (const cycle of cycles) {
+    const key = `${cycle.market || ""}:${cycle.symbol}`;
+    const start = cycle.openAt.slice(0, 10);
+    const end = cycle.closeAt.slice(0, 10);
+    const current = grouped.get(key);
+    grouped.set(key, { symbol: cycle.symbol, market: cycle.market || "", start: current && current.start < start ? current.start : start, end: current && current.end > end ? current.end : end });
+  }
+  return [...grouped.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
 
 export default function TradeWorkspace() {
   const [data, setData] = useState<Dataset>(() => { if (typeof window !== "undefined") { const saved = localStorage.getItem(STORAGE_KEY); if (saved) { try { return JSON.parse(saved); } catch (error) { console.warn("無法恢復本機交易資料", error); } } } return demoData; });
@@ -42,6 +53,8 @@ export default function TradeWorkspace() {
   const [benchmarkInput, setBenchmarkInput] = useState(benchmarkSymbol);
   const [benchmarkBars, setBenchmarkBars] = useState<HistoryBar[]>([]);
   const [benchmarkState, setBenchmarkState] = useState("準備讀取 ETF 歷史行情");
+  const [cycleHistoryState, setCycleHistoryState] = useState("準備同步閉環日線");
+  const [cycleHistoryRefresh, setCycleHistoryRefresh] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<Fill>({ id: "", accountId: "main", symbol: "", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 1, price: 0, fee: 0, timestamp: new Date().toISOString().slice(0, 16), note: "" });
 
@@ -54,6 +67,7 @@ export default function TradeWorkspace() {
   const [clock, setClock] = useState(() => Date.now());
   const quoteTargets = useMemo(() => [...new Set([...report.positions.map((position: any) => toProviderSymbol(position.symbol, position.market)), USDTWD_SYMBOL])], [report.positions]);
   const quoteKey = quoteTargets.join(",");
+  const cycleHistoryKey = JSON.stringify(cycleHistoryTargets(report.cycles));
 
   useEffect(() => { const ticker = window.setInterval(() => setClock(Date.now()), 1000); return () => window.clearInterval(ticker); }, []);
   useEffect(() => {
@@ -94,6 +108,34 @@ export default function TradeWorkspace() {
     load();
     return () => { active = false; };
   }, [benchmarkSymbol]);
+
+  useEffect(() => {
+    let active = true;
+    const targets = JSON.parse(cycleHistoryKey) as { symbol: string; market: string; start: string; end: string }[];
+    const load = async () => {
+      if (!targets.length) { setCycleHistoryState("尚無交易閉環"); return; }
+      setCycleHistoryState(`正在同步 ${targets.length} 個標的的 OHLC 日線…`);
+      const rows = await Promise.all(targets.map(async (target) => {
+        const providerSymbol = toProviderSymbol(target.symbol, target.market);
+        const params = new URLSearchParams({ symbol: providerSymbol, datasetSymbol: target.symbol, start: target.start, end: target.end, mode: "ohlc" });
+        try {
+          const response = await fetch(`/api/history?${params}`, { cache: "no-store" });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+          return { bars: payload.bars as HistoryBar[], error: null };
+        } catch (error) {
+          return { bars: [] as HistoryBar[], error: `${target.symbol}：${error instanceof Error ? error.message : "讀取失敗"}` };
+        }
+      }));
+      if (!active) return;
+      const bars = rows.flatMap((row) => row.bars);
+      const errors = rows.flatMap((row) => row.error ? [row.error] : []);
+      if (bars.length) setData((current) => ({ ...current, marketBars: mergeMarketBars(current.marketBars || [], bars) }));
+      setCycleHistoryState(errors.length ? `已更新 ${targets.length - errors.length}/${targets.length} 個標的；${errors.length} 個失敗` : `已更新 ${targets.length} 個標的・${bars.length} 筆日線`);
+    };
+    load();
+    return () => { active = false; };
+  }, [cycleHistoryKey, cycleHistoryRefresh]);
 
   const nextRefresh = lastQuoteAt == null ? 0 : Math.max(0, Math.ceil((QUOTE_REFRESH_MS - (clock - lastQuoteAt)) / 1000));
   const fxQuote = quotes[USDTWD_SYMBOL];
@@ -167,7 +209,7 @@ export default function TradeWorkspace() {
     <aside className="sidebar">
       <div className="brand"><span>TR</span><strong>交易復盤顧問</strong></div>
       <nav aria-label="主要導覽">{[["overview", "持倉總覽"], ["performance", "績效"], ["trades", "成交資料"], ["cycles", "交易閉環"], ["tests", "測試中心"]].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
-      <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環路徑使用本機日線。</small></div>
+      <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並保存於本機。</small></div>
       <div className="local-note">個人資料只保存在此瀏覽器<br/><b>本機 JSON／CSV 模式</b></div>
     </aside>
     <section className="content">
@@ -182,7 +224,7 @@ export default function TradeWorkspace() {
       </>}
       {tab === "performance" && <PerformancePanel points={weeklyPerformance} monthAssetDelta={monthAssetDelta} monthKey={monthKey} benchmarkSymbol={benchmarkSymbol} benchmarkInput={benchmarkInput} setBenchmarkInput={setBenchmarkInput} benchmarkState={benchmarkState} applyBenchmark={applyBenchmark} fxRate={fxQuote?.price || null}/>}
       {tab === "trades" && <><section className="panel"><div className="panel-head"><div><p className="eyebrow">LEDGER</p><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><div className="table-wrap"><table><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th></th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{fill.timestamp.slice(0, 10)}</td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section><CashLedger activities={data.cashActivities || []} accounts={data.accounts}/></>}
-      {tab === "cycles" && <CycleTable cycles={report.cycles} title="全部交易閉環"/>}
+      {tab === "cycles" && <CycleTable cycles={report.cycles} title="全部交易閉環" historyState={cycleHistoryState} onRefresh={() => setCycleHistoryRefresh((value) => value + 1)}/>}
       {tab === "tests" && <section className="split tests"><article className="panel"><p className="eyebrow">AUTOMATED TESTS</p><h2>核心計算測試</h2><div className="test-list">{tests.map((test: any) => <div key={test.name}><span className={test.passed ? "pass" : "fail"}>{test.passed ? "✓" : "!"}</span><b>{test.name}</b><small>{test.detail || "通過"}</small></div>)}</div></article><article className="panel"><p className="eyebrow">VALIDATION</p><h2>目前資料檢查</h2>{report.issues.length ? <div className="test-list">{report.issues.map((issue: any, index: number) => <div key={`${issue.code}-${index}`}><span className={issue.level === "error" ? "fail" : "warn-dot"}>!</span><b>{issue.code}</b><small>{issue.message}</small></div>)}</div> : <Empty text="沒有發現資料問題"/>}</article></section>}
     </section>
     {pendingImport && <div className="overlay" role="dialog" aria-modal="true" aria-label="匯入資料確認"><div className="modal import-modal"><div className="panel-head"><div><p className="eyebrow">IMPORT REVIEW</p><h2>確認匯入資料</h2></div><button type="button" className="close" onClick={() => setPendingImport(null)}>×</button></div><p className="modal-copy">檔案會在本機瀏覽器中取代目前帳本，確認前不會修改資料。</p><div className="import-summary"><article><span>格式</span><b>{pendingImport.kind}</b><small>{pendingImport.fileName}</small></article><article><span>成交</span><b>{pendingImport.dataset.fills.length}</b><small>{pendingImport.duplicateCount} 筆與目前ID相同</small></article><article><span>資金活動</span><b>{(pendingImport.dataset.cashActivities || []).length}</b><small>{(pendingImport.dataset.cashActivities || []).filter((activity) => activity.requiresReview).length} 筆待指定幣別</small></article><article><span>行情日線</span><b>{pendingImport.dataset.marketBars.length}</b><small>CSV會保留可匹配的既有日線</small></article></div>{(pendingImport.dataset.cashActivities || []).some((activity) => activity.requiresReview) && <label className="cash-choice">待確認資金活動幣別<select value={cashCurrency} onChange={(event) => setCashCurrency(event.target.value)}><option value="USD">USD 美元</option><option value="TWD">TWD 台幣</option></select></label>}{pendingImport.warnings.length > 0 && <div className="import-warnings"><b>資料提醒</b>{pendingImport.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<div className="modal-actions"><button type="button" className="ghost" onClick={() => setPendingImport(null)}>取消</button><button type="button" className="primary" onClick={confirmImport}>確認匯入並取代</button></div></div></div>}
@@ -254,5 +296,5 @@ function PerformancePanel({ points, monthAssetDelta, monthKey, benchmarkSymbol, 
 }
 
 function CashLedger({ activities, accounts }: { activities: CashActivity[]; accounts: Dataset["accounts"] }) { const accountNames = Object.fromEntries(accounts.map((account) => [account.id, account.name])); return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CASH ACTIVITIES</p><h2>資金活動帳本</h2></div><span className="muted">不計入交易損益</span></div>{activities.length ? <div className="table-wrap"><table><thead><tr><th>日期</th><th>類型</th><th>帳戶</th><th>金額</th><th>狀態</th><th>來源</th></tr></thead><tbody>{[...activities].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((activity) => <tr key={activity.id}><td>{activity.timestamp.slice(0, 10)}</td><td>{activity.type === "DEPOSIT" ? "入金" : activity.type}</td><td>{activity.accountId ? accountNames[activity.accountId] || activity.accountId : "待指定"}</td><td>{activity.currency ? money(activity.amount, activity.currency) : activity.amount.toLocaleString("zh-TW")}</td><td><span className={activity.requiresReview ? "status warn" : "status ok"}>{activity.requiresReview ? "待確認" : "已確認"}</span></td><td>{activity.source || "本機資料"}</td></tr>)}</tbody></table></div> : <Empty text="尚無入金、出金或其他資金活動"/>}</section>; }
-function CycleTable({ cycles, title }: { cycles: any[]; title: string }) { return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CLOSED CYCLES</p><h2>{title}</h2></div><span className="muted">FIFO・多空雙向・日曆日</span></div>{cycles.length ? <div className="table-wrap"><table><thead><tr><th>標的</th><th>方向</th><th>期間</th><th>進場價</th><th>出場價</th><th>持倉</th><th>損益</th><th>報酬</th><th>MAE</th><th>MFE</th><th>行情</th></tr></thead><tbody>{cycles.map((cycle) => <tr key={cycle.id}><td><b>{cycle.symbol}</b></td><td><span className={`direction ${cycle.direction.toLowerCase()}`}>{cycle.direction === "SHORT" ? "空" : "多"}</span></td><td>{cycle.openAt.slice(0, 10)} → {cycle.closeAt.slice(0, 10)}</td><td>{money(cycle.averageEntry, cycle.currency)}</td><td>{money(cycle.averageExit, cycle.currency)}</td><td>{cycle.holdingDays} 天</td><td className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</td><td>{pct(cycle.returnPct)}</td><td>{pct(cycle.maePct)}</td><td>{pct(cycle.mfePct)}</td><td><span className={cycle.quality === "完整" ? "status ok" : "status warn"}>{cycle.quality}</span></td></tr>)}</tbody></table></div> : <Empty text="尚未形成完整交易閉環"/>}</section>; }
+function CycleTable({ cycles, title, historyState, onRefresh }: { cycles: any[]; title: string; historyState?: string; onRefresh?: () => void }) { return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CLOSED CYCLES</p><h2>{title}</h2></div>{onRefresh ? <div className="cycle-actions"><span className="muted">{historyState}</span><button className="ghost" type="button" onClick={onRefresh}>更新閉環行情</button></div> : <span className="muted">FIFO・多空雙向・日曆日</span>}</div>{cycles.length ? <div className="table-wrap"><table><thead><tr><th>標的</th><th>方向</th><th>期間</th><th>進場價</th><th>出場價</th><th>持倉</th><th>損益</th><th>報酬</th><th>MAE</th><th>MFE</th><th>行情</th></tr></thead><tbody>{cycles.map((cycle) => <tr key={cycle.id}><td><b>{cycle.symbol}</b></td><td><span className={`direction ${cycle.direction.toLowerCase()}`}>{cycle.direction === "SHORT" ? "空" : "多"}</span></td><td>{cycle.openAt.slice(0, 10)} → {cycle.closeAt.slice(0, 10)}</td><td>{money(cycle.averageEntry, cycle.currency)}</td><td>{money(cycle.averageExit, cycle.currency)}</td><td>{cycle.holdingDays} 天</td><td className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</td><td>{pct(cycle.returnPct)}</td><td>{pct(cycle.maePct)}</td><td>{pct(cycle.mfePct)}</td><td><span className={cycle.quality === "完整" ? "status ok" : "status warn"}>{cycle.quality}</span></td></tr>)}</tbody></table></div> : <Empty text="尚未形成完整交易閉環"/>}</section>; }
 function Empty({ text }: { text: string }) { return <div className="empty"><span>○</span><p>{text}</p></div>; }
