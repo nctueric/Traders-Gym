@@ -1,10 +1,11 @@
-# 交易復盤顧問 Phase 0
+# 交易復盤顧問 Phase 1
 
-本機優先的交易資料原型。成交、行情與設定均可用 JSON 匯入／匯出，瀏覽器會以 `localStorage` 保存目前資料。
+私人雲端優先的交易資料原型。每個交易帳號的成交、行情、計畫與設定會自動儲存在 Cloudflare D1，啟動時載入該帳號最新版本；瀏覽器 `localStorage` 與 JSON 匯出保留為離線備援。
 
 ## 功能
 
 - 建立、刪除與備份成交紀錄
+- 建立與切換交易帳號；變更後自動儲存，重新啟動自動帶入最近使用帳號
 - 依帳戶與股票代號進行 FIFO 閉環配對
 - 計算實現損益、報酬率、持倉日數、MAE 與 MFE
 - 顯示尚未平倉部位與資料品質
@@ -15,8 +16,8 @@
 ## 本機驗證
 
 ```bash
-pnpm test
-pnpm build
+npm test
+npm run build
 ```
 
 示範檔位於 `public/sample-trading-data.json`，不含真實個人交易資料。

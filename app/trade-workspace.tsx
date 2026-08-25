@@ -7,6 +7,7 @@ import { isQuoteStale, mergeMarketBars, pnlToUsd, QUOTE_REFRESH_MS, toProviderSy
 import { classifyCashActivities, importTradingViewCsv } from "@/lib/trader-x2-importer.mjs";
 import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "@/lib/portfolio-engine.mjs";
 import { analyzeCycle, findRapidRepurchases, weeklyCycleStats } from "@/lib/review-engine.mjs";
+import { DEFAULT_RECORD_ACCOUNT_ID, makeRecordAccountId, RECORD_ACCOUNT_KEY, selectStartupAccount } from "@/lib/trade-record-store.mjs";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string };
@@ -20,6 +21,7 @@ type Dataset = { version: string; profile: { name: string; baseCurrency: string;
 type Quote = { symbol: string; price: number; previousClose: number | null; changePct: number | null; currency: string; marketState: string; updatedAt: string; source: string };
 type HistoryBar = { symbol: string; date: string; close: number; open?: number; high?: number; low?: number; volume?: number | null };
 type PendingImport = { dataset: Dataset; fileName: string; kind: "JSON" | "TradingView CSV"; duplicateCount: number; warnings: string[] };
+type RecordAccount = { id: string; name: string; version: number; updatedAt: string };
 
 const emptyData: Dataset = { version: "0.1.0", profile: { name: "我的交易帳本", baseCurrency: "USD", costMethod: "FIFO" }, accounts: [{ id: "main", name: "主要帳戶", currency: "USD" }], fills: [], cashActivities: [], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" }, positionPlans: {}, cycleReviews: {}, decisionLinks: {}, decisionLinkHistory: [] };
 const demoData: Dataset = { ...emptyData, fills: [
@@ -56,6 +58,10 @@ function positionPlanKey(position: { accountId: string; symbol: string }) { retu
 export default function TradeWorkspace() {
   const [data, setData] = useState<Dataset>(demoData);
   const [storageReady, setStorageReady] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [recordAccounts, setRecordAccounts] = useState<RecordAccount[]>([]);
+  const [activeRecordAccountId, setActiveRecordAccountId] = useState(DEFAULT_RECORD_ACCOUNT_ID);
+  const [saveState, setSaveState] = useState("正在載入交易帳號…");
   const [tab, setTab] = useState("overview");
   const [message, setMessage] = useState("資料已從本機或示範檔載入；可匯入 JSON 或 TradingView CSV 覆蓋。");
   const [dialog, setDialog] = useState(false);
@@ -69,14 +75,86 @@ export default function TradeWorkspace() {
   const [cycleHistoryRefresh, setCycleHistoryRefresh] = useState(0);
   const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recordVersionRef = useRef<number | null>(null);
+  const lastSavedJsonRef = useRef("");
   const [form, setForm] = useState<Fill>({ id: "", accountId: "main", symbol: "", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 1, price: 0, fee: 0, timestamp: new Date().toISOString().slice(0, 16), note: "" });
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) { try { setData(JSON.parse(saved)); } catch (error) { console.warn("無法恢復本機交易資料", error); } }
-    setStorageReady(true);
+    let active = true;
+    const restore = async () => {
+      const preferredId = localStorage.getItem(RECORD_ACCOUNT_KEY) || DEFAULT_RECORD_ACCOUNT_ID;
+      let localData = demoData;
+      const localText = localStorage.getItem(`${STORAGE_KEY}.${preferredId}`) || localStorage.getItem(STORAGE_KEY);
+      if (localText) { try { localData = JSON.parse(localText); } catch (error) { console.warn("無法恢復本機交易資料", error); } }
+      try {
+        const listResponse = await fetch("/api/trade-records", { cache: "no-store" });
+        if (!listResponse.ok) throw new Error(`HTTP ${listResponse.status}`);
+        const listPayload = await listResponse.json();
+        const selected = selectStartupAccount(listPayload.accounts || [], preferredId) as RecordAccount | null;
+        if (!selected) {
+          const seedResponse = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: DEFAULT_RECORD_ACCOUNT_ID, accountName: localData.profile.name || "主要交易帳號", dataset: localData }) });
+          const seedPayload = await seedResponse.json();
+          if (!seedResponse.ok) throw new Error(seedPayload.error || `HTTP ${seedResponse.status}`);
+          if (!active) return;
+          const account = seedPayload.account as RecordAccount;
+          setData(localData);
+          setRecordAccounts([account]);
+          setActiveRecordAccountId(account.id);
+          recordVersionRef.current = account.version;
+          lastSavedJsonRef.current = JSON.stringify(localData);
+          localStorage.setItem(RECORD_ACCOUNT_KEY, account.id);
+          setSaveState("本機紀錄已建立為雲端交易帳號");
+        } else {
+          const recordResponse = await fetch(`/api/trade-records?accountId=${encodeURIComponent(selected.id)}`, { cache: "no-store" });
+          const recordPayload = await recordResponse.json();
+          if (!recordResponse.ok) throw new Error(recordPayload.error || `HTTP ${recordResponse.status}`);
+          if (!active) return;
+          setData(recordPayload.dataset);
+          setRecordAccounts(listPayload.accounts);
+          setActiveRecordAccountId(selected.id);
+          recordVersionRef.current = recordPayload.account.version;
+          lastSavedJsonRef.current = JSON.stringify(recordPayload.dataset);
+          localStorage.setItem(RECORD_ACCOUNT_KEY, selected.id);
+          setSaveState(`已載入最新紀錄・${localDateTime(recordPayload.account.updatedAt)}`);
+        }
+        setCloudReady(true);
+      } catch (error) {
+        if (!active) return;
+        setData(localData);
+        lastSavedJsonRef.current = JSON.stringify(localData);
+        setSaveState(`雲端暫時無法使用，已載入本機備份：${error instanceof Error ? error.message : "未知錯誤"}`);
+      } finally {
+        if (active) setStorageReady(true);
+      }
+    };
+    restore();
+    return () => { active = false; };
   }, []);
-  useEffect(() => { if (storageReady) localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }, [data, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const serialized = JSON.stringify(data);
+    localStorage.setItem(STORAGE_KEY, serialized);
+    localStorage.setItem(`${STORAGE_KEY}.${activeRecordAccountId}`, serialized);
+    if (!cloudReady || serialized === lastSavedJsonRef.current) return;
+    setSaveState("有變更，準備自動儲存…");
+    const timer = window.setTimeout(async () => {
+      setSaveState("正在自動儲存…");
+      const accountName = recordAccounts.find((account) => account.id === activeRecordAccountId)?.name || data.profile.name || "主要交易帳號";
+      try {
+        const response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName, dataset: data, baseVersion: recordVersionRef.current }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        recordVersionRef.current = payload.account.version;
+        lastSavedJsonRef.current = serialized;
+        setRecordAccounts((current) => [payload.account, ...current.filter((account) => account.id !== payload.account.id)]);
+        setSaveState(`已自動儲存・${new Date(payload.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`);
+      } catch (error) {
+        setSaveState(`雲端儲存失敗，本機備份仍安全：${error instanceof Error ? error.message : "未知錯誤"}`);
+      }
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [activeRecordAccountId, cloudReady, data, recordAccounts, storageReady]);
   const report = useMemo(() => summarize(data), [data]);
   const tests = useMemo(() => runSelfTests(), []);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -214,6 +292,67 @@ export default function TradeWorkspace() {
   }
 
   function exportJson() { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `trade-review-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setMessage("JSON 備份已下載。"); }
+  async function switchRecordAccount(accountId: string) {
+    if (!accountId || accountId === activeRecordAccountId) return;
+    setCloudReady(false);
+    setSaveState("正在切換並載入最新交易紀錄…");
+    try {
+      const currentJson = JSON.stringify(data);
+      if (currentJson !== lastSavedJsonRef.current) {
+        const currentName = recordAccounts.find((account) => account.id === activeRecordAccountId)?.name || data.profile.name;
+        const saveResponse = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName: currentName, dataset: data, baseVersion: recordVersionRef.current }) });
+        const savePayload = await saveResponse.json();
+        if (!saveResponse.ok) throw new Error(savePayload.error || "切換前儲存失敗");
+      }
+      const response = await fetch(`/api/trade-records?accountId=${encodeURIComponent(accountId)}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      setActiveRecordAccountId(accountId);
+      setData(payload.dataset);
+      recordVersionRef.current = payload.account.version;
+      lastSavedJsonRef.current = JSON.stringify(payload.dataset);
+      localStorage.setItem(RECORD_ACCOUNT_KEY, accountId);
+      setSaveState(`已載入最新紀錄・${localDateTime(payload.account.updatedAt)}`);
+      setMessage(`已切換至「${payload.account.name}」。`);
+    } catch (error) {
+      setSaveState(`帳號切換失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+    } finally {
+      setCloudReady(true);
+    }
+  }
+  async function createRecordAccount() {
+    const name = window.prompt("請輸入新交易帳號名稱");
+    if (!name?.trim()) return;
+    const accountName = name.trim().slice(0, 100);
+    const accountId = makeRecordAccountId(accountName);
+    const accountData: Dataset = { ...structuredClone(emptyData), profile: { ...emptyData.profile, name: accountName } };
+    setCloudReady(false);
+    setSaveState("正在建立交易帳號…");
+    try {
+      const currentJson = JSON.stringify(data);
+      if (currentJson !== lastSavedJsonRef.current) {
+        const currentName = recordAccounts.find((account) => account.id === activeRecordAccountId)?.name || data.profile.name;
+        const currentResponse = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName: currentName, dataset: data, baseVersion: recordVersionRef.current }) });
+        const currentPayload = await currentResponse.json();
+        if (!currentResponse.ok) throw new Error(currentPayload.error || "建立帳號前儲存失敗");
+      }
+      const response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId, accountName, dataset: accountData }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      setRecordAccounts((current) => [payload.account, ...current]);
+      setActiveRecordAccountId(accountId);
+      setData(accountData);
+      recordVersionRef.current = payload.account.version;
+      lastSavedJsonRef.current = JSON.stringify(accountData);
+      localStorage.setItem(RECORD_ACCOUNT_KEY, accountId);
+      setSaveState(`帳號已建立並自動儲存・${new Date(payload.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`);
+      setMessage(`已建立「${accountName}」，可開始匯入或新增交易。`);
+      setCloudReady(true);
+    } catch (error) {
+      setSaveState(`建立失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+      setCloudReady(true);
+    }
+  }
   function addFill(event: React.FormEvent) { event.preventDefault(); const fill = { ...form, id: form.id || `fill-${Date.now()}`, symbol: form.symbol.toUpperCase(), timestamp: new Date(form.timestamp).toISOString(), quantity: Number(form.quantity), price: Number(form.price), fee: Number(form.fee) }; setData({ ...data, fills: [...data.fills, fill] }); setDialog(false); setMessage(`已新增 ${fill.symbol} ${fill.side === "BUY" ? "買進" : "賣出"}紀錄。`); }
   function deleteFill(id: string) { setData({ ...data, fills: data.fills.filter((fill) => fill.id !== id) }); setMessage("成交紀錄已刪除。"); }
   function applyBenchmark(event: React.FormEvent) { event.preventDefault(); const symbol = benchmarkInput.trim().toUpperCase(); if (!/^[A-Z0-9.^=-]{1,20}$/.test(symbol)) { setBenchmarkState("請輸入有效的 ETF 代號"); return; } setData({ ...data, settings: { ...(data.settings || { quoteProvider: "json" }), benchmarkSymbol: symbol } }); }
@@ -248,11 +387,15 @@ export default function TradeWorkspace() {
     <aside className="sidebar">
       <div className="brand"><span>TR</span><strong>交易復盤顧問</strong></div>
       <nav aria-label="主要導覽">{[["overview", "持倉總覽"], ["positions", "目前持倉"], ["performance", "績效"], ["trades", "成交資料"], ["cycles", "交易閉環"], ["tests", "測試中心"]].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
-      <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並保存於本機。</small></div>
-      <div className="local-note">個人資料只保存在此瀏覽器<br/><b>本機 JSON／CSV 模式</b></div>
+      <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並自動儲存。</small></div>
+      <div className="local-note">交易紀錄保存在私人資料庫<br/><b>雲端自動儲存＋本機備援</b></div>
     </aside>
     <section className="content">
-      <header className="topbar"><div><p className="eyebrow">PHASE 1 · LOCAL FIRST</p><h1>{title}</h1></div><div className="actions"><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => prepareImport(event.target.files?.[0])}/><button className="ghost" onClick={() => inputRef.current?.click()}>匯入 JSON／CSV</button><button className="ghost" onClick={exportJson}>匯出備份</button><button className="primary" onClick={() => setDialog(true)}>新增交易</button></div></header>
+      <header className="topbar"><div><p className="eyebrow">PHASE 1 · PRIVATE CLOUD</p><h1>{title}</h1></div><div className="actions"><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => prepareImport(event.target.files?.[0])}/><button className="ghost" onClick={() => inputRef.current?.click()}>匯入 JSON／CSV</button><button className="ghost" onClick={exportJson}>匯出備份</button><button className="primary" onClick={() => setDialog(true)}>新增交易</button></div></header>
+      <section className="account-store" aria-label="交易帳號資料庫">
+        <div><span>交易帳號</span><select value={activeRecordAccountId} disabled={!storageReady || !recordAccounts.length} onChange={(event) => void switchRecordAccount(event.target.value)}>{recordAccounts.length ? recordAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>) : <option value={activeRecordAccountId}>主要交易帳號</option>}</select><button className="ghost" type="button" onClick={() => void createRecordAccount()} disabled={!storageReady}>＋ 新增帳號</button></div>
+        <p className={saveState.includes("失敗") || saveState.includes("無法") ? "save-error" : ""}><span className="save-dot"/> {saveState}</p>
+      </section>
       <div className="notice"><span>●</span><div><b>{report.issues.some((issue: any) => issue.level === "error") ? "資料需要處理" : "資料計算完成"}</b><p>{message}</p></div></div>
       {tab === "overview" && <>
         <section className="quote-bar"><div><span className="live-dot"/> <b>即時持倉報價</b><small>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate"><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "匯率已過期" : "目前匯率" : "正在取得匯率"}</small></div><div><b>{lastQuoteAt ? new Date(lastQuoteAt).toLocaleTimeString("zh-TW") : "—"}</b><small>{lastQuoteAt ? `${nextRefresh} 秒後更新` : "正在取得報價"}</small></div></section>
