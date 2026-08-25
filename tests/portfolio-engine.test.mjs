@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore } from "../lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, positionPortfolioImpactPct } from "../lib/portfolio-engine.mjs";
 
 test("weekly equity marks open holdings to the last weekly close", () => {
   const data = {
@@ -45,10 +45,11 @@ test("current equity falls back to the latest close and reports missing live quo
 });
 
 test("long position metrics calculate allocation, risk reward, and stop breach", () => {
-  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 100, quantity: 10, currency: "USD" }, 90, 95, 2_000, 32);
+  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 100, quantity: 10, currency: "USD" }, 90, 95, 2_000, 32, 120);
   assert.equal(metrics.unrealized, -100);
   assert.equal(metrics.unrealizedUsd, -100);
   assert.equal(metrics.marketValueUsd, 900);
+  assert.equal(metrics.marketValue, 900);
   assert.equal(metrics.allocationPct, 0.45);
   assert.equal(metrics.stopLossAmount, 50);
   assert.equal(metrics.stopLossAmountUsd, 50);
@@ -56,6 +57,10 @@ test("long position metrics calculate allocation, risk reward, and stop breach",
   assert.equal(metrics.stopDistancePct, -5 / 90);
   assert.equal(metrics.riskReward, -2);
   assert.equal(metrics.stopBreached, true);
+  assert.equal(metrics.takeProfitOutcome, 300);
+  assert.equal(metrics.takeProfitOutcomeUsd, 300);
+  assert.equal(metrics.stopOutcome, 50);
+  assert.equal(metrics.stopOutcomeUsd, 50);
 });
 
 test("short position metrics use the inverse stop direction", () => {
@@ -83,12 +88,29 @@ test("position stop distance stays positive before a long stop is reached", () =
 });
 
 test("position preserves native risk but withholds USD values when FX is missing", () => {
-  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 90, quantity: 100, currency: "TWD" }, 96, 80, 10_000, null);
+  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 90, quantity: 100, currency: "TWD" }, 96, 80, 10_000, null, 120);
   assert.equal(metrics.unrealized, 600);
   assert.equal(metrics.stopLossAmount, 1_000);
   assert.equal(metrics.unrealizedUsd, null);
   assert.equal(metrics.stopLossAmountUsd, null);
   assert.equal(metrics.allocationPct, null);
+  assert.equal(metrics.takeProfitOutcome, 2_400);
+  assert.equal(metrics.takeProfitOutcomeUsd, null);
+  assert.equal(metrics.stopOutcome, -1_600);
+  assert.equal(metrics.stopOutcomeUsd, null);
+});
+
+test("short position targets calculate signed outcomes from the live price", () => {
+  const metrics = buildPositionMetrics({ direction: "SHORT", averageCost: 100, quantity: 10, currency: "USD" }, 90, 105, 2_000, 32, 70);
+  assert.equal(metrics.takeProfitOutcome, 200);
+  assert.equal(metrics.stopOutcome, -150);
+});
+
+test("planned price outcomes are measured against total open-position value", () => {
+  assert.equal(positionPortfolioImpactPct(300, 10_000), 0.03);
+  assert.equal(positionPortfolioImpactPct(-150, 10_000), -0.015);
+  assert.equal(positionPortfolioImpactPct(100, 0), null);
+  assert.equal(positionPortfolioImpactPct(null, 10_000), null);
 });
 
 test("weekly performance aligns portfolio and benchmark week-over-week returns", () => {
