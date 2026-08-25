@@ -47,9 +47,13 @@ test("current equity falls back to the latest close and reports missing live quo
 test("long position metrics calculate allocation, risk reward, and stop breach", () => {
   const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 100, quantity: 10, currency: "USD" }, 90, 95, 2_000, 32);
   assert.equal(metrics.unrealized, -100);
+  assert.equal(metrics.unrealizedUsd, -100);
   assert.equal(metrics.marketValueUsd, 900);
   assert.equal(metrics.allocationPct, 0.45);
   assert.equal(metrics.stopLossAmount, 50);
+  assert.equal(metrics.stopLossAmountUsd, 50);
+  assert.equal(metrics.stopDistance, -5);
+  assert.equal(metrics.stopDistancePct, -5 / 90);
   assert.equal(metrics.riskReward, -2);
   assert.equal(metrics.stopBreached, true);
 });
@@ -58,6 +62,7 @@ test("short position metrics use the inverse stop direction", () => {
   const metrics = buildPositionMetrics({ direction: "SHORT", averageCost: 100, quantity: 10, currency: "USD" }, 112, 110, 2_000, 32);
   assert.equal(metrics.unrealized, -120);
   assert.equal(metrics.stopLossAmount, 100);
+  assert.equal(metrics.stopDistance, -2);
   assert.equal(metrics.riskReward, -1.2);
   assert.equal(metrics.stopBreached, true);
 });
@@ -66,6 +71,24 @@ test("TWD position allocation converts market value to USD", () => {
   const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 90, quantity: 100, currency: "TWD" }, 96, 80, 10_000, 32);
   assert.equal(metrics.marketValueUsd, 300);
   assert.equal(metrics.allocationPct, 0.03);
+  assert.equal(metrics.unrealizedUsd, 18.75);
+  assert.equal(metrics.stopLossAmountUsd, 31.25);
+});
+
+test("position stop distance stays positive before a long stop is reached", () => {
+  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 100, quantity: 10, currency: "USD" }, 110, 95, 2_000, 32);
+  assert.equal(metrics.stopDistance, 15);
+  assert.equal(metrics.stopDistancePct, 15 / 110);
+  assert.equal(metrics.stopBreached, false);
+});
+
+test("position preserves native risk but withholds USD values when FX is missing", () => {
+  const metrics = buildPositionMetrics({ direction: "LONG", averageCost: 90, quantity: 100, currency: "TWD" }, 96, 80, 10_000, null);
+  assert.equal(metrics.unrealized, 600);
+  assert.equal(metrics.stopLossAmount, 1_000);
+  assert.equal(metrics.unrealizedUsd, null);
+  assert.equal(metrics.stopLossAmountUsd, null);
+  assert.equal(metrics.allocationPct, null);
 });
 
 test("weekly performance aligns portfolio and benchmark week-over-week returns", () => {
