@@ -19,6 +19,16 @@ test("cash activities can be classified after user confirmation", () => { const 
 test("TradingView CSV alias imports the supported export", () => { const data = importTradingViewCsv(csv, "tradingview.csv"); assert.equal(data.fills.length, 2); assert.equal(data.source.format, "tradingview-trader-x2-csv"); });
 test("TradingView CSV accepts UTF-8 BOM", () => assert.equal(importTradingViewCsv(`\uFEFF${csv}`).fills.length, 2));
 
+test("currency-tagged withdrawal imports without manual classification", () => {
+  const text = "Symbol,Side,Qty,Fill Price,Commission,Closing Time,Currency,Notes\n$CASH,Withdrawal,125,,,2026-08-26 23:59:00,TWD,期末對帳調整\n";
+  const activity = importTradingViewCsv(text).cashActivities[0];
+  assert.equal(activity.type, "WITHDRAWAL");
+  assert.equal(activity.currency, "TWD");
+  assert.equal(activity.accountId, "trader-x2-twd");
+  assert.equal(activity.requiresReview, false);
+  assert.equal(activity.note, "期末對帳調整");
+});
+
 test("fill-only import preserves the existing account cash ledger", () => {
   const imported = { fills: [{ id: "new" }], cashActivities: [], accounts: [{ id: "new-account" }] };
   const existing = { cashActivities: [{ id: "cash-later", type: "DEPOSIT", amount: 23, timestamp: "2026-08-02T00:00:00Z" }, { id: "cash-original", type: "DEPOSIT", amount: 123, timestamp: "2026-08-01T00:00:00Z" }], accounts: [{ id: "trader-x2-usd" }] };
