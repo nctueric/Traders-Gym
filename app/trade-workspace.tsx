@@ -9,7 +9,7 @@ import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buil
 import { analyzeCycle, findRapidRepurchases, weeklyCycleStats } from "@/lib/review-engine.mjs";
 import { DEFAULT_RECORD_ACCOUNT_ID, makeRecordAccountId, RECORD_ACCOUNT_KEY, selectStartupAccount } from "@/lib/trade-record-store.mjs";
 import { serializeInBackground } from "@/lib/background-serializer.mjs";
-import { createExperimentFromFinding } from "@/lib/coach-engine.mjs";
+import { createExperimentFromFinding, replayWindowDates } from "@/lib/coach-engine.mjs";
 import { ReplayBoard, TrainingWorkspace } from "./training-workspace";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
@@ -46,13 +46,11 @@ function usdOrDash(value: number | null) { return value == null ? "—" : money(
 function localDateTime(value?: string) { return value ? new Date(value).toLocaleString("zh-TW", { hour12: false }) : "尚未設定"; }
 function addCurrencyValues(...groups: Record<string, number>[]) { return groups.reduce<Record<string, number>>((result, group) => { Object.entries(group).forEach(([currency, value]) => { result[currency] = (result[currency] || 0) + value; }); return result; }, {}); }
 function currentMonthKey(now = new Date()) { const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit" }).formatToParts(now); return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`; }
-function addCalendarDays(date: string, days: number) { return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10); }
 function cycleHistoryTargets(cycles: any[]) {
   const grouped = new Map<string, { symbol: string; market: string; start: string; end: string }>();
   for (const cycle of cycles) {
     const key = `${cycle.market || ""}:${cycle.symbol}`;
-    const start = cycle.openAt.slice(0, 10);
-    const end = addCalendarDays(cycle.closeAt.slice(0, 10), 35);
+    const { start, end } = replayWindowDates(cycle);
     const current = grouped.get(key);
     grouped.set(key, { symbol: cycle.symbol, market: cycle.market || "", start: current && current.start < start ? current.start : start, end: current && current.end > end ? current.end : end });
   }

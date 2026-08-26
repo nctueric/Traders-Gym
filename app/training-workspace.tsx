@@ -6,6 +6,7 @@ import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, detectBeh
 
 function pct(value: number | null, digits = 1) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`; }
 function money(value: number | null, currency = "USD") { return value == null ? "—" : new Intl.NumberFormat("zh-TW", { style: "currency", currency, maximumFractionDigits: 2 }).format(value); }
+function volume(value: number | null) { return value == null ? "—" : new Intl.NumberFormat("zh-TW", { notation: "compact", maximumFractionDigits: 2 }).format(value); }
 function clamp(value: number, minimum = 0, maximum = 1) { return Math.min(maximum, Math.max(minimum, value)); }
 function dateInput(value: string) { return value ? new Date(value).toISOString().slice(0, 16) : ""; }
 
@@ -38,7 +39,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
     const draw = () => {
       const rect = canvas.getBoundingClientRect();
       const width = Math.max(420, rect.width);
-      const height = Math.max(330, rect.height);
+      const height = Math.max(440, rect.height);
       const scale = window.devicePixelRatio || 1;
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
@@ -46,11 +47,16 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       if (!context) return;
       context.scale(scale, scale);
       context.clearRect(0, 0, width, height);
-      const padding = { top: 24, right: 64, bottom: 34, left: 16 };
+      const padding = { top: 24, right: 64, bottom: 28, left: 16 };
       const chartWidth = width - padding.left - padding.right;
-      const chartHeight = height - padding.top - padding.bottom;
-      const planPrices = model.events.filter((event: any) => ["PLAN_STOP", "PLAN_TARGET"].includes(event.type) && event.price > 0).map((event: any) => Number(event.price));
-      const prices = visibleCandles.flatMap((candle: any) => [candle.low, candle.high]).concat([model.averageEntry, ...planPrices]).filter((value: number) => Number.isFinite(value) && value > 0);
+      const volumeHeight = 84;
+      const chartGap = 22;
+      const chartHeight = height - padding.top - padding.bottom - volumeHeight - chartGap;
+      const volumeTop = padding.top + chartHeight + chartGap;
+      const visibleDate = visibleCandles.at(-1)?.date || model.windowStart;
+      const planPrices = model.events.filter((event: any) => !event.legacy && ["PLAN_STOP", "PLAN_TARGET"].includes(event.type) && event.price > 0 && event.date <= visibleDate).map((event: any) => Number(event.price));
+      const hasHolding = visibleCandles.some((candle: any) => candle.phase === "HOLDING");
+      const prices = visibleCandles.flatMap((candle: any) => [candle.low, candle.high]).concat(hasHolding ? [model.averageEntry, ...planPrices] : []).filter((value: number) => Number.isFinite(value) && value > 0);
       const minimum = Math.min(...prices);
       const maximum = Math.max(...prices);
       const spread = Math.max(maximum - minimum, maximum * 0.04, 1);
@@ -69,9 +75,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         context.fillStyle = "#66716e"; context.font = "10px Arial"; context.fillText(price.toFixed(2), width - padding.right + 8, y + 3);
       }
 
-      const holding = visibleCandles.filter((candle: any) => candle.phase === "HOLDING");
-      holding.forEach((candle: any) => {
-        const index = visibleCandles.indexOf(candle);
+      visibleCandles.forEach((candle: any, index: number) => {
         const x = xFor(index);
         const rising = candle.close >= candle.open;
         context.strokeStyle = rising ? "#176b50" : "#a8463b";
@@ -79,30 +83,48 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         context.beginPath(); context.moveTo(x, yFor(candle.high)); context.lineTo(x, yFor(candle.low)); context.stroke();
         const top = yFor(Math.max(candle.open, candle.close));
         const bodyHeight = Math.max(2, Math.abs(yFor(candle.open) - yFor(candle.close)));
-        context.fillRect(x - Math.max(2.5, step * 0.24), top, Math.max(5, step * 0.48), bodyHeight);
+        const bodyWidth = Math.max(2, Math.min(8, step * 0.56));
+        context.fillRect(x - bodyWidth / 2, top, bodyWidth, bodyHeight);
       });
 
-      const postExit = visibleCandles.filter((candle: any) => candle.phase === "POST_EXIT");
-      if (postExit.length) {
-        const firstPostIndex = visibleCandles.indexOf(postExit[0]);
-        const anchorIndex = Math.max(0, firstPostIndex - 1);
-        context.save(); context.strokeStyle = "#8a918e"; context.lineWidth = 2; context.setLineDash([5, 5]);
-        context.beginPath(); context.moveTo(xFor(anchorIndex), yFor(visibleCandles[anchorIndex].close));
-        postExit.forEach((candle: any) => context.lineTo(xFor(visibleCandles.indexOf(candle)), yFor(candle.close)));
-        context.stroke(); context.restore();
-      }
+      const volumes = visibleCandles.map((candle: any) => Number(candle.volume) || 0);
+      const volumeAverages = visibleCandles.map((candle: any) => Number(candle.averageVolume20) || 0);
+      const maximumVolume = Math.max(...volumes, ...volumeAverages, 1);
+      const volumeY = (value: number) => volumeTop + volumeHeight - value / maximumVolume * volumeHeight;
+      context.strokeStyle = "#e4e5dc";
+      context.beginPath(); context.moveTo(padding.left, volumeTop); context.lineTo(width - padding.right, volumeTop); context.stroke();
+      context.fillStyle = "#66716e"; context.font = "10px Arial"; context.fillText("成交量", padding.left, volumeTop - 6);
+      visibleCandles.forEach((candle: any, index: number) => {
+        if (candle.volume == null || candle.volume < 0) return;
+        const x = xFor(index);
+        const rising = candle.close >= candle.open;
+        const barWidth = Math.max(2, Math.min(8, step * 0.62));
+        context.fillStyle = rising ? "#78aa92aa" : "#d48b83aa";
+        context.fillRect(x - barWidth / 2, volumeY(candle.volume), barWidth, Math.max(1, volumeTop + volumeHeight - volumeY(candle.volume)));
+      });
+      context.save(); context.strokeStyle = "#d68b32"; context.lineWidth = 1.4; context.beginPath();
+      let averageStarted = false;
+      visibleCandles.forEach((candle: any, index: number) => {
+        if (!(candle.averageVolume20 > 0)) return;
+        const x = xFor(index); const y = volumeY(candle.averageVolume20);
+        if (!averageStarted) { context.moveTo(x, y); averageStarted = true; } else context.lineTo(x, y);
+      });
+      if (averageStarted) context.stroke(); context.restore();
 
-      const holdingEnd = Math.max(0, visibleCandles.findLastIndex((candle: any) => candle.phase === "HOLDING"));
-      drawDashedLine(context, xFor(0), yFor(model.averageEntry), xFor(holdingEnd), "#2f5f7c", `均價 ${model.averageEntry.toFixed(2)}`);
-      const planEvents = model.events.filter((event: any) => ["PLAN_STOP", "PLAN_TARGET"].includes(event.type) && event.price > 0);
+      const holdingStart = visibleCandles.findIndex((candle: any) => candle.phase === "HOLDING");
+      const holdingEnd = visibleCandles.findLastIndex((candle: any) => candle.phase === "HOLDING");
+      if (holdingStart >= 0 && holdingEnd >= holdingStart) {
+        drawDashedLine(context, xFor(holdingStart), yFor(model.averageEntry), xFor(holdingEnd), "#2f5f7c", `均價 ${model.averageEntry.toFixed(2)}`);
+      }
+      const planEvents = model.events.filter((event: any) => !event.legacy && ["PLAN_STOP", "PLAN_TARGET"].includes(event.type) && event.price > 0);
       planEvents.forEach((event: any, index: number) => {
-        const startIndex = event.date ? visibleCandles.findIndex((candle: any) => candle.date >= event.date) : 0;
+        const startIndex = visibleCandles.findIndex((candle: any) => candle.date >= event.date);
         if (startIndex < 0 || startIndex >= visibleCandles.length) return;
         const next = planEvents.slice(index + 1).find((candidate: any) => candidate.type === event.type && candidate.date);
         const nextIndex = next ? visibleCandles.findIndex((candle: any) => candle.date >= next.date) : -1;
-        const endIndex = nextIndex > startIndex ? Math.min(visibleCandles.length - 1, nextIndex) : Math.min(visibleCandles.length - 1, holdingEnd);
+        const endIndex = nextIndex > startIndex ? Math.min(visibleCandles.length - 1, nextIndex) : Math.min(visibleCandles.length - 1, Math.max(startIndex, holdingEnd));
         const color = event.type === "PLAN_STOP" ? "#b43f35" : "#3f8a4d";
-        drawDashedLine(context, xFor(startIndex), yFor(event.price), xFor(Math.max(startIndex, endIndex)), color, `${event.legacy ? "歷史" : event.label} ${event.price.toFixed(2)}`);
+        drawDashedLine(context, xFor(startIndex), yFor(event.price), xFor(Math.max(startIndex, endIndex)), color, `${event.label} ${event.price.toFixed(2)}`);
       });
 
       const markerEvents = model.events.filter((event: any) => event.date && event.price > 0 && event.date <= visibleCandles.at(-1)?.date && ["ENTRY", "ADD", "REDUCE", "EXIT", "MAE", "MFE"].includes(event.type));
@@ -115,11 +137,17 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         context.beginPath(); context.arc(x, y, selected ? 7 : 5, 0, Math.PI * 2);
         context.fillStyle = EVENT_COLOR[event.type] || "#17211f"; context.fill();
         context.strokeStyle = selected ? "#17211f" : "#fffef9"; context.lineWidth = selected ? 3 : 1.5; context.stroke();
+        if (["ENTRY", "ADD", "REDUCE", "EXIT"].includes(event.type)) {
+          context.fillStyle = EVENT_COLOR[event.type] || "#17211f";
+          context.font = "bold 9px Arial";
+          context.fillText(event.label, Math.min(width - padding.right - 24, x + 6), Math.max(12, y - 7));
+        }
       });
 
       context.fillStyle = "#66716e"; context.font = "10px Arial";
       const labelIndexes = [...new Set([0, Math.floor((visibleCandles.length - 1) / 2), visibleCandles.length - 1])];
       labelIndexes.forEach((index) => { const label = visibleCandles[index]?.date || ""; context.fillText(label.slice(5), Math.max(0, xFor(index) - 14), height - 10); });
+      context.save(); context.strokeStyle = "#17211f33"; context.setLineDash([3, 4]); context.beginPath(); context.moveTo(xFor(visibleCandles.length - 1), padding.top); context.lineTo(xFor(visibleCandles.length - 1), volumeTop + volumeHeight); context.stroke(); context.restore();
     };
     draw();
     const observer = new ResizeObserver(draw);
@@ -127,7 +155,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
     return () => observer.disconnect();
   }, [model, selectedEventId, visibleCandles]);
 
-  return <canvas ref={canvasRef} className="replay-canvas" role="img" aria-label={`${model.symbol} 日線交易決策重播；包含成交、計畫、MAE、MFE及出場後路徑`}>交易決策重播圖</canvas>;
+  return <canvas ref={canvasRef} className="replay-canvas" role="img" aria-label={`${model.symbol} 進場前三個月到出場後三個月的日線交易決策重播；包含成交量、成交、計畫、MAE及MFE`}>交易決策重播圖</canvas>;
 }
 
 export function ReplayBoard({ cycle, marketBars, planHistory, review, rapidPairs, decisionLinks, onAddPlanVersion }: { cycle: any; marketBars: any[]; planHistory: any[]; review: any; rapidPairs: any[]; decisionLinks: Record<string, any>; onAddPlanVersion: (version: any) => void }) {
@@ -137,6 +165,8 @@ export function ReplayBoard({ cycle, marketBars, planHistory, review, rapidPairs
   const [planForm, setPlanForm] = useState({ field: "stopLoss", value: "", effectiveAt: dateInput(cycle.openAt), reason: "" });
   const replayCursor = cursor == null ? Math.max(0, model.candles.length - 1) : Math.min(cursor, Math.max(0, model.candles.length - 1));
   const cursorDate = model.candles[replayCursor]?.date || model.closeDate;
+  const cursorCandle = model.candles[replayCursor] || null;
+  const cursorPhase = cursorCandle?.phase === "PRE_ENTRY" ? "進場前" : cursorCandle?.phase === "POST_EXIT" ? "出場後" : "持有期間";
   const selectedEvent = model.events.find((event: any) => event.id === selectedEventId) || null;
 
   function selectEvent(event: any) {
@@ -157,9 +187,9 @@ export function ReplayBoard({ cycle, marketBars, planHistory, review, rapidPairs
   }
 
   return <section className="replay-board">
-    <div className="replay-head"><div><p className="eyebrow">DECISION REPLAY</p><h3>交易決策重播</h3></div><div className="replay-legend"><span><i className="entry-dot"/>建倉／加碼</span><span><i className="exit-dot"/>減碼／出場</span><span><i className="stop-line"/>停損</span><span><i className="target-line"/>停利</span><span><i className="post-line"/>出場後</span></div></div>
+    <div className="replay-head"><div><p className="eyebrow">DECISION REPLAY</p><h3>交易決策重播</h3><small>進場前三個月 → 出場後三個月・完整日K價量</small></div><div className="replay-legend"><span><i className="entry-dot"/>建倉／加碼</span><span><i className="exit-dot"/>減碼／出場</span><span><i className="stop-line"/>停損</span><span><i className="target-line"/>停利</span><span><i className="volume-bar"/>成交量</span><span><i className="volume-average"/>20日均量</span></div></div>
     {model.sameDay && <div className="precision-warning"><b>同日交易・日線近似</b><span>只顯示當日OHLC，不推測盤中成交先後與MAE／MFE發生順序。</span></div>}
-    <div className="replay-layout"><div className="replay-chart">{!model.candles.length ? <div className="replay-empty"><b>缺少可重播的OHLC行情</b><span>圖表不補造價格；右側仍保留成交與計畫證據。</span></div> : <><ReplayCanvas model={model} cursor={replayCursor} selectedEventId={selectedEventId}/><label className="replay-slider"><span>重播至 {cursorDate}</span><input aria-label="交易重播日期" type="range" min="0" max={Math.max(0, model.candles.length - 1)} value={replayCursor} onChange={(event) => setCursor(Number(event.target.value))}/><small>{replayCursor + 1}/{model.candles.length} 個交易日・出場後 {model.postExitCount} 日</small></label></>} </div><aside className="replay-timeline"><div className="timeline-title"><b>事件時間軸</b><span>{model.events.length} 個可追溯事件</span></div><div className="timeline-events">{model.events.map((event: any) => <button key={event.id} type="button" className={`${selectedEventId === event.id ? "selected" : ""} ${event.date && event.date > cursorDate ? "future" : ""}`} onClick={() => selectEvent(event)}><i style={{ background: EVENT_COLOR[event.type] || "#765caa" }}/><span><b>{event.label}</b><small>{event.date || "時間不明"}・{event.detail}</small></span></button>)}</div>{selectedEvent && <div className="event-inspector"><span>目前選取</span><b>{selectedEvent.label}</b><p>{selectedEvent.detail}</p>{selectedEvent.price > 0 && <small>價格 {money(selectedEvent.price, cycle.currency)}</small>}{selectedEvent.quantity > 0 && <small>數量 {selectedEvent.quantity} 股・部位 {selectedEvent.beforeQuantity} → {selectedEvent.afterQuantity}</small>}{selectedEvent.note && <small>{selectedEvent.note}</small>}</div>}</aside></div>
+    <div className="replay-layout"><div className="replay-chart">{!model.candles.length ? <div className="replay-empty"><b>缺少可重播的OHLC行情</b><span>圖表不補造價格；右側仍保留成交與計畫證據。</span></div> : <><ReplayCanvas model={model} cursor={replayCursor} selectedEventId={selectedEventId}/>{cursorCandle && <div className="replay-market-strip"><div className="replay-market-day"><b>{cursorCandle.date}</b><span>{cursorPhase}</span></div><div><span>開盤</span><b>{cursorCandle.open.toFixed(2)}</b></div><div><span>最高</span><b>{cursorCandle.high.toFixed(2)}</b></div><div><span>最低</span><b>{cursorCandle.low.toFixed(2)}</b></div><div><span>收盤</span><b>{cursorCandle.close.toFixed(2)}</b></div><div><span>當日成交量</span><b>{volume(cursorCandle.volume)}</b></div><div><span>20日均量</span><b>{volume(cursorCandle.averageVolume20)}</b></div><div><span>量比</span><b className={cursorCandle.volumeRatio != null && cursorCandle.volumeRatio >= 1.5 ? "volume-hot" : ""}>{cursorCandle.volumeRatio == null ? "—" : `${cursorCandle.volumeRatio.toFixed(2)}x`}</b></div></div>}<label className="replay-slider"><span>重播至 {cursorDate}</span><input aria-label="交易重播日期" type="range" min="0" max={Math.max(0, model.candles.length - 1)} value={replayCursor} onChange={(event) => setCursor(Number(event.target.value))}/><small>{replayCursor + 1}/{model.candles.length}・進場前 {model.preEntryCount}／持有 {model.holdingCount}／出場後 {model.postExitCount} 個交易日</small></label></>} </div><aside className="replay-timeline"><div className="timeline-title"><b>事件時間軸</b><span>{model.events.length} 個可追溯事件</span></div><div className="timeline-events">{model.events.map((event: any) => <button key={event.id} type="button" className={`${selectedEventId === event.id ? "selected" : ""} ${event.date && event.date > cursorDate ? "future" : ""}`} onClick={() => selectEvent(event)}><i style={{ background: EVENT_COLOR[event.type] || "#765caa" }}/><span><b>{event.label}</b><small>{event.date || "時間不明"}・{event.detail}</small></span></button>)}</div>{selectedEvent && <div className="event-inspector"><span>目前選取</span><b>{selectedEvent.label}</b><p>{selectedEvent.detail}</p>{selectedEvent.price > 0 && <small>價格 {money(selectedEvent.price, cycle.currency)}</small>}{selectedEvent.quantity > 0 && <small>數量 {selectedEvent.quantity} 股・部位 {selectedEvent.beforeQuantity} → {selectedEvent.afterQuantity}</small>}{selectedEvent.note && <small>{selectedEvent.note}</small>}</div>}</aside></div>
     {model.legacyPlanCount > 0 && <div className="legacy-plan-note">有 {model.legacyPlanCount} 項舊計畫只有最終值、沒有生效時間；已顯示為「歷史值」，不加入動畫時序。</div>}
     <form className="plan-version-form" onSubmit={addVersion}><div><b>新增計畫版本</b><small>建立後只追加，不覆蓋舊版本；事後補登會保留建立時間。</small></div><label>類型<select value={planForm.field} onChange={(event) => setPlanForm({ ...planForm, field: event.target.value })}><option value="stopLoss">停損</option><option value="takeProfit">停利</option><option value="invalidation">失效條件</option></select></label><label>{planForm.field === "invalidation" ? "條件" : "價格"}<input required type={planForm.field === "invalidation" ? "text" : "number"} min={planForm.field === "invalidation" ? undefined : "0"} step="any" value={planForm.value} onChange={(event) => setPlanForm({ ...planForm, value: event.target.value })}/></label><label>生效時間<input required type="datetime-local" value={planForm.effectiveAt} onChange={(event) => setPlanForm({ ...planForm, effectiveAt: event.target.value })}/></label><label>理由<input value={planForm.reason} placeholder="支撐、型態或規則依據" onChange={(event) => setPlanForm({ ...planForm, reason: event.target.value })}/></label><button className="primary" type="submit">加入時間線</button></form>
   </section>;

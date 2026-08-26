@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment } from "../lib/coach-engine.mjs";
+import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, replayWindowDates } from "../lib/coach-engine.mjs";
 
 const cycle = {
   id: "cycle-long",
@@ -45,6 +45,28 @@ test("cycle replay unifies candles, fill path, plans, excursions, and post-exit 
   assert.equal(replay.events.find((event) => event.type === "MAE").date, "2026-08-04");
   assert.equal(replay.events.find((event) => event.type === "MFE").date, "2026-08-05");
   assert.equal(replay.events.find((event) => event.type === "RAPID_REPURCHASE").date, "2026-08-10");
+});
+
+test("replay window spans three calendar months before entry and after exit with daily volume context", () => {
+  assert.deepEqual(replayWindowDates({ openAt: "2026-01-31T14:30:00Z", closeAt: "2026-02-28T14:30:00Z" }), { open: "2026-01-31", close: "2026-02-28", start: "2025-10-31", end: "2026-05-28" });
+  const priorBars = Array.from({ length: 20 }, (_, index) => ({ symbol: "AAA", date: new Date(Date.UTC(2026, 4, 3 + index)).toISOString().slice(0, 10), open: 99, high: 101, low: 98, close: 100, volume: 100 + index }));
+  const windowBars = [
+    { symbol: "AAA", date: "2026-05-02", open: 99, high: 101, low: 98, close: 100, volume: 90 },
+    ...priorBars,
+    { symbol: "AAA", date: "2026-08-03", open: 100, high: 105, low: 94, close: 101, volume: 240 },
+    { symbol: "AAA", date: "2026-08-06", open: 101, high: 104, low: 97, close: 102, volume: 180 },
+    { symbol: "AAA", date: "2026-11-06", open: 103, high: 106, low: 101, close: 105, volume: 160 },
+    { symbol: "AAA", date: "2026-11-07", open: 105, high: 106, low: 102, close: 103, volume: 170 },
+  ];
+  const replay = buildCycleReplay(cycle, windowBars);
+  assert.equal(replay.windowStart, "2026-05-03");
+  assert.equal(replay.windowEnd, "2026-11-06");
+  assert.equal(replay.candles.at(0).date, "2026-05-03");
+  assert.equal(replay.candles.at(-1).date, "2026-11-06");
+  assert.equal(replay.candles.find((bar) => bar.date === "2026-08-03").phase, "HOLDING");
+  assert.equal(replay.candles.find((bar) => bar.date === "2026-11-06").phase, "POST_EXIT");
+  assert.ok(replay.candles.find((bar) => bar.date === "2026-08-03").averageVolume20 > 0);
+  assert.ok(replay.candles.find((bar) => bar.date === "2026-08-03").volumeRatio > 1);
 });
 
 test("legacy stops remain visible without invented effective time", () => {
