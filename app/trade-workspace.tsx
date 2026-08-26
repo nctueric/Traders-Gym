@@ -236,7 +236,10 @@ export default function TradeWorkspace() {
         const payload = await response.json();
         if (!active) return;
         startTransition(() => {
-          setQuotes(Object.fromEntries(payload.quotes.map((quote: Quote) => [quote.symbol, quote])));
+          setQuotes((current) => ({
+            ...Object.fromEntries(Object.entries(current).filter(([, quote]) => !isQuoteStale(quote.updatedAt, Date.now()))),
+            ...Object.fromEntries(payload.quotes.map((quote: Quote) => [quote.symbol, quote])),
+          }));
           setLastQuoteAt(Date.now());
           setQuoteState(payload.errors?.length ? `${payload.errors.length} 個報價更新失敗` : "背景行情已更新");
         });
