@@ -15,6 +15,17 @@ test("weekly equity marks open holdings to the last weekly close", () => {
   assert.equal(series[1].changeUsd, 30);
 });
 
+test("weekly equity ignores replay candles before the account has any activity", () => {
+  const data = {
+    cashActivities: [{ id: "cash", type: "DEPOSIT", amount: 1000, currency: "USD", timestamp: "2026-08-04T00:00:00Z" }],
+    fills: [{ id: "buy", accountId: "a", symbol: "AAA", currency: "USD", side: "BUY", quantity: 10, price: 10, fee: 0, timestamp: "2026-08-04T09:00:00Z" }],
+    marketBars: [{ symbol: "AAA", date: "2026-05-01", close: 8 }, { symbol: "AAA", date: "2026-08-07", close: 12 }],
+  };
+  const series = buildWeeklyEquitySeries(data, 32);
+  assert.deepEqual(series.map((point) => point.weekStart), ["2026-08-03"]);
+  assert.equal(series[0].totalUsd, 1020);
+});
+
 test("weekly equity converts TWD assets with USDTWD", () => {
   const data = { cashActivities: [{ id: "cash", type: "DEPOSIT", amount: 3200, currency: "TWD", timestamp: "2026-07-01T00:00:00Z" }], fills: [], marketBars: [] };
   assert.equal(buildWeeklyEquitySeries(data, 32)[0].totalUsd, 100);
