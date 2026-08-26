@@ -4,7 +4,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { runSelfTests, STORAGE_KEY, summarize } from "@/lib/trade-engine.mjs";
 import { isQuoteStale, mergeMarketBars, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
-import { classifyCashActivities, importTradingViewCsv } from "@/lib/trader-x2-importer.mjs";
+import { classifyCashActivities, importTradingViewCsv, preserveExistingCashOnFillImport } from "@/lib/trader-x2-importer.mjs";
 import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, positionPortfolioImpactPct } from "@/lib/portfolio-engine.mjs";
 import { analyzeCycle, findRapidRepurchases, weeklyCycleStats } from "@/lib/review-engine.mjs";
 import { DEFAULT_RECORD_ACCOUNT_ID, makeRecordAccountId, RECORD_ACCOUNT_KEY, selectStartupAccount } from "@/lib/trade-record-store.mjs";
@@ -371,9 +371,12 @@ export default function TradeWorkspace() {
       const account = imported.accounts.find((item) => item.currency === cashCurrency) || imported.accounts[0];
       imported = classifyCashActivities(imported, { currency: cashCurrency, accountId: account.id });
     }
+    if (pendingImport.kind === "TradingView CSV" && !(imported.cashActivities || []).length) {
+      imported = preserveExistingCashOnFillImport(imported, data);
+    }
     setBenchmarkInput(imported.settings?.benchmarkSymbol || "SPY");
     setData(imported);
-    setMessage(`已匯入 ${imported.fills.length} 筆成交與 ${(imported.cashActivities || []).length} 筆資金活動。`);
+    setMessage(`已匯入 ${imported.fills.length} 筆成交；現金沿用目前 Trader X2 的 ${(imported.cashActivities || []).length} 筆資金活動。`);
     setPendingImport(null);
   }
 

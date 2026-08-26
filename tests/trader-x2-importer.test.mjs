@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyCashActivities, importTraderX2Csv, importTradingViewCsv } from "../lib/trader-x2-importer.mjs";
+import { classifyCashActivities, importTraderX2Csv, importTradingViewCsv, preserveExistingCashOnFillImport } from "../lib/trader-x2-importer.mjs";
 
 const csv = `Symbol,Side,Qty,Fill Price,Commission,Closing Time
 NASDAQ:AMZN,Buy,80,264.63,0,2026-08-19 16:38:02
@@ -12,7 +12,17 @@ test("Trader X2 side and numbers are typed", () => { const fill = importTraderX2
 test("Taiwan trades use TWD account", () => { const fill = importTraderX2Csv(csv).fills[1]; assert.equal(fill.currency, "TWD"); assert.equal(fill.accountId, "trader-x2-twd"); });
 test("source timestamps remain UTC", () => assert.equal(importTraderX2Csv(csv).fills[0].timestamp, "2026-08-19T16:38:02Z"));
 test("cash deposits are preserved outside fills", () => { const data = importTraderX2Csv(csv); assert.equal(data.fills.length, 2); assert.equal(data.cashActivities[0].amount, 650); assert.equal(data.cashActivities[0].requiresReview, true); });
+
+test("earliest of multiple cash rows becomes opening balance", () => { const data = importTraderX2Csv(`${csv.trim()}\n$CASH,Deposit,1000,,,2026-07-01 00:00:00\n`); assert.equal(data.cashActivities.find((item) => item.amount === 1000).type, "OPENING_BALANCE"); });
 test("missing required columns fail closed", () => assert.throws(() => importTraderX2Csv("Symbol,Qty\nAAPL,1"), /缺少必要欄位/));
 test("cash activities can be classified after user confirmation", () => { const data = classifyCashActivities(importTraderX2Csv(csv), { currency: "USD", accountId: "trader-x2-usd" }); assert.equal(data.cashActivities[0].currency, "USD"); assert.equal(data.cashActivities[0].requiresReview, false); });
 test("TradingView CSV alias imports the supported export", () => { const data = importTradingViewCsv(csv, "tradingview.csv"); assert.equal(data.fills.length, 2); assert.equal(data.source.format, "tradingview-trader-x2-csv"); });
 test("TradingView CSV accepts UTF-8 BOM", () => assert.equal(importTradingViewCsv(`\uFEFF${csv}`).fills.length, 2));
+
+test("fill-only import preserves the existing account cash ledger", () => {
+  const imported = { fills: [{ id: "new" }], cashActivities: [], accounts: [{ id: "new-account" }] };
+  const existing = { cashActivities: [{ id: "cash-original", amount: 123 }], accounts: [{ id: "trader-x2-usd" }] };
+  const result = preserveExistingCashOnFillImport(imported, existing);
+  assert.equal(result.cashActivities[0].id, "cash-original");
+  assert.equal(result.accounts[0].id, "trader-x2-usd");
+});

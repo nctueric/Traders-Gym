@@ -2,6 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, positionPortfolioImpactPct } from "../lib/portfolio-engine.mjs";
 
+test("opening balance prevents earlier closed trades from changing current equity", () => {
+  const base = { cashActivities: [{ id: "opening", type: "OPENING_BALANCE", amount: 1000, currency: "USD", timestamp: "2026-08-01T00:00:00Z" }], marketBars: [] };
+  const historical = [
+    { id: "old-buy", accountId: "a", symbol: "OLD", currency: "USD", side: "BUY", quantity: 10, price: 5, fee: 0, timestamp: "2026-07-01T00:00:00Z" },
+    { id: "old-sell", accountId: "a", symbol: "OLD", currency: "USD", side: "SELL", quantity: 10, price: 8, fee: 0, timestamp: "2026-07-02T00:00:00Z" },
+  ];
+  assert.equal(buildCurrentEquity({ ...base, fills: historical }, {}, 32).totalUsd, 1000);
+});
+
+test("current equity fallback price uses latest fill regardless of CSV row order", () => {
+  const data = { cashActivities: [], marketBars: [], fills: [
+    { id: "new", accountId: "a", symbol: "AAA", currency: "USD", side: "BUY", quantity: 1, price: 12, fee: 0, timestamp: "2026-08-02T00:00:00Z" },
+    { id: "old", accountId: "a", symbol: "AAA", currency: "USD", side: "BUY", quantity: 1, price: 10, fee: 0, timestamp: "2026-08-01T00:00:00Z" },
+  ] };
+  assert.equal(buildCurrentEquity(data, {}, 32).assetByCurrency.USD, 2);
+});
+
 test("weekly equity marks open holdings to the last weekly close", () => {
   const data = {
     cashActivities: [{ id: "cash", type: "DEPOSIT", amount: 1000, currency: "USD", timestamp: "2026-07-01T00:00:00Z" }],
