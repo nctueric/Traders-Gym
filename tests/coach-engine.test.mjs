@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, replayWindowDates } from "../lib/coach-engine.mjs";
+import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, buildTradeQualityAnalysis, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, replayWindowDates } from "../lib/coach-engine.mjs";
 
 const cycle = {
   id: "cycle-long",
@@ -94,6 +94,35 @@ test("behavior engine creates traceable deterministic findings and visual datase
   assert.equal(dashboard.maeReturn[0].cycleId, cycle.id);
   assert.equal(dashboard.funnel.at(-1).count, 1);
   assert.ok(dashboard.heatmap.length > 0);
+});
+
+test("trade quality analysis answers entry and exit quality with traceable price evidence", () => {
+  const result = buildTradeQualityAnalysis([cycle], [
+    ...bars,
+    { symbol: "AAA", date: "2026-08-10", open: 106, high: 108, low: 104, close: 107 },
+    { symbol: "AAA", date: "2026-08-11", open: 107, high: 109, low: 105, close: 108 },
+    { symbol: "AAA", date: "2026-08-12", open: 108, high: 110, low: 106, close: 109 },
+    { symbol: "AAA", date: "2026-08-13", open: 109, high: 111, low: 107, close: 110 },
+  ], { [cycle.id]: { entryReview: "追價，應等回測", exitReview: "未依停利減碼" } });
+  const trade = result.trades[0];
+  assert.equal(trade.holdingLow, 92);
+  assert.equal(trade.holdingHigh, 120);
+  assert.ok(Math.abs(trade.entryScore - 20 / 28) < 1e-12);
+  assert.ok(Math.abs(trade.exitScore - 10 / 28) < 1e-12);
+  assert.ok(Math.abs(trade.entryFollowThrough3 - 0.02) < 1e-12);
+  assert.ok(trade.postExit5 > 0.07);
+  assert.equal(trade.entryReviewed, true);
+  assert.equal(trade.exitReviewed, true);
+  assert.equal(result.summary.total, 1);
+  assert.equal(result.weakestEntries[0].cycleId, cycle.id);
+  assert.equal(result.weakestExits[0].cycleId, cycle.id);
+});
+
+test("short quality scores reward selling high and covering low", () => {
+  const short = { ...cycle, id: "quality-short", direction: "SHORT", averageEntry: 118, averageExit: 94 };
+  const result = buildTradeQualityAnalysis([short], bars);
+  assert.ok(result.trades[0].entryScore > 0.9);
+  assert.ok(result.trades[0].exitScore > 0.9);
 });
 
 test("coach caps findings at three and labels small samples as observation", () => {
