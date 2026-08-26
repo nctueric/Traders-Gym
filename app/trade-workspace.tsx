@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { runSelfTests, STORAGE_KEY, summarize } from "@/lib/trade-engine.mjs";
 import { isQuoteStale, mergeMarketBars, pnlToUsd, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
 import { classifyCashActivities, importTradingViewCsv } from "@/lib/trader-x2-importer.mjs";
 import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, positionPortfolioImpactPct } from "@/lib/portfolio-engine.mjs";
 import { analyzeCycle, findRapidRepurchases, weeklyCycleStats } from "@/lib/review-engine.mjs";
 import { DEFAULT_RECORD_ACCOUNT_ID, makeRecordAccountId, RECORD_ACCOUNT_KEY, selectStartupAccount } from "@/lib/trade-record-store.mjs";
+import { serializeInBackground } from "@/lib/background-serializer.mjs";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string };
@@ -78,6 +79,7 @@ export default function TradeWorkspace() {
   const recordVersionRef = useRef<number | null>(null);
   const lastSavedJsonRef = useRef("");
   const [form, setForm] = useState<Fill>({ id: "", accountId: "main", symbol: "", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 1, price: 0, fee: 0, timestamp: new Date().toISOString().slice(0, 16), note: "" });
+  const activeRecordAccountName = recordAccounts.find((account) => account.id === activeRecordAccountId)?.name || data.profile.name || "主要交易帳號";
 
   useEffect(() => {
     let active = true;
@@ -133,80 +135,96 @@ export default function TradeWorkspace() {
 
   useEffect(() => {
     if (!storageReady) return;
-    const serialized = JSON.stringify(data);
-    localStorage.setItem(STORAGE_KEY, serialized);
-    localStorage.setItem(`${STORAGE_KEY}.${activeRecordAccountId}`, serialized);
-    if (!cloudReady || serialized === lastSavedJsonRef.current) return;
-    setSaveState("有變更，準備自動儲存…");
+    let cancelled = false;
     const timer = window.setTimeout(async () => {
-      setSaveState("正在自動儲存…");
-      const accountName = recordAccounts.find((account) => account.id === activeRecordAccountId)?.name || data.profile.name || "主要交易帳號";
       try {
-        const response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName, dataset: data, baseVersion: recordVersionRef.current }) });
+        const serialized = await serializeInBackground(data);
+        if (cancelled) return;
+        localStorage.setItem(STORAGE_KEY, serialized);
+        localStorage.setItem(`${STORAGE_KEY}.${activeRecordAccountId}`, serialized);
+        if (!cloudReady || serialized === lastSavedJsonRef.current) return;
+        startTransition(() => setSaveState("正在背景自動儲存…"));
+        const response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName: activeRecordAccountName, dataset: data, baseVersion: recordVersionRef.current }) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        if (cancelled) return;
         recordVersionRef.current = payload.account.version;
         lastSavedJsonRef.current = serialized;
-        setRecordAccounts((current) => [payload.account, ...current.filter((account) => account.id !== payload.account.id)]);
-        setSaveState(`已自動儲存・${new Date(payload.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`);
+        startTransition(() => {
+          setRecordAccounts((current) => [payload.account, ...current.filter((account) => account.id !== payload.account.id)]);
+          setSaveState(`背景儲存完成・${new Date(payload.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`);
+        });
       } catch (error) {
-        setSaveState(`雲端儲存失敗，本機備份仍安全：${error instanceof Error ? error.message : "未知錯誤"}`);
+        if (!cancelled) startTransition(() => setSaveState(`雲端儲存失敗，本機備份仍安全：${error instanceof Error ? error.message : "未知錯誤"}`));
       }
     }, 900);
-    return () => window.clearTimeout(timer);
-  }, [activeRecordAccountId, cloudReady, data, recordAccounts, storageReady]);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [activeRecordAccountId, activeRecordAccountName, cloudReady, data, storageReady]);
   const report = useMemo(() => summarize(data), [data]);
   const tests = useMemo(() => runSelfTests(), []);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [quoteState, setQuoteState] = useState("準備更新");
   const [lastQuoteAt, setLastQuoteAt] = useState<number | null>(null);
-  const [clock, setClock] = useState(() => Date.now());
   const quoteTargets = useMemo(() => [...new Set([...report.positions.map((position: any) => toProviderSymbol(position.symbol, position.market)), USDTWD_SYMBOL])], [report.positions]);
   const quoteKey = quoteTargets.join(",");
   const cycleHistoryKey = JSON.stringify(cycleHistoryTargets(report.cycles));
 
-  useEffect(() => { const ticker = window.setInterval(() => setClock(Date.now()), 1000); return () => window.clearInterval(ticker); }, []);
   useEffect(() => {
     let active = true;
+    let inFlight = false;
+    let controller: AbortController | null = null;
     const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      controller = new AbortController();
       try {
-        const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(quoteKey)}`, { cache: "no-store" });
+        const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(quoteKey)}`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
         if (!active) return;
-        setQuotes(Object.fromEntries(payload.quotes.map((quote: Quote) => [quote.symbol, quote])));
-        setLastQuoteAt(Date.now());
-        setQuoteState(payload.errors?.length ? `${payload.errors.length} 個報價更新失敗` : "即時報價已更新");
-      } catch (error) { if (active) setQuoteState(`更新失敗：${error instanceof Error ? error.message : "未知錯誤"}`); }
+        startTransition(() => {
+          setQuotes(Object.fromEntries(payload.quotes.map((quote: Quote) => [quote.symbol, quote])));
+          setLastQuoteAt(Date.now());
+          setQuoteState(payload.errors?.length ? `${payload.errors.length} 個報價更新失敗` : "背景行情已更新");
+        });
+      } catch (error) {
+        if (active && !(error instanceof DOMException && error.name === "AbortError")) startTransition(() => setQuoteState(`更新失敗：${error instanceof Error ? error.message : "未知錯誤"}`));
+      } finally { inFlight = false; }
     };
     refresh();
     const timer = window.setInterval(refresh, QUOTE_REFRESH_MS);
-    return () => { active = false; window.clearInterval(timer); };
+    return () => { active = false; controller?.abort(); window.clearInterval(timer); };
   }, [quoteKey]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const load = async () => {
       setBenchmarkState(`正在讀取 ${benchmarkSymbol}…`);
       try {
-        const response = await fetch(`/api/history?symbol=${encodeURIComponent(benchmarkSymbol)}`, { cache: "no-store" });
+        const response = await fetch(`/api/history?symbol=${encodeURIComponent(benchmarkSymbol)}`, { cache: "no-store", signal: controller.signal });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
         if (!active) return;
-        setBenchmarkBars(payload.bars || []);
-        setBenchmarkState(`${benchmarkSymbol} 已更新・${payload.bars?.length || 0} 個交易日`);
+        startTransition(() => {
+          setBenchmarkBars(payload.bars || []);
+          setBenchmarkState(`${benchmarkSymbol} 背景更新完成・${payload.bars?.length || 0} 個交易日`);
+        });
       } catch (error) {
         if (!active) return;
-        setBenchmarkBars([]);
-        setBenchmarkState(`ETF 行情失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+        if (!(error instanceof DOMException && error.name === "AbortError")) startTransition(() => {
+          setBenchmarkBars([]);
+          setBenchmarkState(`ETF 行情失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+        });
       }
     };
     load();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [benchmarkSymbol]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const targets = JSON.parse(cycleHistoryKey) as { symbol: string; market: string; start: string; end: string }[];
     const load = async () => {
       if (!targets.length) { setCycleHistoryState("尚無交易閉環"); return; }
@@ -215,7 +233,7 @@ export default function TradeWorkspace() {
         const providerSymbol = toProviderSymbol(target.symbol, target.market);
         const params = new URLSearchParams({ symbol: providerSymbol, datasetSymbol: target.symbol, start: target.start, end: target.end, mode: "ohlc" });
         try {
-          const response = await fetch(`/api/history?${params}`, { cache: "no-store" });
+          const response = await fetch(`/api/history?${params}`, { cache: "no-store", signal: controller.signal });
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
           return { bars: payload.bars as HistoryBar[], error: null };
@@ -226,16 +244,17 @@ export default function TradeWorkspace() {
       if (!active) return;
       const bars = rows.flatMap((row) => row.bars);
       const errors = rows.flatMap((row) => row.error ? [row.error] : []);
-      if (bars.length) setData((current) => ({ ...current, marketBars: mergeMarketBars(current.marketBars || [], bars) }));
-      setCycleHistoryState(errors.length ? `已更新 ${targets.length - errors.length}/${targets.length} 個標的；${errors.length} 個失敗` : `已更新 ${targets.length} 個標的・${bars.length} 筆持倉及出場後日線`);
+      startTransition(() => {
+        if (bars.length) setData((current) => ({ ...current, marketBars: mergeMarketBars(current.marketBars || [], bars) }));
+        setCycleHistoryState(errors.length ? `背景已更新 ${targets.length - errors.length}/${targets.length} 個標的；${errors.length} 個失敗` : `背景已更新 ${targets.length} 個標的・${bars.length} 筆持倉及出場後日線`);
+      });
     };
     load();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [cycleHistoryKey, cycleHistoryRefresh]);
 
-  const nextRefresh = lastQuoteAt == null ? 0 : Math.max(0, Math.ceil((QUOTE_REFRESH_MS - (clock - lastQuoteAt)) / 1000));
   const fxQuote = quotes[USDTWD_SYMBOL];
-  const fxStale = !fxQuote || isQuoteStale(fxQuote.updatedAt, clock);
+  const fxStale = !fxQuote || isQuoteStale(fxQuote.updatedAt, Date.now());
   const fxRate = !fxStale && fxQuote.price > 0 ? fxQuote.price : null;
   const unrealizedByCurrency = useMemo(() => report.positions.reduce<Record<string, number>>((result: Record<string, number>, position: any) => {
     const quote = quotes[toProviderSymbol(position.symbol, position.market)];
@@ -248,7 +267,7 @@ export default function TradeWorkspace() {
   const realizedUsd = pnlToUsd(report.realizedPnlByCurrency, fxRate);
   const totalUsd = pnlToUsd(totalPnlByCurrency, fxRate);
   const weeklyEquity = useMemo(() => buildWeeklyEquitySeries(data, fxQuote?.price > 0 ? fxQuote.price : null), [data, fxQuote]);
-  const currentEquity = useMemo(() => buildCurrentEquity(data, quotes, fxRate, new Date(clock)), [data, quotes, fxRate, clock]);
+  const currentEquity = useMemo(() => buildCurrentEquity(data, quotes, fxRate, new Date(lastQuoteAt || Date.now())), [data, quotes, fxRate, lastQuoteAt]);
   const weeklyPerformance = useMemo(() => buildWeeklyPerformance(weeklyEquity, benchmarkBars), [weeklyEquity, benchmarkBars]);
   const monthKey = currentMonthKey();
   const monthScore = useMemo(() => monthlyCycleScore(report.cycles, monthKey, fxRate), [report.cycles, monthKey, fxRate]);
@@ -398,7 +417,7 @@ export default function TradeWorkspace() {
       </section>
       <div className="notice"><span>●</span><div><b>{report.issues.some((issue: any) => issue.level === "error") ? "資料需要處理" : "資料計算完成"}</b><p>{message}</p></div></div>
       {tab === "overview" && <>
-        <section className="quote-bar"><div><span className="live-dot"/> <b>即時持倉報價</b><small>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate"><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "匯率已過期" : "目前匯率" : "正在取得匯率"}</small></div><div><b>{lastQuoteAt ? new Date(lastQuoteAt).toLocaleTimeString("zh-TW") : "—"}</b><small>{lastQuoteAt ? `${nextRefresh} 秒後更新` : "正在取得報價"}</small></div></section>
+        <section className="quote-bar"><div><span className="live-dot"/> <b>即時持倉報價</b><small>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate"><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "匯率已過期" : "目前匯率" : "正在取得匯率"}</small></div><QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/></section>
         <section className="metrics">{metrics.map(([label, value, hint]) => <article key={String(label)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></article>)}</section>
         <MonthScorecard score={monthScore} monthKey={monthKey}/>
         <PositionOverview positions={report.positions} quotes={quotes} plans={data.positionPlans || {}} totalAssetUsd={currentEquity.totalUsd} fxRate={fxRate} onOpen={() => setTab("positions")}/>
@@ -521,4 +540,13 @@ function CycleDetail({ cycle, marketBars, review, rapidPairs, cycles, decisionLi
 }
 
 function CycleTable({ cycles, title, historyState, onRefresh, onSelect }: { cycles: any[]; title: string; historyState?: string; onRefresh?: () => void; onSelect?: (cycle: any) => void }) { return <section className="panel"><div className="panel-head"><div><p className="eyebrow">CLOSED CYCLES</p><h2>{title}</h2></div>{onRefresh ? <div className="cycle-actions"><span className="muted">{historyState}</span><button className="ghost" type="button" onClick={onRefresh}>更新閉環行情</button></div> : <span className="muted">FIFO・多空雙向・日曆日</span>}</div>{cycles.length ? <div className="table-wrap"><table><thead><tr><th>標的</th><th>方向</th><th>期間</th><th>進場價</th><th>出場價</th><th>持倉</th><th>損益</th><th>報酬</th><th>MAE</th><th>MFE</th><th>行情</th><th></th></tr></thead><tbody>{cycles.map((cycle) => <tr key={cycle.id}><td><b>{cycle.symbol}</b></td><td><span className={`direction ${cycle.direction.toLowerCase()}`}>{cycle.direction === "SHORT" ? "空" : "多"}</span></td><td>{cycle.openAt.slice(0, 10)} → {cycle.closeAt.slice(0, 10)}</td><td>{money(cycle.averageEntry, cycle.currency)}</td><td>{money(cycle.averageExit, cycle.currency)}</td><td>{cycle.holdingDays} 天</td><td className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</td><td>{pct(cycle.returnPct)}</td><td>{pct(cycle.maePct)}</td><td>{pct(cycle.mfePct)}</td><td><span className={cycle.quality === "完整" ? "status ok" : "status warn"}>{cycle.quality}</span></td><td><button className="text-button" type="button" onClick={() => onSelect?.(cycle)}>詳情</button></td></tr>)}</tbody></table></div> : <Empty text="尚未形成完整交易閉環"/>}</section>; }
+function QuoteRefreshStatus({ lastQuoteAt }: { lastQuoteAt: number | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const nextRefresh = lastQuoteAt == null ? 0 : Math.max(0, Math.ceil((QUOTE_REFRESH_MS - (now - lastQuoteAt)) / 1000));
+  return <div><b>{lastQuoteAt ? new Date(lastQuoteAt).toLocaleTimeString("zh-TW") : "—"}</b><small>{lastQuoteAt ? `${nextRefresh} 秒後背景更新` : "正在背景取得報價"}</small></div>;
+}
 function Empty({ text }: { text: string }) { return <div className="empty"><span>○</span><p>{text}</p></div>; }
