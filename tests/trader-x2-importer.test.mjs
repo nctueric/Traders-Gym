@@ -21,8 +21,8 @@ test("TradingView CSV accepts UTF-8 BOM", () => assert.equal(importTradingViewCs
 
 test("fill-only import preserves the existing account cash ledger", () => {
   const imported = { fills: [{ id: "new" }], cashActivities: [], accounts: [{ id: "new-account" }] };
-  const existing = { cashActivities: [{ id: "cash-original", amount: 123 }], accounts: [{ id: "trader-x2-usd" }] };
+  const existing = { cashActivities: [{ id: "cash-later", type: "DEPOSIT", amount: 23, timestamp: "2026-08-02T00:00:00Z" }, { id: "cash-original", type: "DEPOSIT", amount: 123, timestamp: "2026-08-01T00:00:00Z" }], accounts: [{ id: "trader-x2-usd" }] };
   const result = preserveExistingCashOnFillImport(imported, existing);
-  assert.equal(result.cashActivities[0].id, "cash-original");
+  assert.equal(result.cashActivities.find((item) => item.id === "cash-original").type, "OPENING_BALANCE");
   assert.equal(result.accounts[0].id, "trader-x2-usd");
 });
