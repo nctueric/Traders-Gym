@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, buildTradeQualityAnalysis, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, replayWindowDates } from "../lib/coach-engine.mjs";
+import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, buildOpenPositionReplay, buildTradeQualityAnalysis, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, filterCyclesByPeriod, openPositionWindowDates, replayWindowDates } from "../lib/coach-engine.mjs";
 
 const cycle = {
   id: "cycle-long",
@@ -67,6 +67,27 @@ test("replay window spans three calendar months before entry and after exit with
   assert.equal(replay.candles.find((bar) => bar.date === "2026-11-06").phase, "POST_EXIT");
   assert.ok(replay.candles.find((bar) => bar.date === "2026-08-03").averageVolume20 > 0);
   assert.ok(replay.candles.find((bar) => bar.date === "2026-08-03").volumeRatio > 1);
+});
+
+test("open position replay keeps entry, current stop, and three-month pre-entry context", () => {
+  const position = { id: "cycle-open-1", accountId: "main", symbol: "AAA", market: "NASDAQ", currency: "USD", direction: "LONG", openAt: cycle.openAt, averageCost: 100, quantity: 10, fills: [cycle.fills[0]] };
+  assert.deepEqual(openPositionWindowDates(position, "2026-08-26T12:00:00Z"), { open: "2026-08-03", close: "2026-08-26", start: "2026-05-03", end: "2026-08-26" });
+  const replay = buildOpenPositionReplay(position, bars, [], { stopLoss: 94, takeProfit: 120, note: "跌破支撐", updatedAt: "2026-08-03T15:00:00Z" }, "2026-08-26T12:00:00Z");
+  assert.equal(replay.status, "OPEN");
+  assert.equal(replay.events.find((event) => event.type === "ENTRY").price, 100);
+  assert.equal(replay.events.find((event) => event.type === "PLAN_STOP").price, 94);
+  assert.equal(replay.events.find((event) => event.type === "PLAN_TARGET").price, 120);
+  assert.equal(replay.postExitCount, 0);
+});
+
+test("year-month interval and display count filter closed cycles deterministically", () => {
+  const cycles = [
+    { ...cycle, id: "june", closeAt: "2026-06-20T00:00:00Z" },
+    { ...cycle, id: "july", closeAt: "2026-07-20T00:00:00Z" },
+    { ...cycle, id: "august", closeAt: "2026-08-20T00:00:00Z" },
+  ];
+  assert.deepEqual(filterCyclesByPeriod(cycles, "2026-07", "2026-08").map((item) => item.id), ["august", "july"]);
+  assert.deepEqual(filterCyclesByPeriod(cycles, "", "", 2).map((item) => item.id), ["august", "july"]);
 });
 
 test("legacy stops remain visible without invented effective time", () => {

@@ -19,6 +19,13 @@ test("short sale followed by buy forms a short cycle", () => { const cycle = bui
 test("oversized reverse fill is rejected", () => assert.equal(buildCycles({ fills: [fills[0], { ...fills[2], quantity: 11 }], marketBars: [] }).issues[0].code, "POSITION_FLIP"));
 test("missing bars do not fabricate MAE or MFE", () => { const cycle = buildCycles({ fills, marketBars: [] }).cycles[0]; assert.equal(cycle.maePct, null); assert.equal(cycle.mfePct, null); });
 test("open position weighted average is deterministic", () => assert.equal(buildCycles({ fills: fills.slice(0,2), marketBars: [] }).positions[0].averageCost, 1550 / 15));
+test("open position preserves the future closed-cycle identity and fill evidence", () => {
+  const open = buildCycles({ fills: fills.slice(0, 2), marketBars: [] }).positions[0];
+  const closed = buildCycles({ fills, marketBars: bars }).cycles[0];
+  assert.equal(open.id, closed.id);
+  assert.equal(open.id, "cycle-b1");
+  assert.deepEqual(open.fills.map((fill) => fill.id), ["b1", "b2"]);
+});
 test("realized P&L is separated by currency", () => {
   const twd = fills.map((fill) => ({ ...fill, id: `${fill.id}-tw`, symbol: "2330", accountId: "tw", currency: "TWD" }));
   const result = summarize({ fills: [...fills, ...twd], marketBars: bars });
