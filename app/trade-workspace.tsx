@@ -57,6 +57,29 @@ function cycleHistoryTargets(cycles: any[]) {
   return [...grouped.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 function positionPlanKey(position: { accountId: string; symbol: string }) { return `${position.accountId}:${position.symbol}`; }
+function durableDatasetJson(dataset: Dataset) { return JSON.stringify({ ...dataset, marketBars: [] }); }
+function mergeBackgroundDataset(cloud: Dataset, local: Dataset): Dataset { return { ...cloud, marketBars: mergeMarketBars(cloud.marketBars || [], local.marketBars || []) }; }
+
+let historyFetchQueue: Promise<void> = Promise.resolve();
+function fetchHistoryInBackground(url: string, signal: AbortSignal) {
+  const run = async () => {
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(url, { signal });
+      const payload = await response.json();
+      if (response.ok) return payload;
+      const message = payload.error || `HTTP ${response.status}`;
+      if (attempt === 0 && (response.status === 429 || String(message).includes("429"))) {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        continue;
+      }
+      throw new Error(message);
+    }
+  };
+  const task = historyFetchQueue.then(run, run);
+  historyFetchQueue = task.then(() => undefined, () => undefined);
+  return task;
+}
 
 export default function TradeWorkspace() {
   const [data, setData] = useState<Dataset>(demoData);
@@ -147,8 +170,35 @@ export default function TradeWorkspace() {
         localStorage.setItem(`${STORAGE_KEY}.${activeRecordAccountId}`, serialized);
         if (!cloudReady || serialized === lastSavedJsonRef.current) return;
         startTransition(() => setSaveState("正在背景自動儲存…"));
-        const response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName: activeRecordAccountName, dataset: data, baseVersion: recordVersionRef.current }) });
-        const payload = await response.json();
+        let response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName: activeRecordAccountName, dataset: data, baseVersion: recordVersionRef.current }) });
+        let payload = await response.json();
+        if (response.status === 409) {
+          const latestResponse = await fetch(`/api/trade-records?accountId=${encodeURIComponent(activeRecordAccountId)}`, { cache: "no-store" });
+          const latestPayload = await latestResponse.json();
+          if (!latestResponse.ok) throw new Error(latestPayload.error || `HTTP ${latestResponse.status}`);
+          const baseline = lastSavedJsonRef.current ? JSON.parse(lastSavedJsonRef.current) as Dataset : null;
+          const localDurable = durableDatasetJson(data);
+          const cloudDurable = durableDatasetJson(latestPayload.dataset);
+          const baselineDurable = baseline ? durableDatasetJson(baseline) : "";
+          recordVersionRef.current = latestPayload.account.version;
+          if (localDurable === cloudDurable || localDurable === baselineDurable) {
+            const reconciled = mergeBackgroundDataset(latestPayload.dataset, data);
+            lastSavedJsonRef.current = JSON.stringify(latestPayload.dataset);
+            if (cancelled) return;
+            startTransition(() => {
+              setData(reconciled);
+              setRecordAccounts((current) => [latestPayload.account, ...current.filter((account) => account.id !== latestPayload.account.id)]);
+              setSaveState("已自動同步另一頁籤的最新紀錄");
+            });
+            return;
+          }
+          if (cloudDurable === baselineDurable) {
+            response = await fetch("/api/trade-records", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: activeRecordAccountId, accountName: activeRecordAccountName, dataset: data, baseVersion: latestPayload.account.version }) });
+            payload = await response.json();
+          } else {
+            throw new Error("另一頁籤與本頁都有交易修改；為避免覆寫，請重新載入後再編輯");
+          }
+        }
         if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
         if (cancelled) return;
         recordVersionRef.current = payload.account.version;
@@ -205,9 +255,7 @@ export default function TradeWorkspace() {
     const load = async () => {
       setBenchmarkState(`正在讀取 ${benchmarkSymbol}…`);
       try {
-        const response = await fetch(`/api/history?symbol=${encodeURIComponent(benchmarkSymbol)}`, { cache: "no-store", signal: controller.signal });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        const payload = await fetchHistoryInBackground(`/api/history?symbol=${encodeURIComponent(benchmarkSymbol)}`, controller.signal);
         if (!active) return;
         startTransition(() => {
           setBenchmarkBars(payload.bars || []);
@@ -232,18 +280,18 @@ export default function TradeWorkspace() {
     const load = async () => {
       if (!targets.length) { setCycleHistoryState("尚無交易閉環"); return; }
       setCycleHistoryState(`正在同步 ${targets.length} 個標的的 OHLC 日線…`);
-      const rows = await Promise.all(targets.map(async (target) => {
+      const rows = [] as { bars: HistoryBar[]; error: string | null }[];
+      for (const target of targets) {
         const providerSymbol = toProviderSymbol(target.symbol, target.market);
-        const params = new URLSearchParams({ symbol: providerSymbol, datasetSymbol: target.symbol, start: target.start, end: target.end, mode: "ohlc" });
+        const today = new Date().toISOString().slice(0, 10);
+        const params = new URLSearchParams({ symbol: providerSymbol, datasetSymbol: target.symbol, start: target.start, end: target.end < today ? target.end : today, mode: "ohlc" });
         try {
-          const response = await fetch(`/api/history?${params}`, { cache: "no-store", signal: controller.signal });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-          return { bars: payload.bars as HistoryBar[], error: null };
+          const payload = await fetchHistoryInBackground(`/api/history?${params}`, controller.signal);
+          rows.push({ bars: payload.bars as HistoryBar[], error: null });
         } catch (error) {
-          return { bars: [] as HistoryBar[], error: `${target.symbol}：${error instanceof Error ? error.message : "讀取失敗"}` };
+          rows.push({ bars: [] as HistoryBar[], error: `${target.symbol}：${error instanceof Error ? error.message : "讀取失敗"}` });
         }
-      }));
+      }
       if (!active) return;
       const bars = rows.flatMap((row) => row.bars);
       const errors = rows.flatMap((row) => row.error ? [row.error] : []);
