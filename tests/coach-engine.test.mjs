@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, buildOpenPositionReplay, buildTradeQualityAnalysis, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, filterCyclesByPeriod, openPositionWindowDates, replayWindowDates } from "../lib/coach-engine.mjs";
+import { buildBehaviorDashboard, buildCoachFindings, buildCycleReplay, buildMonthlyExpectancyTrend, buildOpenPositionReplay, buildProfitLossTradeStats, buildTradeQualityAnalysis, createExperimentFromFinding, cycleAnalysisPeriod, detectBehaviorEvents, evaluateExperiment, filterCyclesByPeriod, openPositionWindowDates, replayWindowDates } from "../lib/coach-engine.mjs";
 
 const cycle = {
   id: "cycle-long",
@@ -90,6 +90,47 @@ test("year-month interval and display count filter closed cycles deterministical
   assert.deepEqual(filterCyclesByPeriod(cycles, "", "", 2).map((item) => item.id), ["august", "july"]);
 });
 
+test("profit and loss stats support total, year, month, and week periods", () => {
+  const winners = [{ ...cycle, id: "usd-win", pnl: 100, returnPct: 0.1, entryNotional: 1000, closeAt: "2026-08-06T14:30:00Z" }, { ...cycle, id: "twd-win", currency: "TWD", pnl: 3200, returnPct: 0.2, entryNotional: 32000, closeAt: "2026-08-07T14:30:00Z" }];
+  const loser = { ...cycle, id: "usd-loss", pnl: -50, returnPct: -0.05, entryNotional: 500, closeAt: "2025-12-30T14:30:00Z" };
+  const total = buildProfitLossTradeStats([...winners, loser], "all", "", 32);
+  assert.equal(total.winners.count, 2);
+  assert.ok(Math.abs(total.winners.averageReturn - 0.15) < 1e-12);
+  assert.equal(total.winners.averagePnlUsd, 100);
+  assert.equal(total.winners.averageEntryNotionalUsd, 1000);
+  assert.equal(total.losers.averagePnlUsd, -50);
+  assert.ok(Math.abs(total.winRate - (2 / 3)) < 1e-12);
+  assert.ok(Math.abs(total.rewardRisk - 3) < 1e-12);
+  assert.ok(Math.abs(total.expectancyR - (5 / 3)) < 1e-12);
+  assert.equal(buildProfitLossTradeStats([...winners, loser], "year", "2026", 32).cycles.length, 2);
+  assert.equal(buildProfitLossTradeStats([...winners, loser], "month", "2026-08", 32).cycles.length, 2);
+  assert.equal(buildProfitLossTradeStats([...winners, loser], "week", "2026-08-03", 32).cycles.length, 2);
+  assert.equal(cycleAnalysisPeriod(winners[0], "week"), "2026-08-03");
+});
+
+test("monthly expectancy trend follows closed cycles and keeps metric units separate", () => {
+  const cycles = [
+    { ...cycle, id: "jan-win", pnl: 100, returnPct: 0.2, closeAt: "2026-01-10T00:00:00Z" },
+    { ...cycle, id: "jan-loss", pnl: -50, returnPct: -0.1, closeAt: "2026-01-20T00:00:00Z" },
+    { ...cycle, id: "feb-win", pnl: 80, returnPct: 0.1, closeAt: "2026-02-10T00:00:00Z" },
+  ];
+  const trend = buildMonthlyExpectancyTrend(cycles);
+  assert.deepEqual(trend.map((point) => point.month), ["2026-01", "2026-02"]);
+  assert.equal(trend[0].winRate, 0.5);
+  assert.equal(trend[0].rewardRisk, 2);
+  assert.equal(trend[0].expectancyR, 0.5);
+  assert.equal(trend[1].rewardRisk, null);
+  assert.equal(trend[1].expectancyR, null);
+});
+
+test("mixed currency trade stats fail closed without FX", () => {
+  const twd = { ...cycle, currency: "TWD", pnl: 3200, entryNotional: 32000 };
+  const stats = buildProfitLossTradeStats([twd], "all", "", null);
+  assert.equal(stats.winners.averagePnlUsd, null);
+  assert.equal(stats.winners.averageEntryNotionalUsd, null);
+  assert.equal(stats.winners.missingFx, true);
+});
+
 test("legacy stops remain visible without invented effective time", () => {
   const replay = buildCycleReplay(cycle, bars, [], { plannedStop: 95, invalidation: "跌破支撐" });
   const legacyStop = replay.events.find((event) => event.type === "PLAN_STOP");
@@ -124,7 +165,7 @@ test("trade quality analysis answers entry and exit quality with traceable price
     { symbol: "AAA", date: "2026-08-11", open: 107, high: 109, low: 105, close: 108 },
     { symbol: "AAA", date: "2026-08-12", open: 108, high: 110, low: 106, close: 109 },
     { symbol: "AAA", date: "2026-08-13", open: 109, high: 111, low: 107, close: 110 },
-  ], { [cycle.id]: { entryReview: "追價，應等回測", exitReview: "未依停利減碼" } });
+  ], { [cycle.id]: { entryReview: "追價，應等回測", exitReview: "未依停利減碼", entryQualityTag: "LATE", exitQualityTag: "EARLY", qualityRatedAt: "2026-08-14T00:00:00Z" } });
   const trade = result.trades[0];
   assert.equal(trade.holdingLow, 92);
   assert.equal(trade.holdingHigh, 120);
@@ -134,7 +175,12 @@ test("trade quality analysis answers entry and exit quality with traceable price
   assert.ok(trade.postExit5 > 0.07);
   assert.equal(trade.entryReviewed, true);
   assert.equal(trade.exitReviewed, true);
+  assert.equal(trade.entryQualityTag, "LATE");
+  assert.equal(trade.exitQualityTag, "EARLY");
+  assert.equal(trade.qualityRatedAt, "2026-08-14T00:00:00Z");
   assert.equal(result.summary.total, 1);
+  assert.equal(result.tagAnalysis.entry.ratedCount, 1);
+  assert.equal(result.tagAnalysis.fullyRatedCount, 1);
   assert.equal(result.weakestEntries[0].cycleId, cycle.id);
   assert.equal(result.weakestExits[0].cycleId, cycle.id);
 });
