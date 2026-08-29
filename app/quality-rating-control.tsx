@@ -15,5 +15,12 @@ export function QualityTagPicker({ cycle, kind, value, compact = false, onChange
   const group = kind === "entry" ? "ENTRY" : exitQualityGroup(cycle);
   const definitions = kind === "entry" ? ENTRY_QUALITY_TAGS : group === "PROFIT_EXIT" ? PROFIT_EXIT_QUALITY_TAGS : STOP_EXIT_QUALITY_TAGS;
   const title = kind === "entry" ? "買入點" : group === "PROFIT_EXIT" ? "獲利離場點" : "止損離場點";
-  return <fieldset className={`quality-tag-picker ${compact ? "compact" : ""}`}><legend>{title}{!value && <small>待評</small>}{!compact && <small>單選一項・人工評分</small>}</legend><div>{definitions.map((tag) => { const id = `${instanceId}-${cycleId}-${kind}-${tag.value}`; return <label key={tag.value} className={`quality-tag-option ${String(tag.value).toLowerCase()} ${value === tag.value ? "selected" : ""}`} htmlFor={id} title={tag.description}><input id={id} type="radio" name={`${instanceId}-${cycleId}-${kind}-quality`} value={tag.value} checked={value === tag.value} onChange={() => onChange(tag.value)}/><span><b>{tag.label}</b>{!compact && <small>{tag.description}</small>}</span></label>; })}</div></fieldset>;
+  return <fieldset className={`quality-tag-picker ${compact ? "compact" : ""}`}><legend>{title}{!value && <small>待評</small>}{!compact && <small>單選一項・人工評分</small>}</legend><div>{definitions.map((tag, index) => { const id = `${instanceId}-${cycleId}-${kind}-${tag.value}`; return <label key={tag.value} className={`quality-tag-option ${String(tag.value).toLowerCase()} ${value === tag.value ? "selected" : ""}`} htmlFor={id} title={tag.description}><input id={id} type="radio" name={`${instanceId}-${cycleId}-${kind}-quality`} value={tag.value} checked={value === tag.value} onChange={() => onChange(tag.value)} onKeyDown={(event) => {
+      const direction = ["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 0;
+      if (!direction && event.key !== " ") return;
+      event.preventDefault();
+      const next = definitions[(index + direction + definitions.length) % definitions.length];
+      document.getElementById(`${instanceId}-${cycleId}-${kind}-${next.value}`)?.focus();
+      if (next.value !== value) onChange(next.value);
+    }}/><span><b>{tag.label}</b>{!compact && <small>{tag.description}</small>}</span></label>; })}</div></fieldset>;
 }

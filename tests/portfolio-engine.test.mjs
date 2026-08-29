@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, positionPortfolioImpactPct } from "../lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, cycleRangeScore, positionPortfolioImpactPct } from "../lib/portfolio-engine.mjs";
 
 test("opening balance prevents earlier closed trades from changing current equity", () => {
   const base = { cashActivities: [{ id: "opening", type: "OPENING_BALANCE", amount: 1000, currency: "USD", timestamp: "2026-08-01T00:00:00Z" }], marketBars: [] };
@@ -217,4 +217,40 @@ test("monthly USD score amounts fail closed when TWD exists without FX", () => {
   const score = monthlyCycleScore([{ closeAt: "2026-08-02T00:00:00Z", returnPct: 0.1, pnl: 1_000, currency: "TWD" }], "2026-08", null);
   assert.equal(score.averageWinningAmountUsd, null);
   assert.equal(score.totalPnlUsd, null);
+});
+
+test("range score preserves the original current-month score exactly", () => {
+  const cycles = [
+    { id:"jul", closeAt:"2026-07-31T23:30:00Z", pnl:20, returnPct:.2, currency:"USD" },
+    { id:"aug", closeAt:"2026-08-31T23:59:59Z", pnl:-10, returnPct:-.1, currency:"USD" },
+    { id:"sep", closeAt:"2026-09-01T00:00:00Z", pnl:5, returnPct:.05, currency:"USD" },
+  ];
+  const { error, ...score } = cycleRangeScore(cycles,"2026-08-01","2026-08-31",32);
+  assert.equal(error,"");
+  assert.deepEqual(score, monthlyCycleScore(cycles,"2026-08",32));
+  assert.deepEqual(score.cycles.map(c=>c.id),["aug"]);
+  assert.deepEqual(cycleRangeScore(cycles,"2026-07-31","2026-08-31",32).cycles.map(c=>c.id),["jul","aug"]);
+});
+
+test("range score includes breakeven trades and converts mixed currencies without changing source", () => {
+  const cycles = [
+    { closeAt:"2026-01-02",pnl:100,returnPct:.1,currency:"USD",direction:"SHORT" },
+    { closeAt:"2026-08-20",pnl:-320,returnPct:-.05,currency:"TWD" },
+    { closeAt:"2026-08-21",pnl:0,returnPct:0,currency:"USD" },
+  ];
+  const before=structuredClone(cycles),score=cycleRangeScore(cycles,"","",32);
+  assert.equal(score.totalPnlUsd,90);assert.equal(score.winners,1);assert.equal(score.losers,1);assert.equal(score.flat,1);
+  assert.equal(score.winRate,.5);assert.equal(score.averageLosingAmountUsd,-10);
+  assert.equal(cycleRangeScore(cycles,"","",null).totalPnlUsd,null);
+  assert.deepEqual(cycles,before);
+});
+
+test("invalid ranges fail closed and no-exit records never enter the score", () => {
+  const cycles=[{closeAt:"2026-08-20",pnl:10,returnPct:.1},{pnl:100,returnPct:1}];
+  for(const [start,end] of [["2026-08-30","2026-08-01"],["2026-02-30","2026-03-31"],["bad","2026-08-31"]]){
+    const result=cycleRangeScore(cycles,start,end,32);assert.ok(result.error);assert.equal(result.cycles.length,0);
+  }
+  assert.equal(cycleRangeScore(cycles,"","",32).cycles.length,1);
+  const empty=cycleRangeScore(cycles,"2026-07-01","2026-07-31",32);
+  assert.equal(empty.error,"");assert.equal(empty.cycles.length,0);assert.equal(empty.averageReturn,null);assert.equal(empty.winRate,null);
 });

@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { validateTradeRecordPayload } from "@/lib/trade-record-store.mjs";
+import { writeTradeRecord } from "@/lib/trade-record-db.mjs";
 
 type SnapshotRow = { account_id: string; account_name: string; dataset_json: string; version: number; updated_at: string };
 
@@ -32,20 +33,13 @@ export async function PUT(request: Request) {
     const checked = validateTradeRecordPayload(body);
     if (!checked.ok) return Response.json({ error: checked.error }, { status: 400 });
     const db = database();
-    const current = await db.prepare("SELECT version FROM trade_account_snapshots WHERE account_id = ?").bind(checked.accountId).first() as { version: number } | null;
-    if (current && checked.baseVersion != null && current.version !== checked.baseVersion) {
-      return Response.json({ error: "此帳號已有較新的交易紀錄，請重新載入", currentVersion: current.version }, { status: 409 });
-    }
     const updatedAt = new Date().toISOString();
-    await db.prepare(`INSERT INTO trade_account_snapshots (account_id, account_name, dataset_json, version, updated_at)
-      VALUES (?, ?, ?, 1, ?)
-      ON CONFLICT(account_id) DO UPDATE SET
-        account_name = excluded.account_name,
-        dataset_json = excluded.dataset_json,
-        version = trade_account_snapshots.version + 1,
-        updated_at = excluded.updated_at`).bind(checked.accountId, checked.accountName, checked.datasetJson, updatedAt).run();
-    const saved = await db.prepare("SELECT version FROM trade_account_snapshots WHERE account_id = ?").bind(checked.accountId).first() as { version: number } | null;
-    return Response.json({ account: { id: checked.accountId, name: checked.accountName, version: saved?.version || 1, updatedAt } }, { headers: { "Cache-Control": "no-store" } });
+    const saved = await writeTradeRecord(db, checked, updatedAt);
+    if (!saved) {
+      const current = await db.prepare("SELECT version FROM trade_account_snapshots WHERE account_id = ?").bind(checked.accountId).first() as { version: number } | null;
+      return Response.json({ error: "資料版本不一致；請先保留本機備份再確認版本", currentVersion: current?.version ?? null }, { status: 409 });
+    }
+    return Response.json({ account: { id: checked.accountId, name: checked.accountName, version: saved.version, updatedAt: saved.updated_at } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "交易紀錄儲存失敗" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }

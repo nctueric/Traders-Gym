@@ -29,6 +29,27 @@ test("detail and ledger instances have independent unique radio ids and groups",
   for (const id of ids) assert.ok(html.includes('for="' + id + '"'));
 });
 
+test("arrow keys wrap within the original choices and Space selects once", () => {
+  const calls = [], focus = [];
+  const keyboardModule = { exports: {} };
+  new Function("require", "module", "exports", "document", compiled)(
+    id => id === "react" ? { ...React, useId: () => "keyboard" } : id === "@/lib/quality-rating.mjs" ? quality : require(id),
+    keyboardModule, keyboardModule.exports,
+    { getElementById: id => ({ focus: () => focus.push(id) }) },
+  );
+  const tree = keyboardModule.exports.QualityTagPicker({ cycle: { id: "test", pnl: 0 }, kind: "entry", value: "EARLY", onChange: value => calls.push(value) });
+  const labels = tree.props.children[1].props.children;
+  const inputs = labels.map(label => label.props.children[0]);
+  const key = value => ({ key: value, preventDefault() {} });
+  inputs[0].props.onKeyDown(key("ArrowLeft"));
+  inputs[0].props.onKeyDown(key("ArrowRight"));
+  inputs[2].props.onKeyDown(key(" "));
+  inputs[0].props.onKeyDown(key(" "));
+  assert.deepEqual(calls, ["WRONG_ENTRY", "LATE", "IDEAL"]);
+  assert.match(focus[0], /WRONG_ENTRY$/);
+  assert.match(focus[1], /LATE$/);
+});
+
 test("selected state is replaced and profit/loss wording follows final pnl", () => {
   const early = renderToStaticMarkup(picker({ value: "EARLY" }));
   const late = renderToStaticMarkup(picker({ value: "LATE" }));
