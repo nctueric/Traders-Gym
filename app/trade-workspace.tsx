@@ -13,7 +13,8 @@ import { completeTradeJson, DEFAULT_RECORD_ACCOUNT_ID, durableTradeJson, makeRec
 import { buildTradeSnapshot, mergeSnapshotEvidence, restoreMarketSnapshot } from "@/lib/trade-snapshot.mjs";
 import { browserRecordStorage, createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "@/lib/trade-record-client.mjs";
 import { serializeInBackground } from "@/lib/background-serializer.mjs";
-import { openPositionWindowDates, replayWindowDates } from "@/lib/coach-engine.mjs";
+import { buildCoachFindings, detectBehaviorEvents, openPositionWindowDates, replayWindowDates } from "@/lib/coach-engine.mjs";
+import { buildCoachBrief } from "@/lib/coach-brief.mjs";
 import { createStrategyAssignment, normalizeStrategyDataset, updateStrategyCheck } from "@/lib/strategy-engine.mjs";
 import { ReplayBoard, TrainingWorkspace } from "./training-workspace";
 import { StrategyChecklist, StrategyWorkspace } from "./strategy-workspace";
@@ -23,6 +24,7 @@ import { DialogFrame, OverviewDisclosure, SectionLinks } from "./workspace-ui";
 import { PositionTransactions } from "./position-transactions";
 import { EquityBreakdown } from "./equity-breakdown";
 import { MonthlyAssets } from "./monthly-assets";
+import { TodayWorkspace } from "./today-workspace";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string; note?: string };
@@ -108,7 +110,7 @@ export default function TradeWorkspace() {
   const [recordAccounts, setRecordAccounts] = useState<RecordAccount[]>([]);
   const [activeRecordAccountId, setActiveRecordAccountId] = useState(DEFAULT_RECORD_ACCOUNT_ID);
   const [saveState, setSaveState] = useState("正在載入交易帳號…");
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("today");
   const [navOpen, setNavOpen] = useState(false);
   const [ledgerTab, setLedgerTab] = useState("fills");
   const changePage = (nextTab: string) => { setTab(nextTab); setNavOpen(false); document.getElementById("workspace-main")?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: "instant" }); };
@@ -428,6 +430,9 @@ export default function TradeWorkspace() {
   const weeklyCycleSummaries = useMemo(() => weeklyCycleStats(report.cycles, fxRate), [report.cycles, fxRate]);
   const rapidRepurchases = useMemo(() => findRapidRepurchases(report.cycles, 3), [report.cycles]);
   const cycleReviews = useMemo(() => linkedCycleReviews(report.cycles, data.positionPlans || {}, data.cycleReviews || {}), [data.cycleReviews, data.positionPlans, report.cycles]);
+  const behaviorEvents = useMemo(() => detectBehaviorEvents(report.cycles, data.marketBars, cycleReviews, rapidRepurchases, data.planHistory || [], fxRate), [cycleReviews, data.marketBars, data.planHistory, fxRate, rapidRepurchases, report.cycles]);
+  const coachFindings = useMemo(() => buildCoachFindings(behaviorEvents), [behaviorEvents]);
+  const todayPositionRows = useMemo(() => positionRows(report.positions, quotes, data.positionPlans || {}, currentEquity.totalUsd, fxRate), [currentEquity.totalUsd, data.positionPlans, fxRate, quotes, report.positions]);
   const selectedCycle = selectedCycleId ? report.cycles.find((cycle: any) => cycle.id === selectedCycleId) || null : null;
   const selectedPosition = selectedPositionId ? report.positions.find((position: any) => position.id === selectedPositionId) || null : null;
   const selectedPositionClosedCycle = selectedPositionId && !selectedPosition ? report.cycles.find((cycle: any) => cycle.id === selectedPositionId) || null : null;
@@ -606,14 +611,16 @@ export default function TradeWorkspace() {
   const messageFailed = /失敗|無法|錯誤/.test(message);
   const noticeTone = hasDataErrors || messageFailed || saveFailed ? "error" : report.qualityPct < 100 || report.issues.length ? "warning" : "info";
   const noticeMessage = saveFailed ? saveState : message.startsWith("資料已從本機") ? "計算與資料完整度分開呈現；行情缺漏不補造價格。" : message;
-  const title = tab === "entry" ? "新增交易" : tab === "overview" || tab === "positions" ? "持倉總覽" : tab === "performance" ? "績效分析" : tab === "trades" ? "成交與資金資料" : tab === "cycles" ? "交易閉環" : tab === "strategies" ? "策略管理" : tab === "training" ? "交易行為分析" : "測試中心";
+  const coachBrief = buildCoachBrief({ issues: report.issues, qualityPct: report.qualityPct, storageBlocked: saveFailed, positionRows: todayPositionRows, cycles: report.cycles, reviews: cycleReviews, findings: coachFindings });
+  const title = tab === "today" ? "今日" : tab === "entry" ? "新增交易" : tab === "overview" || tab === "positions" ? "持倉" : tab === "performance" ? "績效" : tab === "trades" ? "成交與資金" : tab === "cycles" ? "交易復盤" : tab === "strategies" ? "策略" : tab === "training" ? "行為分析" : "資料檢查";
+  const navigationTab = tab === "positions" ? "overview" : ["cycles", "strategies", "training"].includes(tab) ? "cycles" : ["trades", "tests"].includes(tab) ? "trades" : tab;
 
   return <div className="shell">
     <a className="skip-link" href="#workspace-main">跳至主要內容</a>
     <aside className="sidebar">
       <div className="brand"><span>TR</span><strong>交易復盤顧問</strong></div>
       <button className="mobile-nav-toggle" type="button" aria-expanded={navOpen} aria-controls="primary-navigation" onClick={() => setNavOpen((open) => !open)}><span>{title}</span><span>{navOpen ? "收合導覽 −" : "展開導覽 ＋"}</span></button>
-      <nav id="primary-navigation" className={navOpen ? "is-open" : ""} aria-label="主要導覽">{[["overview", "持倉總覽"], ["performance", "績效"], ["trades", "成交資料"], ["cycles", "交易閉環"], ["strategies", "策略管理"], ["training", "交易行為分析"], ["tests", "測試中心"]].map(([key, label]) => <button key={key} className={(tab === "positions" ? "overview" : tab) === key ? "active" : ""} aria-current={(tab === "positions" ? "overview" : tab) === key ? "page" : undefined} onClick={() => changePage(key)}>{label}</button>)}</nav>
+      <nav id="primary-navigation" className={navOpen ? "is-open" : ""} aria-label="主要導覽">{[["today", "今日"], ["overview", "持倉"], ["cycles", "復盤"], ["performance", "績效"], ["trades", "資料"]].map(([key, label]) => <button key={key} className={navigationTab === key ? "active" : ""} aria-current={navigationTab === key ? "page" : undefined} onClick={() => changePage(key)}>{label}</button>)}</nav>
       <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並自動儲存。</small></div>
       <div className="local-note">完整交易資料與行情快照<br/><b>手動儲存＋背景自動儲存</b></div>
     </aside>
@@ -628,8 +635,11 @@ export default function TradeWorkspace() {
         <span>{storageReady ? noticeMessage : "正在讀取這個帳號的紀錄，請稍候。"}</span>
         {storageReady && <button type="button" className="notice-quality" onClick={() => changePage("tests")}>資料完整度 {report.qualityPct}% · 查看檢查</button>}
       </div>
+      {storageReady && ["cycles", "strategies", "training"].includes(tab) && <nav className="workspace-subnav" aria-label="復盤工具"><button type="button" aria-current={tab === "cycles" ? "page" : undefined} onClick={() => changePage("cycles")}>交易閉環</button><button type="button" aria-current={tab === "training" ? "page" : undefined} onClick={() => changePage("training")}>行為分析</button><button type="button" aria-current={tab === "strategies" ? "page" : undefined} onClick={() => changePage("strategies")}>策略管理</button></nav>}
+      {storageReady && ["trades", "tests"].includes(tab) && <nav className="workspace-subnav" aria-label="資料工具"><button type="button" aria-current={tab === "trades" ? "page" : undefined} onClick={() => changePage("trades")}>成交與資金</button><button type="button" aria-current={tab === "tests" ? "page" : undefined} onClick={() => changePage("tests")}>資料檢查</button></nav>}
       <div id="workspace-content" aria-busy={!storageReady}>
       {!storageReady ? <div className="workspace-loading" role="status"><span/><span/><span/><p>正在載入交易紀錄…</p></div> : <>
+      {tab === "today" && <TodayWorkspace brief={coachBrief} positionRows={todayPositionRows} cycles={report.cycles} reviews={cycleReviews} totalEquityUsd={currentEquity.totalUsd} qualityPct={report.qualityPct} onAction={changePage} onPosition={(positionId) => setSelectedPositionId(positionId)} onCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
       {(tab === "overview" || tab === "positions") && <>
         <section className="quote-bar"><div><span className="live-dot"/> <b>持倉報價</b><small className={/失敗|無法/.test(quoteState) ? "negative" : ""}>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate" title={fxQuote ? `報價時間：${localDateTime(fxQuote.updatedAt)}` : "尚無匯率資料"}><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "使用上次匯率（待更新）" : "目前匯率" : /失敗|無法/.test(quoteState) ? "缺少匯率" : "正在取得匯率"}</small></div><QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/></section>
         <section className="panel overview-section" id="overview-assets" aria-labelledby="overview-assets-title">
@@ -649,7 +659,7 @@ export default function TradeWorkspace() {
         </section>
         <TradeMetrics key={activeRecordAccountId} cycles={report.cycles} monthKey={monthKey} fxRate={fxRate} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/>
       </>}
-      {tab === "entry" && (data.entryDraft ? <TradeEntryWorkspace key={activeRecordAccountId} data={data} draft={data.entryDraft} quotes={quotes} onChange={(patch) => setData((current) => current.entryDraft?.id === data.entryDraft?.id ? ({ ...current, entryDraft: { ...current.entryDraft, ...patch } }) : current)} onSubmit={submitEntry} onBack={() => changePage("overview")}/> : <div className="panel"><p>這個帳號沒有待填草稿。</p><button className="primary" onClick={openEntry}>開始登錄成交</button></div>)}
+      {tab === "entry" && (data.entryDraft ? <TradeEntryWorkspace key={activeRecordAccountId} data={data} draft={data.entryDraft} quotes={quotes} onChange={(patch) => setData((current) => current.entryDraft?.id === data.entryDraft?.id ? ({ ...current, entryDraft: { ...current.entryDraft, ...patch } }) : current)} onSubmit={submitEntry} onBack={() => changePage("today")}/> : <div className="panel"><p>這個帳號沒有待填草稿。</p><button className="primary" onClick={openEntry}>開始登錄成交</button></div>)}
       {tab === "performance" && <PerformancePanel points={weeklyPerformance} currentEquity={currentEquity} monthAssetDelta={monthAssetDelta} monthKey={monthKey} benchmarkSymbol={benchmarkSymbol} benchmarkInput={benchmarkInput} setBenchmarkInput={setBenchmarkInput} benchmarkState={benchmarkState} applyBenchmark={applyBenchmark} fxRate={fxQuote?.price || null}/>}
       {tab === "trades" && <><div className="ledger-switch" role="group" aria-label="帳本內容"><button type="button" aria-pressed={ledgerTab === "fills"} onClick={() => setLedgerTab("fills")}>成交紀錄 <span>{data.fills.length}</span></button><button type="button" aria-pressed={ledgerTab === "cash"} onClick={() => setLedgerTab("cash")}>資金活動 <span>{(data.cashActivities || []).length}</span></button></div>{ledgerTab === "fills" ? <section className="panel"><div className="panel-head"><div><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><div className="table-wrap" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="fills-table"><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th>操作</th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{fill.timestamp.slice(0, 10)}</td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section> : <CashLedger activities={data.cashActivities || []} accounts={data.accounts}/>}</>}
       {tab === "cycles" && <><CycleTable cycles={report.cycles} title="全部交易閉環" historyState={cycleHistoryState} onRefresh={() => setCycleHistoryRefresh((value) => value + 1)} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/><WeeklyCyclePanel stats={weeklyCycleSummaries}/></>}
