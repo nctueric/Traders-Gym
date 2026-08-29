@@ -1,0 +1,18 @@
+#!/bin/sh
+
+zero="0000000000000000000000000000000000000000"
+
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "Direct pushes, force-pushes, and deletions of main are blocked locally."
+    echo "Push a feature branch and merge it through a GitHub pull request after CI passes."
+    exit 1
+  fi
+
+  if [ "$remote_ref" = "refs/tags/v1.0.0" ] && [ "$remote_sha" != "$zero" ]; then
+    echo "The published v1.0.0 baseline tag is immutable and cannot be updated or deleted."
+    exit 1
+  fi
+done
+
+exit 0
