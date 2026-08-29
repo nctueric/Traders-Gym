@@ -13,7 +13,7 @@ import { completeTradeJson, DEFAULT_RECORD_ACCOUNT_ID, durableTradeJson, makeRec
 import { buildTradeSnapshot, mergeSnapshotEvidence, restoreMarketSnapshot } from "@/lib/trade-snapshot.mjs";
 import { browserRecordStorage, createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "@/lib/trade-record-client.mjs";
 import { serializeInBackground } from "@/lib/background-serializer.mjs";
-import { buildCoachFindings, detectBehaviorEvents, openPositionWindowDates, replayWindowDates } from "@/lib/coach-engine.mjs";
+import { buildCoachFindings, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, openPositionWindowDates, replayWindowDates } from "@/lib/coach-engine.mjs";
 import { buildCoachBrief } from "@/lib/coach-brief.mjs";
 import { createStrategyAssignment, normalizeStrategyDataset, updateStrategyCheck } from "@/lib/strategy-engine.mjs";
 import { ReplayBoard, TrainingWorkspace } from "./training-workspace";
@@ -25,6 +25,7 @@ import { PositionTransactions } from "./position-transactions";
 import { EquityBreakdown } from "./equity-breakdown";
 import { MonthlyAssets } from "./monthly-assets";
 import { TodayWorkspace } from "./today-workspace";
+import { CycleReviewDialog } from "./cycle-review-dialog";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string; note?: string };
@@ -43,6 +44,7 @@ type PendingImport = { dataset: Dataset; fileName: string; kind: "JSON" | "Tradi
 type RecordAccount = { id: string; name: string; version: number; updatedAt: string };
 
 const emptyData: Dataset = { version: "0.1.0", profile: { name: "我的交易帳本", baseCurrency: "USD", costMethod: "FIFO" }, accounts: [{ id: "main", name: "主要帳戶", currency: "USD" }], fills: [], cashActivities: [], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" }, positionPlans: {}, cycleReviews: {}, decisionLinks: {}, decisionLinkHistory: [], planHistory: [], improvementExperiments: [], strategies: [], strategyAssignments: {} };
+const ONBOARDING_KEY = "traders-gym.v2.onboarding-complete";
 const demoData: Dataset = { ...emptyData, fills: [
   { id: "nvts-buy", accountId: "main", symbol: "NVTS", market: "NASDAQ", currency: "USD", side: "BUY", quantity: 100, price: 10, fee: 1, timestamp: "2026-07-01T09:30:00Z", note: "示範資料" },
   { id: "nvts-sell", accountId: "main", symbol: "NVTS", market: "NASDAQ", currency: "USD", side: "SELL", quantity: 100, price: 12.5, fee: 1, timestamp: "2026-07-10T09:30:00Z" },
@@ -112,6 +114,7 @@ export default function TradeWorkspace() {
   const [saveState, setSaveState] = useState("正在載入交易帳號…");
   const [tab, setTab] = useState("today");
   const [navOpen, setNavOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [ledgerTab, setLedgerTab] = useState("fills");
   const changePage = (nextTab: string) => { setTab(nextTab); setNavOpen(false); document.getElementById("workspace-main")?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: "instant" }); };
   const [message, setMessage] = useState("資料已從本機或示範檔載入；可匯入 JSON 或 TradingView CSV 覆蓋。");
@@ -295,6 +298,10 @@ export default function TradeWorkspace() {
     const timer = window.setTimeout(() => { void persistCompleteSnapshot().catch(handleSaveError); }, 900);
     return () => window.clearTimeout(timer);
   }, [cloudReady, completeSnapshot, saveRetry, storageConflict, storageReady, persistCompleteSnapshot, handleSaveError]);
+  useEffect(() => {
+    if (!storageReady) return;
+    try { setOnboardingOpen(localStorage.getItem(ONBOARDING_KEY) !== "done"); } catch { /* The guide remains replayable even when preferences cannot persist. */ }
+  }, [storageReady]);
   useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
   useEffect(() => {
@@ -432,6 +439,8 @@ export default function TradeWorkspace() {
   const cycleReviews = useMemo(() => linkedCycleReviews(report.cycles, data.positionPlans || {}, data.cycleReviews || {}), [data.cycleReviews, data.positionPlans, report.cycles]);
   const behaviorEvents = useMemo(() => detectBehaviorEvents(report.cycles, data.marketBars, cycleReviews, rapidRepurchases, data.planHistory || [], fxRate), [cycleReviews, data.marketBars, data.planHistory, fxRate, rapidRepurchases, report.cycles]);
   const coachFindings = useMemo(() => buildCoachFindings(behaviorEvents), [behaviorEvents]);
+  const activeExperiment = useMemo(() => (data.improvementExperiments || []).find((experiment) => experiment.status === "ACTIVE") || null, [data.improvementExperiments]);
+  const activeExperimentResult = useMemo(() => activeExperiment ? evaluateExperiment(activeExperiment, report.cycles, behaviorEvents) : null, [activeExperiment, behaviorEvents, report.cycles]);
   const todayPositionRows = useMemo(() => positionRows(report.positions, quotes, data.positionPlans || {}, currentEquity.totalUsd, fxRate), [currentEquity.totalUsd, data.positionPlans, fxRate, quotes, report.positions]);
   const selectedCycle = selectedCycleId ? report.cycles.find((cycle: any) => cycle.id === selectedCycleId) || null : null;
   const selectedPosition = selectedPositionId ? report.positions.find((position: any) => position.id === selectedPositionId) || null : null;
@@ -476,6 +485,7 @@ export default function TradeWorkspace() {
   }
 
   function exportJson() { const url = URL.createObjectURL(new Blob([JSON.stringify(completeSnapshot, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `trade-review-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setMessage("JSON 備份已下載。"); }
+  function finishOnboarding() { setOnboardingOpen(false); try { localStorage.setItem(ONBOARDING_KEY, "done"); } catch { /* Preference persistence is optional. */ } }
   async function switchRecordAccount(accountId: string) {
     if (!accountId || accountId === activeRecordAccountId) return;
     setCloudReady(false);
@@ -585,6 +595,20 @@ export default function TradeWorkspace() {
     setData((current) => ({ ...current, planHistory: [...(current.planHistory || []), version] }));
     setMessage(`已新增 ${version.symbol} ${version.field === "stopLoss" ? "停損" : version.field === "takeProfit" ? "停利" : "失效條件"}版本，舊版本已保留。`);
   }
+  function startCoachExperiment() {
+    const finding = coachFindings[0];
+    if (!finding || activeExperiment) return;
+    const experiment = createExperimentFromFinding(finding, new Date()) as ImprovementExperiment;
+    setData((current) => ({ ...current, improvementExperiments: [...(current.improvementExperiments || []), experiment] }));
+    setMessage(`已建立「${experiment.title}」兩週改善實驗；同時間只保留一個進行中實驗。`);
+  }
+  function completeCoachExperiment() {
+    if (!activeExperiment) return;
+    const updatedAt = new Date().toISOString();
+    const resultNote = activeExperimentResult ? `納入 ${activeExperimentResult.eligibleCount} 筆，違規 ${activeExperimentResult.violationCount} 次，影響 USD ${Number(activeExperimentResult.impactUsd || 0).toFixed(2)}` : "手動結束";
+    setData((current) => ({ ...current, improvementExperiments: (current.improvementExperiments || []).map((experiment) => experiment.id === activeExperiment.id ? { ...experiment, status: "COMPLETED", updatedAt, resultNote } : experiment) }));
+    setMessage(`已結束「${activeExperiment.title}」並保留基線與結果。`);
+  }
   function assignStrategy(cycle: any, strategyId: string, source = "OPEN_POSITION") {
     const strategy = (data.strategies || []).find((item) => item.id === strategyId);
     if (!strategy) return;
@@ -639,7 +663,7 @@ export default function TradeWorkspace() {
       {storageReady && ["trades", "tests"].includes(tab) && <nav className="workspace-subnav" aria-label="資料工具"><button type="button" aria-current={tab === "trades" ? "page" : undefined} onClick={() => changePage("trades")}>成交與資金</button><button type="button" aria-current={tab === "tests" ? "page" : undefined} onClick={() => changePage("tests")}>資料檢查</button></nav>}
       <div id="workspace-content" aria-busy={!storageReady}>
       {!storageReady ? <div className="workspace-loading" role="status"><span/><span/><span/><p>正在載入交易紀錄…</p></div> : <>
-      {tab === "today" && <TodayWorkspace brief={coachBrief} positionRows={todayPositionRows} cycles={report.cycles} reviews={cycleReviews} totalEquityUsd={currentEquity.totalUsd} qualityPct={report.qualityPct} onAction={changePage} onPosition={(positionId) => setSelectedPositionId(positionId)} onCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
+      {tab === "today" && <TodayWorkspace brief={coachBrief} positionRows={todayPositionRows} cycles={report.cycles} reviews={cycleReviews} totalEquityUsd={currentEquity.totalUsd} qualityPct={report.qualityPct} onboardingOpen={onboardingOpen} experiment={activeExperiment} experimentResult={activeExperimentResult} experimentSuggestion={activeExperiment ? null : coachFindings[0] || null} onGuide={() => setOnboardingOpen(true)} onGuideFinish={finishOnboarding} onStartExperiment={startCoachExperiment} onCompleteExperiment={completeCoachExperiment} onAction={changePage} onPosition={(positionId) => setSelectedPositionId(positionId)} onCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
       {(tab === "overview" || tab === "positions") && <>
         <section className="quote-bar"><div><span className="live-dot"/> <b>持倉報價</b><small className={/失敗|無法/.test(quoteState) ? "negative" : ""}>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate" title={fxQuote ? `報價時間：${localDateTime(fxQuote.updatedAt)}` : "尚無匯率資料"}><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "使用上次匯率（待更新）" : "目前匯率" : /失敗|無法/.test(quoteState) ? "缺少匯率" : "正在取得匯率"}</small></div><QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/></section>
         <section className="panel overview-section" id="overview-assets" aria-labelledby="overview-assets-title">
@@ -670,7 +694,7 @@ export default function TradeWorkspace() {
       </div>
     </main>
     {pendingImport && <DialogFrame label="匯入資料確認" onClose={() => setPendingImport(null)}><div className="modal import-modal"><div className="panel-head dialog-header"><div><h2>確認匯入資料</h2></div><button type="button" className="close" aria-label="關閉視窗" onClick={() => setPendingImport(null)}>×</button></div><p className="modal-copy">確認後將取代目前交易帳號的帳本，並沿用現有自動儲存流程。請先確認帳號與備份；取消不會修改資料。</p><div className="import-summary"><article><span>格式</span><b>{pendingImport.kind}</b><small>{pendingImport.fileName}</small></article><article><span>成交</span><b>{pendingImport.dataset.fills.length}</b><small>{pendingImport.duplicateCount} 筆與目前ID相同</small></article><article><span>資金活動</span><b>{(pendingImport.dataset.cashActivities || []).length}</b><small>{(pendingImport.dataset.cashActivities || []).filter((activity) => activity.requiresReview).length} 筆待指定幣別</small></article><article><span>行情日線</span><b>{pendingImport.dataset.marketBars.length}</b><small>CSV會保留可匹配的既有日線</small></article></div>{(pendingImport.dataset.cashActivities || []).some((activity) => activity.requiresReview) && <label className="cash-choice">待確認資金活動幣別<select value={cashCurrency} onChange={(event) => setCashCurrency(event.target.value)}><option value="USD">USD 美元</option><option value="TWD">TWD 台幣</option></select></label>}{pendingImport.warnings.length > 0 && <div className="import-warnings"><b>資料提醒</b>{pendingImport.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<div className="modal-actions"><button type="button" className="ghost" onClick={() => setPendingImport(null)}>取消</button><button type="button" className="primary" onClick={confirmImport}>確認匯入並取代</button></div></div></DialogFrame>}
-    {selectedCycle && <CycleDetail entryContexts={data.entryContexts || {}} cycle={selectedCycle} marketBars={data.marketBars} review={cycleReviews[selectedCycle.id] || {}} planHistory={data.planHistory || []} rapidPairs={rapidRepurchases} cycles={report.cycles} decisionLinks={data.decisionLinks || {}} decisionLinkHistory={data.decisionLinkHistory || []} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} onAssignStrategy={assignStrategy} onStrategyCheck={updateStrategyAudit} onAddPlanVersion={addPlanVersion} onReviewChange={updateCycleReview} onToggleDecisionLink={toggleDecisionLink} onClose={() => setSelectedCycleId(null)}/>}
+    {selectedCycle && <CycleReviewDialog entryContexts={data.entryContexts || {}} cycle={selectedCycle} marketBars={data.marketBars} review={cycleReviews[selectedCycle.id] || {}} planHistory={data.planHistory || []} rapidPairs={rapidRepurchases} cycles={report.cycles} decisionLinks={data.decisionLinks || {}} decisionLinkHistory={data.decisionLinkHistory || []} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} onAssignStrategy={assignStrategy} onStrategyCheck={updateStrategyAudit} onAddPlanVersion={addPlanVersion} onReviewChange={updateCycleReview} onToggleDecisionLink={toggleDecisionLink} onClose={() => setSelectedCycleId(null)}/>}
     {selectedPosition && <OpenPositionDetail entryContexts={data.entryContexts || {}} key={`${selectedPosition.id}:${positionEventId || "latest"}`} initialEventId={positionEventId} position={selectedPosition} plan={positionPlanFor(data.positionPlans || {}, selectedPosition)} marketBars={data.marketBars} planHistory={data.planHistory || []} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} onAssignStrategy={assignStrategy} onStrategyCheck={updateStrategyAudit} onAddPlanVersion={addPlanVersion} onPlanChange={updatePositionPlan} onPlanCommit={commitPositionPlan} onOpenAnalysis={() => { setSelectedPositionId(null); setTab("training"); }} onClose={() => setSelectedPositionId(null)}/>}
     {selectedPositionClosedCycle && <CycleDetail entryContexts={data.entryContexts || {}} cycle={selectedPositionClosedCycle} marketBars={data.marketBars} review={cycleReviews[selectedPositionClosedCycle.id] || {}} planHistory={data.planHistory || []} rapidPairs={rapidRepurchases} cycles={report.cycles} decisionLinks={data.decisionLinks || {}} decisionLinkHistory={data.decisionLinkHistory || []} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} onAssignStrategy={assignStrategy} onStrategyCheck={updateStrategyAudit} onAddPlanVersion={addPlanVersion} onReviewChange={updateCycleReview} onToggleDecisionLink={toggleDecisionLink} onClose={() => setSelectedPositionId(null)}/>}
   </div>;

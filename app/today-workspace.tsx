@@ -2,6 +2,7 @@
 "use client";
 
 import { isCycleReviewPending } from "@/lib/coach-brief.mjs";
+import { ProductOnboarding } from "./product-onboarding";
 
 const KIND_LABEL: Record<string, string> = {
   DATA: "資料",
@@ -21,13 +22,21 @@ function formatMoney(value: number | null, currency = "USD") {
   return value == null ? "—" : new Intl.NumberFormat("zh-TW", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 0 }).format(value);
 }
 
-export function TodayWorkspace({ brief, positionRows, cycles, reviews, totalEquityUsd, qualityPct, onAction, onPosition, onCycle }: {
+export function TodayWorkspace({ brief, positionRows, cycles, reviews, totalEquityUsd, qualityPct, onboardingOpen, experiment, experimentResult, experimentSuggestion, onGuide, onGuideFinish, onStartExperiment, onCompleteExperiment, onAction, onPosition, onCycle }: {
   brief: any[];
   positionRows: any[];
   cycles: any[];
   reviews: Record<string, any>;
   totalEquityUsd: number | null;
   qualityPct: number;
+  onboardingOpen: boolean;
+  experiment: any | null;
+  experimentResult: any | null;
+  experimentSuggestion: any | null;
+  onGuide: () => void;
+  onGuideFinish: () => void;
+  onStartExperiment: () => void;
+  onCompleteExperiment: () => void;
   onAction: (target: string) => void;
   onPosition: (positionId: string) => void;
   onCycle: (cycleId: string) => void;
@@ -46,9 +55,10 @@ export function TodayWorkspace({ brief, positionRows, cycles, reviews, totalEqui
   return <div className="today-workspace">
     <header className="today-intro">
       <p>{dateLabel}・規則型摘要</p>
-      <h2>今天先處理這{brief.length === 1 ? "一" : brief.length === 2 ? "兩" : "三"}件事</h2>
+      <div className="today-intro-heading"><h2>今天先處理這{brief.length === 1 ? "一" : brief.length === 2 ? "兩" : "三"}件事</h2><button type="button" className="text-button" onClick={onGuide}>使用導覽</button></div>
       <span>先看需要決定的事，再展開數字。每項建議都能回到原始交易或計算證據。</span>
     </header>
+    {onboardingOpen && <ProductOnboarding onFinish={onGuideFinish}/>}
 
     <section className="today-actions" aria-labelledby="today-actions-title">
       <h3 id="today-actions-title" className="sr-only">今日優先行動</h3>
@@ -72,6 +82,11 @@ export function TodayWorkspace({ brief, positionRows, cycles, reviews, totalEqui
         {pendingCycles.length ? <div className="today-row-list">{pendingCycles.map((cycle) => <button type="button" key={cycle.id} onClick={() => onCycle(cycle.id)}><span><b>{cycle.symbol}</b><small>{String(cycle.closeAt).slice(0, 10)} 平倉</small></span><span><b className={cycle.pnl >= 0 ? "positive" : "negative"}>{formatMoney(cycle.pnl, cycle.currency)}</b><small>開始復盤 →</small></span></button>)}</div> : <p className="today-clear">近期閉環都已完成復盤。</p>}
       </section>
     </div>
+
+    {(experiment || experimentSuggestion) && <section className="today-experiment" aria-labelledby="today-experiment-title">
+      <div className="today-experiment-heading"><div><p>一次只改一件事</p><h3 id="today-experiment-title">{experiment ? experiment.title : `建議實驗：${experimentSuggestion.title}`}</h3></div>{experiment ? <span className="experiment-status">進行中・{experiment.startDate} → {experiment.endDate}</span> : <button type="button" className="primary" onClick={onStartExperiment}>開始兩週實驗</button>}</div>
+      {experiment ? <><dl><div><dt>觸發條件</dt><dd>{experiment.trigger}</dd></div><div><dt>要採取的行動</dt><dd>{experiment.action}</dd></div><div><dt>追蹤指標</dt><dd>{experiment.metric}</dd></div><div><dt>目標</dt><dd>{experiment.target}</dd></div></dl><div className="experiment-progress"><span>目前納入 {experimentResult?.eligibleCount || 0} 筆・違規 {experimentResult?.violationCount || 0} 次{experimentResult?.violationRate == null ? "" : `・違規率 ${(experimentResult.violationRate * 100).toFixed(0)}%`}</span><button type="button" className="ghost" onClick={onCompleteExperiment}>結束並保留結果</button></div></> : <p className="experiment-suggestion">根據 {experimentSuggestion.sampleCount} 筆可追溯樣本，先驗證「{experimentSuggestion.action}」；建立後會固定基線與兩週期限。</p>}
+    </section>}
 
     <section className="today-snapshot" aria-labelledby="today-snapshot-title">
       <div><h3 id="today-snapshot-title">帳戶快照</h3><p>只保留判斷方向需要的三個數字。</p></div>

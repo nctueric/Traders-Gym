@@ -20,7 +20,7 @@ test("coach brief enforces data, risk, review order and caps output at three", (
 });
 
 test("coach brief uses a behavior finding only after cycle reviews are complete", () => {
-  const reviews = { done: { entryQualityTag: "IDEAL", exitQualityTag: "IDEAL", reflection: "維持等待訊號" } };
+  const reviews = { done: { entryQualityTag: "IDEAL", exitQualityTag: "IDEAL", exitReason: "依計畫到價", reflection: "維持等待訊號" } };
   const brief = buildCoachBrief({
     cycles: [{ id: "done", symbol: "AAA", closeAt: "2026-08-20T00:00:00Z" }],
     reviews,
