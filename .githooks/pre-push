@@ -13,6 +13,11 @@ while read local_ref local_sha remote_ref remote_sha; do
     echo "The published v1.0.0 baseline tag is immutable and cannot be updated or deleted."
     exit 1
   fi
+
+  if [ "$remote_ref" = "refs/tags/v2.0.0" ] && [ "$remote_sha" != "$zero" ]; then
+    echo "The published v2.0.0 release tag is immutable and cannot be updated or deleted."
+    exit 1
+  fi
 done
 
 exit 0
