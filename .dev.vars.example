@@ -1,0 +1,2 @@
+# Production Workers needs a separate Google Web client. No Client Secret is needed.
+GOOGLE_CLIENT_ID=

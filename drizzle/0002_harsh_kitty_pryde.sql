@@ -1,0 +1,1 @@
+ALTER TABLE `trade_account_snapshots` ADD `object_key` text;

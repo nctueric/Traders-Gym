@@ -1,9 +1,9 @@
 import { sites } from "@openai/sites-vite-plugin";
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { fileURLToPath } from "node:url";
-import { localRecordPlugin } from "./server/local-record-store.mjs";
+import { localAccountPlugin } from "./server/local-account-plugin.mjs";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -35,7 +35,9 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command, mode }) => {
+  const settings = loadEnv(mode, process.cwd(), "");
+  const googleClientId = settings.GOOGLE_CLIENT_ID || "";
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= "false";
@@ -53,12 +55,12 @@ export default defineConfig(async () => {
         : {}),
     },
     plugins: [
-      localRecordPlugin(fileURLToPath(new URL("../自動儲存/", import.meta.url))),
+      localAccountPlugin({ directory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
       vinext(),
       sites(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: localBindingConfig,
+        config: { ...localBindingConfig, ...(command === "serve" ? { vars: { LOCAL_ACCOUNT_SERVICE: "true", GOOGLE_CLIENT_ID: googleClientId } } : {}) },
         inspectorPort: false,
       }),
     ],
