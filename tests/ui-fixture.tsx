@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import TradeWorkspace from "../app/trade-workspace";
 import "../app/globals.css";
+import "../app/account.css";
+import "../app/react-workspace.css";
 
 // Only bundled by serve-ui-fixture.mjs, never imported by application routes.
 // A fresh ephemeral origin isolates browser storage and every request stays local.
@@ -25,4 +27,4 @@ function FixtureImport() {
     button.hidden = true;
   }}>載入隔離匯入檔</button>;
 }
-createRoot(document.getElementById("root")!).render(<><TradeWorkspace /><FixtureImport /></>);
+createRoot(document.getElementById("root")!).render(<><TradeWorkspace user={{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",picture:"",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}} /><FixtureImport /></>);

@@ -20,7 +20,7 @@ export function createLocalRecordStore(directory) {
     try {
       const { _storage, ...dataset } = JSON.parse(text);
       if (!_storage || _storage.accountId !== accountId || !Number.isSafeInteger(_storage.version) || _storage.sha256 !== digest(dataset)) throw new Error("checksum mismatch");
-      return { account: { id: accountId, name: _storage.accountName, version: _storage.version, updatedAt: _storage.updatedAt }, dataset, lastArchivedAt: _storage.lastArchivedAt || _storage.updatedAt };
+      return { account: { id: accountId, name: _storage.accountName, version: _storage.version, updatedAt: _storage.updatedAt, saveMode: _storage.saveMode || "legacy" }, dataset, lastArchivedAt: _storage.lastArchivedAt || _storage.updatedAt };
     } catch { throw error(`帳號 ${accountId} 的檔案未通過完整性檢查；已停止覆寫，請檢查歷史備份`, 500); }
   }
   async function list() {
@@ -57,7 +57,7 @@ export function createLocalRecordStore(directory) {
         if (!Number.isSafeInteger(version) || version < 1) throw error("初始化版本無效", 400);
         const updatedAt = new Date().toISOString();
         const archiveNeeded = payload.saveMode !== "auto" || !current || durableTradeJson(current.dataset) !== durableTradeJson(checked.dataset) || Date.now() - Date.parse(current.lastArchivedAt) >= 30 * 60_000;
-        const metadata = { accountId: id, accountName: checked.accountName, version, updatedAt, sha256: digest(checked.dataset), format: "trade-review-local-v2", lastArchivedAt: archiveNeeded ? updatedAt : current.lastArchivedAt };
+        const metadata = { accountId: id, accountName: checked.accountName, version, updatedAt, saveMode: payload.saveMode === "auto" ? "auto" : "manual", sha256: digest(checked.dataset), format: "trade-review-local-v2", lastArchivedAt: archiveNeeded ? updatedAt : current.lastArchivedAt };
         const contents = `${JSON.stringify({ ...checked.dataset, _storage: metadata }, null, 2)}\n`;
         // Archive first. If any write fails, the existing current file stays intact.
         const archive = join(archiveDirectory, `v${String(version).padStart(8, "0")}-${randomUUID()}.json`);

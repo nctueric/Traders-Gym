@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-05T06:51:47.594Z",
+  "title": "Design System: 交易復盤顧問",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Workspace Blue",
+        "tonalRamp": [
+          "oklch(15% 0.08 255)",
+          "oklch(26% 0.08 255)",
+          "oklch(38% 0.08 255)",
+          "oklch(49% 0.08 255)",
+          "oklch(61% 0.08 255)",
+          "oklch(72% 0.08 255)",
+          "oklch(84% 0.08 255)",
+          "oklch(95% 0.08 255)"
+        ]
+      }
+    },
+    "shadows": [
+      {
+        "name": "navigation-selection",
+        "value": "inset 2px 0 var(--accent)",
+        "purpose": "Selected sidebar edge"
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background-color 140ms ease-out",
+        "purpose": "State feedback; disabled for reduced motion"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "split-min",
+        "value": "1200px"
+      },
+      {
+        "name": "mobile-max",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "html": "<button class=\"ds-primary\">立即儲存</button>",
+      "css": ".ds-primary{background:var(--accent,#8ab8f4);color:var(--paper,#11151c);border:0;border-radius:4px;padding:8px 12px;min-height:36px;font:700 14px system-ui}.ds-primary:hover{background:#aacdfb}.ds-primary:focus-visible{outline:2px solid #8ab8f4;outline-offset:3px}.ds-primary:disabled{opacity:.5}"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "html": "<button class=\"ds-ghost\">返回清單</button>",
+      "css": ".ds-ghost{background:var(--card,#1b2029);color:var(--ink,#e1e6ef);border:1px solid var(--line,#343c49);border-radius:4px;padding:8px 12px;font:14px system-ui}.ds-ghost:hover{background:#242c38}.ds-ghost:focus-visible{outline:2px solid #8ab8f4;outline-offset:3px}"
+    },
+    {
+      "name": "Account search",
+      "kind": "input",
+      "html": "<label class=\"ds-field\">搜尋帳號<input placeholder=\"電子郵件\"></label>",
+      "css": ".ds-field{display:grid;gap:8px;color:#e1e6ef;font:14px system-ui}.ds-field input{background:#1b2029;color:#e1e6ef;border:1px solid #343c49;border-radius:4px;padding:12px}.ds-field input::placeholder{color:#a6b0c1}.ds-field input:focus-visible{outline:3px solid #69c6a7;outline-offset:3px}"
+    },
+    {
+      "name": "Selected navigation",
+      "kind": "nav",
+      "html": "<nav><button class=\"ds-nav\" aria-current=\"page\">持倉</button></nav>",
+      "css": ".ds-nav{background:#22334d;color:#8ab8f4;border:0;border-radius:4px;padding:10px 12px;box-shadow:inset 2px 0 #8ab8f4;font:14px system-ui}.ds-nav:hover{background:#242c38}.ds-nav:focus-visible{outline:2px solid #8ab8f4;outline-offset:3px}"
+    },
+    {
+      "name": "Semantic status",
+      "kind": "chip",
+      "html": "<span class=\"ds-status\">正常</span>",
+      "css": ".ds-status{background:#1b2029;color:#69c6a7;border-radius:999px;padding:5px 9px;font:700 12px system-ui}"
+    },
+    {
+      "name": "Working panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "html": "<section class=\"ds-panel\">交易紀錄</section>",
+      "css": ".ds-panel{background:#1b2029;color:#e1e6ef;border:1px solid #343c49;border-radius:6px;padding:18px;font:16px system-ui}"
+    }
+  ],
+  "narrative": {
+    "northStar": "TradingView dark workspace",
+    "overview": "A compact, evidence-oriented workspace with graphite surfaces, blue selection, tabular numbers, and persistent access to the ledger.",
+    "rules": [
+      {
+        "name": "The Meaning Rule",
+        "body": "Preserve gain/loss colors when changing selection or navigation styling.",
+        "section": "colors"
+      }
+    ]
+  }
+}

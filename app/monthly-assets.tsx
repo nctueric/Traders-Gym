@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { themedContext, observeChartTheme } from "./chart-theme";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ASSET_SEGMENTS, buildMonthlyAssetHistory, buildMonthlyAssetPoint, monthlyAssetSegments, withMonthlyChanges } from "@/lib/monthly-assets.mjs";
@@ -26,7 +27,7 @@ export function MonthlyAssetChart({ points, selectedMonth, onSelect }: {points:a
       canvas.style.width=`${width}px`;
       canvas.style.height=`${height}px`;
       canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);
-      const ctx=canvas.getContext("2d");if(!ctx)return;
+      const ctx=themedContext(canvas);if(!ctx)return;
       ctx.scale(scale,scale);ctx.clearRect(0,0,width,height);
       const values=points.flatMap(point=>monthlyAssetSegments(point).flatMap((segment:any)=>[segment.from,segment.to]));
       const low=Math.min(0,...values), high=Math.max(1,...values), range=high-low || 1;
@@ -82,7 +83,8 @@ export function MonthlyAssetChart({ points, selectedMonth, onSelect }: {points:a
       });
     };
     draw();const observer=new ResizeObserver(draw);if(canvas.parentElement?.parentElement)observer.observe(canvas.parentElement.parentElement);
-    return()=>observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   },[points,selectedMonth]);
   return <div className="monthly-assets-chart" role="region" tabIndex={0} aria-label="逐月總資產圖，可橫向捲動">
     <div className="monthly-assets-canvas" style={{width:`max(${compactChartWidth(chartMinWidth(points))}px, calc(60% + 40.8px))`}}>

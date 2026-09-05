@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { themedContext, observeChartTheme } from "./chart-theme";
 
 import { ENTRY_OPTIONS, VOLUME_OPTIONS, filterCyclesByEntry, contextsForCycle } from "@/lib/trade-entry.mjs";
 import { EntryContextEvidence } from "./trade-entry-workspace";
@@ -17,10 +18,10 @@ function volume(value: number | null) { return value == null ? "—" : new Intl.
 function dateInput(value: string) { return value ? new Date(value).toISOString().slice(0, 16) : ""; }
 
 const EVENT_COLOR: Record<string, string> = {
-  ENTRY: "#176b50", ADD: "#258664", REDUCE: "#d68b32", EXIT: "#a85d18",
-  MAE: "#b43f35", MFE: "#176b50", PLAN_STOP: "#b43f35", PLAN_TARGET: "#3f8a4d",
+  ENTRY: "#69c6a7", ADD: "#7bcbb2", REDUCE: "#d68b32", EXIT: "#a85d18",
+  MAE: "#ee918b", MFE: "#69c6a7", PLAN_STOP: "#ee918b", PLAN_TARGET: "#69c6a7",
   PLAN_INVALIDATION: "#765caa", RAPID_REPURCHASE: "#aa641e",
-  STRATEGY_ASSIGNED: "#315e9b", RULE_FOLLOWED: "#2e7d56", RULE_VIOLATED: "#bd3b32",
+  STRATEGY_ASSIGNED: "#8ab8f4", RULE_FOLLOWED: "#69c6a7", RULE_VIOLATED: "#ee918b",
 };
 
 function drawDashedLine(context: CanvasRenderingContext2D, x1: number, y: number, x2: number, color: string, label: string) {
@@ -50,7 +51,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const scale = window.devicePixelRatio || 1;
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
-      const context = canvas.getContext("2d");
+      const context = themedContext(canvas);
       if (!context) return;
       context.scale(scale, scale);
       context.clearRect(0, 0, width, height);
@@ -73,19 +74,19 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const step = chartWidth / Math.max(visibleCandles.length, 1);
       const xFor = (index: number) => padding.left + step * (index + 0.5);
 
-      context.strokeStyle = "#e4e5dc";
+      context.strokeStyle = "#343c49";
       context.lineWidth = 1;
       for (let row = 0; row <= 4; row += 1) {
         const y = padding.top + chartHeight * row / 4;
         context.beginPath(); context.moveTo(padding.left, y); context.lineTo(width - padding.right, y); context.stroke();
         const price = high - (high - low) * row / 4;
-        context.fillStyle = "#66716e"; context.font = "12px system-ui"; context.fillText(price.toFixed(2), width - padding.right + 8, y + 3);
+        context.fillStyle = "#a6b0c1"; context.font = "12px system-ui"; context.fillText(price.toFixed(2), width - padding.right + 8, y + 3);
       }
 
       visibleCandles.forEach((candle: any, index: number) => {
         const x = xFor(index);
         const rising = candle.close >= candle.open;
-        context.strokeStyle = rising ? "#176b50" : "#a8463b";
+        context.strokeStyle = rising ? "#69c6a7" : "#ee918b";
         context.fillStyle = rising ? "#70a58c" : "#d58b83";
         context.beginPath(); context.moveTo(x, yFor(candle.high)); context.lineTo(x, yFor(candle.low)); context.stroke();
         const top = yFor(Math.max(candle.open, candle.close));
@@ -98,9 +99,9 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const volumeAverages = visibleCandles.map((candle: any) => Number(candle.averageVolume20) || 0);
       const maximumVolume = Math.max(...volumes, ...volumeAverages, 1);
       const volumeY = (value: number) => volumeTop + volumeHeight - value / maximumVolume * volumeHeight;
-      context.strokeStyle = "#e4e5dc";
+      context.strokeStyle = "#343c49";
       context.beginPath(); context.moveTo(padding.left, volumeTop); context.lineTo(width - padding.right, volumeTop); context.stroke();
-      context.fillStyle = "#66716e"; context.font = "12px system-ui"; context.fillText("成交量", padding.left, volumeTop - 6);
+      context.fillStyle = "#a6b0c1"; context.font = "12px system-ui"; context.fillText("成交量", padding.left, volumeTop - 6);
       visibleCandles.forEach((candle: any, index: number) => {
         if (candle.volume == null || candle.volume < 0) return;
         const x = xFor(index);
@@ -121,7 +122,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const holdingStart = visibleCandles.findIndex((candle: any) => candle.phase === "HOLDING");
       const holdingEnd = visibleCandles.findLastIndex((candle: any) => candle.phase === "HOLDING");
       if (holdingStart >= 0 && holdingEnd >= holdingStart) {
-        drawDashedLine(context, xFor(holdingStart), yFor(model.averageEntry), xFor(holdingEnd), "#2f5f7c", `均價 ${model.averageEntry.toFixed(2)}`);
+        drawDashedLine(context, xFor(holdingStart), yFor(model.averageEntry), xFor(holdingEnd), "#8ab8f4", `均價 ${model.averageEntry.toFixed(2)}`);
       }
       const planEvents = model.events.filter((event: any) => !event.legacy && ["PLAN_STOP", "PLAN_TARGET"].includes(event.type) && event.price > 0);
       planEvents.forEach((event: any, index: number) => {
@@ -130,7 +131,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         const next = planEvents.slice(index + 1).find((candidate: any) => candidate.type === event.type && candidate.date);
         const nextIndex = next ? visibleCandles.findIndex((candle: any) => candle.date >= next.date) : -1;
         const endIndex = nextIndex > startIndex ? Math.min(visibleCandles.length - 1, nextIndex) : Math.min(visibleCandles.length - 1, Math.max(startIndex, holdingEnd));
-        const color = event.type === "PLAN_STOP" ? "#b43f35" : "#3f8a4d";
+        const color = event.type === "PLAN_STOP" ? "#ee918b" : "#69c6a7";
         drawDashedLine(context, xFor(startIndex), yFor(event.price), xFor(Math.max(startIndex, endIndex)), color, `${event.label} ${event.price.toFixed(2)}`);
       });
 
@@ -142,16 +143,16 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         const y = yFor(event.price);
         const selected = event.id === selectedEventId;
         context.beginPath(); context.arc(x, y, selected ? 7 : 5, 0, Math.PI * 2);
-        context.fillStyle = EVENT_COLOR[event.type] || "#17211f"; context.fill();
-        context.strokeStyle = selected ? "#17211f" : "#fffef9"; context.lineWidth = selected ? 3 : 1.5; context.stroke();
+        context.fillStyle = EVENT_COLOR[event.type] || "#e1e6ef"; context.fill();
+        context.strokeStyle = selected ? "#e1e6ef" : "#151a22"; context.lineWidth = selected ? 3 : 1.5; context.stroke();
         if (["ENTRY", "ADD", "REDUCE", "EXIT"].includes(event.type)) {
-          context.fillStyle = EVENT_COLOR[event.type] || "#17211f";
+          context.fillStyle = EVENT_COLOR[event.type] || "#e1e6ef";
           context.font = "bold 12px system-ui";
           context.fillText(event.label, Math.min(width - padding.right - 24, x + 6), Math.max(12, y - 7));
         }
       });
 
-      context.fillStyle = "#66716e"; context.font = "12px system-ui";
+      context.fillStyle = "#a6b0c1"; context.font = "12px system-ui";
       const labelIndexes = [...new Set([0, Math.floor((visibleCandles.length - 1) / 2), visibleCandles.length - 1])];
       labelIndexes.forEach((index) => { const label = visibleCandles[index]?.date || ""; context.fillText(label.slice(5), Math.max(0, xFor(index) - 14), height - 10); });
       context.save(); context.strokeStyle = "#17211f33"; context.setLineDash([3, 4]); context.beginPath(); context.moveTo(xFor(visibleCandles.length - 1), padding.top); context.lineTo(xFor(visibleCandles.length - 1), volumeTop + volumeHeight); context.stroke(); context.restore();
@@ -159,7 +160,8 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [model, selectedEventId, visibleCandles]);
 
   return <canvas ref={canvasRef} className="replay-canvas" role="img" aria-label={`${model.symbol} 進場前三個月到出場後三個月的日線交易決策重播；包含成交量、成交、計畫、MAE及MFE`}>交易決策重播圖</canvas>;
@@ -201,7 +203,7 @@ export function ReplayBoard({ entryContexts = {}, initialEventId, cycle, marketB
     <div className="replay-layout"><div className="replay-chart">{!model.candles.length ? <div className="replay-empty"><b>缺少可重播的OHLC行情</b><span>圖表不補造價格；右側仍保留成交與計畫證據。</span></div> : <><ReplayCanvas model={model} cursor={replayCursor} selectedEventId={selectedEventId}/>{cursorCandle && <div className="replay-market-strip"><div className="replay-market-day"><b>{cursorCandle.date}</b><span>{cursorPhase}</span></div><div><span>開盤</span><b>{cursorCandle.open.toFixed(2)}</b></div><div><span>最高</span><b>{cursorCandle.high.toFixed(2)}</b></div><div><span>最低</span><b>{cursorCandle.low.toFixed(2)}</b></div><div><span>收盤</span><b>{cursorCandle.close.toFixed(2)}</b></div><div><span>當日成交量</span><b>{volume(cursorCandle.volume)}</b></div><div><span>20日均量</span><b>{volume(cursorCandle.averageVolume20)}</b></div><div><span>量比</span><b className={cursorCandle.volumeRatio != null && cursorCandle.volumeRatio >= 1.5 ? "volume-hot" : ""}>{cursorCandle.volumeRatio == null ? "—" : `${cursorCandle.volumeRatio.toFixed(2)}x`}</b></div></div>}<label className="replay-slider"><span>重播至 {cursorDate}</span><input aria-label="交易重播日期" type="range" min="0" max={Math.max(0, model.candles.length - 1)} value={replayCursor} onChange={(event) => setCursor(Number(event.target.value))}/><small>{replayCursor + 1}/{model.candles.length}・進場前 {model.preEntryCount}／持有 {model.holdingCount}／出場後 {model.postExitCount} 個交易日</small></label></>} </div><aside className="replay-timeline"><div className="timeline-title"><b>事件時間軸</b><span>{model.events.length} 個可追溯事件</span></div><div className="timeline-events">{model.events.map((event: any) => <button key={event.id} type="button" className={`${selectedEventId === event.id ? "selected" : ""} ${event.date && event.date > cursorDate ? "future" : ""}`} onClick={() => selectEvent(event)}><i style={{ background: EVENT_COLOR[event.type] || "#765caa" }}/><span><b>{event.label}</b><small>{event.date || "時間不明"}・{event.detail}</small></span></button>)}</div>{selectedEvent && <div className="event-inspector"><span>目前選取</span><b>{selectedEvent.label}</b><p>{selectedEvent.detail}</p>{selectedEvent.price > 0 && <small>價格 {money(selectedEvent.price, cycle.currency)}</small>}{"quantity" in selectedEvent && selectedEvent.quantity > 0 && <small>數量 {selectedEvent.quantity} 股・部位 {selectedEvent.beforeQuantity} → {selectedEvent.afterQuantity}</small>}{"note" in selectedEvent && selectedEvent.note && <small>{selectedEvent.note}</small>}</div>}</aside></div>
     {selectedEvent && "entryContext" in selectedEvent && <EntryContextEvidence contexts={{[(selectedEvent as any).entryContext.fillId]:(selectedEvent as any).entryContext}} cycleId={cycle.id}/>}
     {model.legacyPlanCount > 0 && <div className="legacy-plan-note">有 {model.legacyPlanCount} 項舊計畫只有最終值、沒有生效時間；已顯示為「歷史值」，不加入動畫時序。</div>}
-    {isOpen ? <div className="open-plan-replay-note">請在下方「目前計畫」更新停損、停利與失效條件；每次離開欄位即追加版本，平倉後會沿同一筆交易 ID 進入閉環與行為分析。</div> : <form className="plan-version-form" onSubmit={addVersion}><div><b>新增計畫版本</b><small>建立後只追加，不覆蓋舊版本；事後補登會保留建立時間。</small></div><label>類型<select value={planForm.field} onChange={(event) => setPlanForm({ ...planForm, field: event.target.value })}><option value="stopLoss">停損</option><option value="takeProfit">停利</option><option value="invalidation">失效條件</option></select></label><label>{planForm.field === "invalidation" ? "條件" : "價格"}<input required type={planForm.field === "invalidation" ? "text" : "number"} min={planForm.field === "invalidation" ? undefined : "0"} step="any" value={planForm.value} onChange={(event) => setPlanForm({ ...planForm, value: event.target.value })}/></label><label>生效時間<input required type="datetime-local" value={planForm.effectiveAt} onChange={(event) => setPlanForm({ ...planForm, effectiveAt: event.target.value })}/></label><label>理由<input value={planForm.reason} placeholder="支撐、型態或規則依據" onChange={(event) => setPlanForm({ ...planForm, reason: event.target.value })}/></label><button className="primary" type="submit">加入時間線</button></form>}
+    {isOpen ? <div className="open-plan-replay-note">請在下方「目前計畫」更新停損、停利與失效條件；每次離開欄位即追加版本，平倉後會沿同一筆交易 ID 進入閉環與行為分析。</div> : <form data-detail-dirty={Boolean(planForm.value || planForm.reason)} className="plan-version-form" onSubmit={addVersion}><div><b>新增計畫版本</b><small>建立後只追加，不覆蓋舊版本；事後補登會保留建立時間。</small></div><label>類型<select value={planForm.field} onChange={(event) => setPlanForm({ ...planForm, field: event.target.value })}><option value="stopLoss">停損</option><option value="takeProfit">停利</option><option value="invalidation">失效條件</option></select></label><label>{planForm.field === "invalidation" ? "條件" : "價格"}<input required type={planForm.field === "invalidation" ? "text" : "number"} min={planForm.field === "invalidation" ? undefined : "0"} step="any" value={planForm.value} onChange={(event) => setPlanForm({ ...planForm, value: event.target.value })}/></label><label>生效時間<input required type="datetime-local" value={planForm.effectiveAt} onChange={(event) => setPlanForm({ ...planForm, effectiveAt: event.target.value })}/></label><label>理由<input value={planForm.reason} placeholder="支撐、型態或規則依據" onChange={(event) => setPlanForm({ ...planForm, reason: event.target.value })}/></label><button className="primary" type="submit">加入時間線</button></form>}
   </section>;
 }
 
@@ -254,17 +256,17 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
       canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      const context = canvas.getContext("2d");
+      const context = themedContext(canvas);
       if (!context) return;
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
       const expectancy = (rate: number, ratio: number) => (rate / 100) * ratio - (1 - rate / 100);
       const color = (value: number) => {
-        if (Math.abs(value) < 0.025) return "#e8e5df";
+        if (Math.abs(value) < 0.025) return "#343c49";
         if (value < 0) return `hsl(355 72% ${88 - 52 * Math.min(1, Math.abs(value) / 0.58)}%)`;
         return `hsl(126 69% ${88 - 58 * Math.pow(Math.min(1, value / 2.6), 0.72)}%)`;
       };
-      context.fillStyle = "#26312d";
+      context.fillStyle = "#e1e6ef";
       context.font = "700 12px system-ui";
       context.textAlign = "center";
       context.fillText("獲利交易率", margin.left + columns * cellWidth / 2, 15);
@@ -331,7 +333,8 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
     const observer = new ResizeObserver(draw);
     observer.observe(canvas.parentElement || canvas);
     draw();
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [inRange, rewardRisk, winRatePct]);
 
   const hasSample = stats.winners.count > 0 && stats.losers.count > 0;
@@ -370,12 +373,12 @@ function MonthlyExpectancyTrend({ cycles }: { cycles: any[] }) {
       const height = margin.top + panelHeight * 3 + panelGap * 2 + margin.bottom;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
-      const context = canvas.getContext("2d"); if (!context) return;
+      const context = themedContext(canvas); if (!context) return;
       context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
       const plotWidth = width - margin.left - margin.right;
       const x = (index: number) => margin.left + (visible.length <= 1 ? plotWidth / 2 : index * plotWidth / (visible.length - 1));
       const series = [
-        { key: "winRate", label: "月勝率", color: "#176b50", format: (value: number) => `${(value * 100).toFixed(0)}%`, fixed: [0, 1] },
+        { key: "winRate", label: "月勝率", color: "#69c6a7", format: (value: number) => `${(value * 100).toFixed(0)}%`, fixed: [0, 1] },
         { key: "rewardRisk", label: "平均盈虧比", color: "#d68b32", format: (value: number) => value.toFixed(2) },
         { key: "expectancyR", label: "交易期望值", color: "#765caa", format: (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}R`, zero: true },
       ];
@@ -388,7 +391,7 @@ function MonthlyExpectancyTrend({ cycles }: { cycles: any[] }) {
         const padding = definition.fixed ? 0 : (maximum - minimum) * 0.1;
         minimum -= padding; maximum += padding;
         const y = (value: number) => top + panelHeight - (value - minimum) / (maximum - minimum) * panelHeight;
-        context.fillStyle = "#26312d"; context.font = "700 12px system-ui"; context.textAlign = "left";
+        context.fillStyle = "#e1e6ef"; context.font = "700 12px system-ui"; context.textAlign = "left";
         context.fillText(definition.label, 6, top + 13);
         context.strokeStyle = "#d8dcd7"; context.lineWidth = 1;
         for (let tick = 0; tick <= 2; tick += 1) {
@@ -422,7 +425,8 @@ function MonthlyExpectancyTrend({ cycles }: { cycles: any[] }) {
       visible.forEach((point: any, index: number) => { if (index % labelEvery === 0 || index === visible.length - 1) context.fillText(point.month, x(index), height - 13); });
     };
     const observer = new ResizeObserver(draw); observer.observe(canvas.parentElement || canvas); draw();
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [endIndex, selectedIndex, startIndex, visible]);
 
   const selectFromPointer = (event: React.MouseEvent<HTMLCanvasElement>) => {

@@ -1,4 +1,5 @@
 import { normalizeYahooChart } from "@/lib/quote-engine.mjs";
+import { rejectAnonymous } from "@/app/account-server";
 
 const YAHOO_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
 
@@ -20,6 +21,7 @@ async function fetchYahooQuote(symbol: string) {
 }
 
 export async function GET(request: Request) {
+  const denied = await rejectAnonymous(request); if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const symbols = [...new Set((searchParams.get("symbols") || "").split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))].slice(0, 50);
   if (!symbols.length) return Response.json({ quotes: [], errors: [], fetchedAt: new Date().toISOString() });

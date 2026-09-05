@@ -54,7 +54,7 @@ test("mobile navigation opens explicitly and tables scroll without shrinking tex
   assert.equal(stylesAt(".metrics", 390)["grid-template-columns"], "1fr");
 });
 
-test("overview has three categories with asset history and plan editing inside disclosures", () => {
+test("overview preserves three categories and exposes position plans for split inspection", () => {
   const source = ts.createSourceFile("trade-workspace.tsx", readFileSync(new URL("../app/trade-workspace.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const elements = [];
   const visit = node => { if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) elements.push(node); ts.forEachChild(node, visit); };
@@ -76,7 +76,8 @@ test("overview has three categories with asset history and plan editing inside d
   for (const id of ["overview-assets", "overview-holdings", "overview-trade-metrics"]) assert.match(page, new RegExp(`id="${id}"`));
   assert.doesNotMatch(page, /\["positions", "目前持倉"\]|tab === "positions" &&/);
   const plans = elements.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(source) === "PositionsPanel");
-  assert.equal(plans.parent.openingElement.tagName.getText(source), "OverviewDisclosure");
+  assert.equal(plans.parent.openingElement.tagName.getText(source), "section");
+  assert.equal(className(plans.parent), "position-plan-list");
   assert.match(plans.getText(source), /onPlanChange=\{updatePositionPlan\} onPlanCommit=\{commitPositionPlan\} onOpenChart=\{openPositionChart\}/);
   assert.equal(stylesAt(".overview-section .panel", 1440).border, "0");
   assert.equal(stylesAt(".overview-disclosure > summary", 390)["min-height"], "44px");
@@ -101,6 +102,6 @@ function contrast(a,b) {
   return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);
 }
 test("core text and semantic colors meet 4.5:1 contrast", () => {
-  for (const [text,background] of [["17211f","f4f6f5"],["53645c","f4f6f5"],["176b50","ffffff"],["a8463b","ffffff"],["8c3027","fff0ed"],["ffffff","2a4037"]])
+  for (const [text,background] of [["e1e6ef","11151c"],["a6b0c1","1b2029"],["69c6a7","1b2029"],["ee918b","1b2029"],["8ab8f4","22334d"],["11151c","8ab8f4"]])
     assert.ok(contrast(text,background)>=4.5, text+" on "+background);
 });

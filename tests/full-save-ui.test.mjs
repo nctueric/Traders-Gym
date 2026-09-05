@@ -38,7 +38,7 @@ function harness(initial = source()) {
       if (payload.baseVersion !== version) return response(409,{});
       stored=payload.dataset;version++;return response(200,{account:{...account,version}});
     }
-    if (url === "/api/trade-records") return response(200,{accounts:[account]});
+    if (url === "/api/trade-records") return response(200,{account,dataset:structuredClone(stored),accounts:[account]});
     if (url.startsWith("/api/trade-records?")) return response(200,{account,dataset:structuredClone(stored)});
     if (onlineMarkets && url.startsWith("/api/quotes")) return response(200,{quotes:[{symbol:"AAA",price:15,updatedAt:"2026-08-28T00:00:00Z"}],errors:[]});
     return response(503,{error:"離線測試"});
@@ -53,7 +53,7 @@ function harness(initial = source()) {
     }
     return require(id);
   },componentModule,componentModule.exports,window,{getElementById:()=>null},storage,fetcher,timer,window.clearTimeout);
-  function render() { index=0;dirty=false;tree=componentModule.exports.default(); for(const effect of effects.splice(0)) effect();return tree; }
+  function render() { index=0;dirty=false;tree=componentModule.exports.default({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}}); for(const effect of effects.splice(0)) effect();return tree; }
   return {
     render, get tree(){return tree;},get stored(){return stored;}, writes,events,
     async settle(){ for(let i=0;i<15;i++){if(dirty)render();await new Promise(resolve=>setImmediate(resolve));}return tree; },
