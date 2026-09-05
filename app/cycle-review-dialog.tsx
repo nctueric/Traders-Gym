@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { analyzeCycle } from "@/lib/review-engine.mjs";
 import { cycleReviewProgress } from "@/lib/review-flow.mjs";
-import { DialogFrame } from "./workspace-ui";
+import { DetailFrame } from "./workspace-ui";
 import { EntryContextEvidence } from "./trade-entry-workspace";
 import { QualityTagPicker } from "./quality-rating-control";
 import { StrategyChecklist } from "./strategy-workspace";
@@ -22,7 +22,7 @@ export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, pl
   const cycleNames = Object.fromEntries(cycles.map((item: any) => [item.id, `${item.symbol} ${item.openAt.slice(0, 10)}→${item.closeAt.slice(0, 10)}`]));
   const change = (field: string, value: string) => onReviewChange(cycle.id, field, value);
 
-  return <DialogFrame className="detail-dialog review-dialog" label={`${cycle.symbol} 四步交易復盤`} onClose={onClose}>
+  return <DetailFrame className="detail-dialog review-dialog" label={`${cycle.symbol} 四步交易復盤`} onClose={onClose}>
     <article className="cycle-detail-modal review-flow">
       <header className="panel-head detail-header">
         <div><p className="review-context">{cycle.openAt.slice(0, 10)} → {cycle.closeAt.slice(0, 10)}・內容自動儲存</p><h2>{cycle.symbol} 四步交易復盤 <span className={`direction ${cycle.direction.toLowerCase()}`}>{cycle.direction === "SHORT" ? "空" : "多"}</span></h2></div>
@@ -35,7 +35,7 @@ export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, pl
 
       <div className="review-step-body">
         {step === 0 && <section className="review-step" aria-labelledby="review-facts-title">
-          <div className="review-step-heading"><div><p>系統整理</p><h3 id="review-facts-title">先確認發生了什麼</h3></div><span>只呈現可追溯資料，不替你解釋動機。</span></div>
+          <div className="review-step-heading"><div><h3 id="review-facts-title">先確認發生了什麼</h3></div><span>只呈現可追溯資料，不替你解釋動機。</span></div>
           {analysis.sameDay && <div className="precision-warning"><b>同日交易・日線近似</b><span>MAE／MFE 不可視為分鐘級正式結果。</span></div>}
           <dl className="review-fact-strip"><div><dt>損益</dt><dd className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</dd><small>{pct(cycle.returnPct)}</small></div><div><dt>持有</dt><dd>{analysis.holdingHours.toFixed(1)} 小時</dd><small>{analysis.tradingDays == null ? "交易日待行情" : `${analysis.tradingDays} 個交易日`}</small></div><div><dt>MAE／MFE</dt><dd>{pct(cycle.maePct)}／{pct(cycle.mfePct)}</dd><small>{analysis.precision}</small></div><div><dt>R 倍數</dt><dd>{analysis.rMultiple == null ? "—" : `${analysis.rMultiple.toFixed(2)}R`}</dd><small>{analysis.initialRisk == null ? "需事前停損" : `風險 ${money(analysis.initialRisk, cycle.currency)}`}</small></div></dl>
           <ReplayBoard cycle={cycle} marketBars={marketBars} planHistory={planHistory} review={review} rapidPairs={rapidPairs} decisionLinks={decisionLinks} strategies={strategies} strategyAssignments={strategyAssignments} entryContexts={entryContexts} onAddPlanVersion={onAddPlanVersion}/>
@@ -69,5 +69,5 @@ export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, pl
 
       <footer className="review-step-actions"><button type="button" className="ghost" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))}>上一步</button><span>第 {step + 1} 步，共 4 步</span>{step < 3 ? <button type="button" className="primary" onClick={() => setStep((current) => Math.min(3, current + 1))}>下一步</button> : <button type="button" className="primary" onClick={onClose}>{progress.complete ? "完成復盤" : "保存並關閉"}</button>}</footer>
     </article>
-  </DialogFrame>;
+  </DetailFrame>;
 }

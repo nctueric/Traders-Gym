@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import TradeWorkspace from "../app/trade-workspace";
 import "../app/globals.css";
+import "../app/account.css";
+import "../app/react-workspace.css";
 
 // Only bundled by serve-ui-fixture.mjs, never imported by application routes.
 // A fresh ephemeral origin isolates browser storage and every request stays local.

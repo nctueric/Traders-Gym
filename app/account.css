@@ -1,4 +1,4 @@
-/* Operate surface: inherit V2's green, paper, system type and sidebar. The first viewport
+/* Operate surface:inherit V2's green, paper, system type and sidebar. The first viewport
    exposes account search and invitations; mobile rows retain labels and actions. */
 .auth-page{min-height:100dvh;display:grid;place-items:center;padding:32px 20px}
 .auth-panel{width:min(100%,560px);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:clamp(24px,5vw,48px)}
@@ -8,11 +8,11 @@
 .auth-panel .auth-privacy{font-size:14px;margin-top:32px}
 .auth-panel a{color:var(--green);text-underline-offset:4px}
 .google-button{min-height:44px;margin:28px 0}
-.account-alert{background:#fff1ef;color:#80362d!important;border:1px solid #dbb6b0;border-radius:10px;padding:14px 18px;line-height:1.6;overflow-wrap:anywhere}
+.account-alert{background:#1b2029;color:#ee918b!important;border:1px solid #343c49;border-radius:10px;padding:14px 18px;line-height:1.6;overflow-wrap:anywhere}
 .account-feedback{color:var(--green);padding:12px 0;overflow-wrap:anywhere}
 .account-link{display:inline-block;text-decoration:none}
-.admin-back{display:block;color:#e1ece5;margin:36px 0;text-underline-offset:5px}
-.admin-owner{display:grid;gap:8px;margin-top:auto;color:#e1ece5;font-size:14px;overflow-wrap:anywhere}
+.admin-back{display:block;color:#a6b0c1;margin:36px 0;text-underline-offset:5px}
+.admin-owner{display:grid;gap:8px;margin-top:auto;color:#a6b0c1;font-size:14px;overflow-wrap:anywhere}
 .admin-owner small{color:var(--lime);font-size:14px}
 .admin-content{max-width:1500px}
 .admin-tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin:32px 0 24px;overflow:auto}
@@ -41,12 +41,12 @@
 .account-dialog .account-target{color:var(--ink);font-weight:650;overflow-wrap:anywhere}
 .account-dialog .account-actions{justify-content:flex-end;margin-top:28px}
 .account-identity{display:grid;gap:10px;margin-top:22px;font-size:14px;overflow-wrap:anywhere}
-.account-identity span{color:#c5d4cb}.account-identity a{color:var(--lime);padding:10px 0;text-underline-offset:4px}
-.account-identity button{color:#edf4ef;background:transparent;border:1px solid #667a6e;border-radius:8px;padding:10px;text-align:left}
+.account-identity span{color:#a6b0c1}.account-identity a{color:var(--lime);padding:10px 0;text-underline-offset:4px}
+.account-identity button{color:#a6b0c1;background:transparent;border:1px solid #343c49;border-radius:8px;padding:10px;text-align:left}
 .admin-shell button:disabled,.account-dialog button:disabled{opacity:.55;cursor:not-allowed}
 .admin-shell button:focus-visible,.admin-shell a:focus-visible,.admin-shell input:focus-visible,.admin-shell select:focus-visible,.account-dialog input:focus-visible,.account-dialog button:focus-visible,.auth-panel a:focus-visible{outline:3px solid var(--green);outline-offset:3px}
 .admin-shell button:hover:not(:disabled){filter:brightness(.92)}
-.admin-shell input{caret-color:var(--green)}.admin-shell ::selection,.auth-panel ::selection{background:var(--lime);color:var(--ink)}
+.admin-shell input{caret-color:var(--green)}.admin-shell::selection,.auth-panel ::selection{background:var(--lime);color:var(--ink)}
 .admin-shell .sidebar a:focus-visible{outline-color:var(--lime)}
 .admin-results td{font-variant-numeric:tabular-nums}
 @media(max-width:760px){.admin-shell{display:block}.admin-shell .sidebar{position:static;height:auto;padding:20px;display:grid;grid-template-columns:1fr;gap:16px}.admin-back{margin:0}.admin-owner{display:none}.admin-content{padding:28px 16px}.admin-content h1{font-size:28px}.admin-toolbar{gap:12px}.admin-toolbar label:first-child{max-width:none;flex-basis:100%}.admin-results{border:0;background:transparent;overflow:visible}.admin-results thead{display:none}.admin-results table,.admin-results tbody{display:block}.admin-results tr{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 16px;margin-bottom:14px}.admin-results td{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px;padding:12px 0;border:0}.admin-results td::before{content:attr(data-label);color:var(--muted)}.admin-results td small{grid-column:2;margin:0}.admin-results td strong{font-size:14px}.admin-results .account-actions{display:grid}.account-identity{padding:8px 0}.auth-panel{padding:24px}.auth-panel h1{margin-top:28px}}

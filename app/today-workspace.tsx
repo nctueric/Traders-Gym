@@ -54,7 +54,7 @@ export function TodayWorkspace({ brief, positionRows, cycles, reviews, totalEqui
 
   return <div className="today-workspace">
     <header className="today-intro">
-      <p>{dateLabel}・規則型摘要</p>
+      <p className="today-date">{dateLabel}</p>
       <div className="today-intro-heading"><h2>今天先處理這{brief.length === 1 ? "一" : brief.length === 2 ? "兩" : "三"}件事</h2><button type="button" className="text-button" onClick={onGuide}>使用導覽</button></div>
       <span>先看需要決定的事，再展開數字。每項建議都能回到原始交易或計算證據。</span>
     </header>

@@ -76,3 +76,39 @@ export function SectionLinks({ label, links }: {
     }}>{link.label}</a>)}
   </nav>;
 }
+
+/** Docked detail retains its children when collapsed or enlarged. No record state. */
+export function DetailFrame({ label, className = "", onClose, children }: {
+  label: string; className?: string; onClose: () => void; children: ReactNode;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panel.current?.focus({ preventScroll: true });
+    const scrollY = window.scrollY;
+    const narrow = window.matchMedia("(max-width:1199px)").matches;
+    if (narrow) window.scrollTo({ top:0, behavior:"instant" });
+    return () => {
+      if (opener?.isConnected) opener.focus({ preventScroll:true });
+      if (narrow) window.scrollTo({ top:scrollY, behavior:"instant" });
+    };
+  }, []);
+  useEffect(() => {
+    const element = panel.current;
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } };
+    element?.addEventListener("keydown", escape);
+    return () => element?.removeEventListener("keydown", escape);
+  }, [onClose]);
+  return <section ref={panel} tabIndex={-1} aria-label={label}
+    className={`workspace-detail ${className} ${expanded ? "is-expanded" : ""} ${collapsed ? "is-collapsed" : ""}`}>
+    <div className="detail-tools">
+      <button type="button" onClick={onClose}>返回清單</button>
+      <span>{label}</span>
+      <button type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? "展開詳情" : "收合詳情"}</button>
+      <button type="button" className="detail-expand" aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? "還原雙欄" : "放大詳情"}</button>
+    </div>
+    <div className="detail-body" hidden={collapsed}>{children}</div>
+  </section>;
+}
