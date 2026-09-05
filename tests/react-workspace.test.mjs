@@ -8,10 +8,10 @@ import {renderToStaticMarkup} from "react-dom/server";
 const require=createRequire(import.meta.url);
 const source=readFileSync(new URL("../app/workspace-ui.tsx",import.meta.url),"utf8");
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-const module={exports:{}};
-new Function("require","module","exports",code)(require,module,module.exports);
+const loadedModule={exports:{}};
+new Function("require","module","exports",code)(require,loadedModule,loadedModule.exports);
 test("detail is a non-modal region with keyboard reachable controls",()=>{
- const html=renderToStaticMarkup(React.createElement(module.exports.DetailFrame,{label:"測試持倉",onClose(){}},React.createElement("input",{defaultValue:"尚未提交"})));
+ const html=renderToStaticMarkup(React.createElement(loadedModule.exports.DetailFrame,{label:"測試持倉",onClose(){}},React.createElement("input",{defaultValue:"尚未提交"})));
  assert.match(html,/aria-label="測試持倉"/);
  assert.doesNotMatch(html,/<dialog|aria-modal/);
  assert.match(html,/返回清單/);assert.match(html,/aria-expanded="true"/);assert.match(html,/aria-pressed="false"/);

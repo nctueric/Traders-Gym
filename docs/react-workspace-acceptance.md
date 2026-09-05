@@ -45,6 +45,8 @@
 - 設計檢測器未報告機械式問題。獨立審查：SHIP with documented limitations。六項修正中四項 resolved，手機密度與表格裁切兩項 partial / acceptable。此結論僅涵蓋修正清單，不代表所有畫面狀態均已驗收。
 - 已知限制：手機上方框架約 404px；寬表格仍需橫向捲動；缺行情的績效空狀態已檢查，但合成資料未涵蓋填滿的績效圖；Google 真實帳號及正式環境未驗收。
 - GitHub CI／PR 狀態以 PR 上的實際結果為準。
+- 首次 GitHub CI 發現測試變數 module 命名規則問題，已改為 loadedModule 後重跑。
+- Cloudflare 非正式分支 webhook 仍設定 pnpm run build；2026-09-05 的失敗日誌確認 npm 安裝成功，但建置命令與 packageManager 不符。此部署設定未在 UI 分支任務中修改，Workers Builds 檢查仍未通過。正式發布不得視為就緒。
 
 ## 正式發布仍需完成
 
