@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { themedContext, observeChartTheme } from "./chart-theme";
 
 import { ENTRY_OPTIONS, VOLUME_OPTIONS, filterCyclesByEntry, contextsForCycle } from "@/lib/trade-entry.mjs";
 import { EntryContextEvidence } from "./trade-entry-workspace";
@@ -50,7 +51,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const scale = window.devicePixelRatio || 1;
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
-      const context = canvas.getContext("2d");
+      const context = themedContext(canvas);
       if (!context) return;
       context.scale(scale, scale);
       context.clearRect(0, 0, width, height);
@@ -159,7 +160,8 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [model, selectedEventId, visibleCandles]);
 
   return <canvas ref={canvasRef} className="replay-canvas" role="img" aria-label={`${model.symbol} 進場前三個月到出場後三個月的日線交易決策重播；包含成交量、成交、計畫、MAE及MFE`}>交易決策重播圖</canvas>;
@@ -254,7 +256,7 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
       canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      const context = canvas.getContext("2d");
+      const context = themedContext(canvas);
       if (!context) return;
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
@@ -331,7 +333,8 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
     const observer = new ResizeObserver(draw);
     observer.observe(canvas.parentElement || canvas);
     draw();
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [inRange, rewardRisk, winRatePct]);
 
   const hasSample = stats.winners.count > 0 && stats.losers.count > 0;
@@ -370,7 +373,7 @@ function MonthlyExpectancyTrend({ cycles }: { cycles: any[] }) {
       const height = margin.top + panelHeight * 3 + panelGap * 2 + margin.bottom;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
-      const context = canvas.getContext("2d"); if (!context) return;
+      const context = themedContext(canvas); if (!context) return;
       context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
       const plotWidth = width - margin.left - margin.right;
       const x = (index: number) => margin.left + (visible.length <= 1 ? plotWidth / 2 : index * plotWidth / (visible.length - 1));
@@ -422,7 +425,8 @@ function MonthlyExpectancyTrend({ cycles }: { cycles: any[] }) {
       visible.forEach((point: any, index: number) => { if (index % labelEvery === 0 || index === visible.length - 1) context.fillText(point.month, x(index), height - 13); });
     };
     const observer = new ResizeObserver(draw); observer.observe(canvas.parentElement || canvas); draw();
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [endIndex, selectedIndex, startIndex, visible]);
 
   const selectFromPointer = (event: React.MouseEvent<HTMLCanvasElement>) => {

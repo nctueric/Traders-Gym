@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { themedContext, observeChartTheme } from "./chart-theme";
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ACTION_LABELS, ENTRY_OPTIONS, VOLUME_OPTIONS, ADD_OPTIONS, STOP_OPTIONS, TARGET_OPTIONS, CHECK_OPTIONS, previewEntry, buildEntryEvidence, entryValuation, marketDate, marketCurrency, contextsForCycle } from '@/lib/trade-entry.mjs';
@@ -27,7 +28,7 @@ export function EntryCandles({evidence,price,stop,target}: {evidence:any;price?:
     const draw=()=>{
       const width=Math.max(280,element.getBoundingClientRect().width),height=320,dpr=window.devicePixelRatio || 1;
       element.width=width*dpr;element.height=height*dpr;
-      const ctx=element.getContext('2d');if(!ctx)return;
+      const ctx=themedContext(element);if(!ctx)return;
       ctx.scale(dpr,dpr);ctx.clearRect(0,0,width,height);
       const left=10,right=85,top=24,plotHeight=170,bottom=265;
       const values=bars.flatMap((item:any)=>[Number(item.high),Number(item.low)]);
@@ -53,7 +54,8 @@ export function EntryCandles({evidence,price,stop,target}: {evidence:any;price?:
       if(Number(price)>0){const x=width-right,py=y(Number(price));ctx.fillStyle='#3864b0';ctx.beginPath();ctx.moveTo(x,py);ctx.lineTo(x+7,py-4);ctx.lineTo(x+7,py+4);ctx.closePath();ctx.fill();}
       ctx.fillStyle='#56645e';ctx.fillText('右側標記＝成交日價格；不代表前十日成交',left,309,width-20);
     };
-    draw();const observer=new ResizeObserver(draw);observer.observe(element);return()=>observer.disconnect();
+    draw();const observer=new ResizeObserver(draw);observer.observe(element);const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   },[bars,index,price,stop,target,evidence.averageVolume10]);
   return <div className="entry-candles">{bars.length ? <><canvas ref={canvas} role="img" aria-label={`成交日前 ${bars.length} 根日K與成交量，日線近似`} onPointerMove={(event)=>{const rect=event.currentTarget.getBoundingClientRect();setSelected(Math.min(bars.length-1,Math.max(0,Math.floor((event.clientX-rect.left-10)/(rect.width-95)*bars.length))));}}/><label>逐日查看<input aria-label="查看日K日期" type="range" min={0} max={bars.length-1} value={index} onChange={(event)=>setSelected(Number(event.target.value))}/></label><p className="entry-ohlc"><b>{bar.date}</b><span>開 {number(bar.open)}</span><span>高 {number(bar.high)}</span><span>低 {number(bar.low)}</span><span>收 {number(bar.close)}</span><span>量 {number(bar.volume,0)}</span></p></> : <div className="mini-empty">沒有有效的成交前日線，仍可保存真實成交。</div>}<p className="section-note">成交前完整日線 {bars.length}/10・10日均量 {number(evidence.averageVolume10,0)}・量比 {number(evidence.volumeRatio)}<br/>量比＝最新完整日成交量 ÷ 前10個完整日均量。未取得11根或成交量缺漏時不計算。</p>{evidence.fillDayBar && <details><summary>成交日 K 線（事後資訊）</summary><p>{evidence.fillDayBar.date} 開 {number(evidence.fillDayBar.open)}／高 {number(evidence.fillDayBar.high)}／低 {number(evidence.fillDayBar.low)}／收 {number(evidence.fillDayBar.close)}／量 {number(evidence.fillDayBar.volume,0)}</p><small>日線可能尚未收盤；無法據此推測成交當下已知的高低價或事件順序。</small></details>}</div>;
 }

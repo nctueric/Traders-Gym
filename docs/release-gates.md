@@ -10,7 +10,9 @@
 - Cloudflare production build_command 已更新為 npm ci && npm run build。
 - Cloudflare build variables：SKIP_DEPENDENCY_INSTALL=1、NODE_VERSION=22；更新後以 GET 讀回核對一致。
 - 隔離目錄乾淨安裝通過；242 項測試、lint、TypeScript 與正式 build 全部通過（本機 Node 24.18.0）。
-- 尚未觸發遠端 build；正式 Node 22 / Linux 管線驗證留待發布閘門。停用中的 preview 設定未變動。
+- React 候選分支 GitHub Actions 已通過 245 項測試、lint、TypeScript 與 build（run 33951095990）。
+- 非正式分支 Cloudflare trigger 已改為 npm run build，以及 npx wrangler deploy --dry-run --config dist/server/wrangler.json；只驗證，不部署。production trigger 未在本次調整。
+- 遠端 build 5b1807c2-b83e-4f3e-8f8c-2a8ec166a4e3（08ac368）於 Node 22.23.2 / npm 10.9.2 完成安裝、build、dry-run，結果 success。此結果不驗證正式資源存在、權限或資料遷移；產物仍使用 Sites 邏輯 bindings。
 
 ## 2. 正式 D1：建立與查詢驗證通過
 
@@ -23,6 +25,7 @@
 ## 3. 私有 R2：等待 Dashboard 登入與啟用
 
 - 帳號 API 回覆 10042：Please enable R2 through the Cloudflare Dashboard.
+- 2026-09-05 介面驗收後再次檢查，仍回覆 10042；完成遠端建置驗證後在此暫停，等待使用者開通。
 - 已開啟 R2 overview，Dashboard 導向登入頁，瀏覽器尚未完成登入。
 - 尚未建立 bucket，尚未上傳私人快照。
 - 待登入與啟用後建立 traders-gym-snapshots，確認公開網址關閉，再做隔離測試物件寫入、讀取及雜湊驗證。

@@ -1,3 +1,4 @@
+import chartTheme from "./load-chart-theme.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,7 +10,7 @@ import { createEntryDraft, previewEntry, entryEvidenceKey, buildEntryEvidence } 
 
 const require=createRequire(import.meta.url);
 const code=ts.transpileModule(readFileSync(new URL('../app/trade-entry-workspace.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
-const load=(react=React,extras={})=>{const compiledModule={exports:{}};new Function('require','module','exports','window','ResizeObserver','fetch',code)(id=>id==='react'?react:id.startsWith('@/lib/')?require('../lib/'+id.slice(6)):require(id),compiledModule,compiledModule.exports,extras.window,extras.ResizeObserver,extras.fetch);return compiledModule.exports;};
+const load=(react=React,extras={})=>{const compiledModule={exports:{}};new Function('require','module','exports','window','ResizeObserver','fetch',code)(id=>id==='react'?react:id.startsWith('@/lib/')?require('../lib/'+id.slice(6)):id==="./chart-theme"?chartTheme:require(id),compiledModule,compiledModule.exports,extras.window,extras.ResizeObserver,extras.fetch);return compiledModule.exports;};
 const nodes=tree=>Array.isArray(tree)?tree.flatMap(nodes):!tree||typeof tree!=='object'?[]:[tree,...nodes(tree.props?.children)];
 const find=(tree,predicate)=>nodes(tree).find(predicate);
 const initial=()=>({version:'1',profile:{name:'test'},settings:{},accounts:[{id:'usd',currency:'USD',name:'美股'}],fills:[],marketBars:[],cashActivities:[],strategies:[]});

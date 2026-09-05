@@ -1,3 +1,4 @@
+import chartTheme from "./load-chart-theme.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,7 @@ function harness(){
  const states=[],memos=[];
  const react={...React,useState(initial){const i=stateIndex++;if(!(i in states))states[i]=initial;return[states[i],value=>{states[i]=value;}];},useMemo(fn,deps){const i=memoIndex++;if(!memos[i]||deps.some((dep,j)=>!Object.is(dep,memos[i].deps[j])))memos[i]={value:fn(),deps};return memos[i].value;}};
  const componentModule={exports:{}};
- new Function("require","module","exports",code)(id=>id==="react"?react:id==="@/lib/monthly-assets.mjs"?{...engine,buildMonthlyAssetHistory(...args){historyCalls++;return engine.buildMonthlyAssetHistory(...args);}}:require(id),componentModule,componentModule.exports);
+ new Function("require","module","exports",code)(id=>id==="react"?react:id==="@/lib/monthly-assets.mjs"?{...engine,buildMonthlyAssetHistory(...args){historyCalls++;return engine.buildMonthlyAssetHistory(...args);}}:id==="./chart-theme"?chartTheme:require(id),componentModule,componentModule.exports);
  return {render(p=props){stateIndex=0;memoIndex=0;return componentModule.exports.MonthlyAssets.type(p);},get historyCalls(){return historyCalls;}};
 }
 function nodes(tree){return Array.isArray(tree)?tree.flatMap(nodes):!tree||typeof tree!=="object"?[]:[tree,...nodes(tree.props?.children)];}
@@ -66,7 +67,7 @@ function drawChart(points, parentWidth=600){
  let redraw,observed;
  const react={...React,useRef:()=>({current:canvas}),useEffect:effect=>effect()};
  const componentModule={exports:{}};
- new Function("require","module","exports","window","ResizeObserver",code)(id=>id==="react"?react:id==="@/lib/monthly-assets.mjs"?engine:require(id),componentModule,componentModule.exports,{devicePixelRatio:2},class{constructor(fn){redraw=fn;}observe(target){observed=target;}disconnect(){}});
+ new Function("require","module","exports","window","ResizeObserver",code)(id=>id==="react"?react:id==="@/lib/monthly-assets.mjs"?engine:id==="./chart-theme"?chartTheme:require(id),componentModule,componentModule.exports,{devicePixelRatio:2},class{constructor(fn){redraw=fn;}observe(target){observed=target;}disconnect(){}});
  const tree=componentModule.exports.MonthlyAssetChart({points,selectedMonth:points.at(-1)?.month,onSelect(){}});
  return {operations,canvas,tree,viewport,observed,redraw};
 }

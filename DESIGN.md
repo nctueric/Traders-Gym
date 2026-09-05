@@ -114,6 +114,12 @@ General focus is a two-pixel blue outline offset three pixels; some account/disc
 - Do preserve financial semantics and existing application contracts.
 - Do retain chart/form state, focus return and scroll position across detail presentation changes.
 - Do use dark surfaces, system fonts and tabular figures.
-- Don't reintroduce the superseded light visual direction.
+- Preserve the dark workspace and the user-requested light alternative; neither changes layout or financial semantics.
 - Don't claim all controls are 44px or all trading tables fit without scrolling.
 - Don't describe remaining inherited green treatments as already normalized.
+
+## Light appearance (2026-09-05)
+
+User-requested alternate appearance, not a replacement layout. The page uses #f4f6f8, panels white, text #202833, secondary text #536071, actions #245fae, gains #127353 and losses #b63838. Shared color tokens keep every existing selector consistent. `themes.css` loads last and remaps the literal palette without changing component geometry.
+
+The global 外觀 control offers 淺色 / 深色 on workspace, login, forbidden and admin pages. Dark remains the default. A device-local `traders-gym:appearance` preference restores before paint, synchronizes between tabs, and works without persistent storage when storage is blocked. It contains no identity or ledger data. Canvas charts observe theme changes and repaint through a presentation adapter without altering calculations or coordinates.

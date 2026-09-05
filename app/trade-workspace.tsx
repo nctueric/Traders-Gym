@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { themedContext, observeChartTheme } from "./chart-theme";
 
 import { TradeEntryWorkspace, EntryContextEvidence } from "./trade-entry-workspace";
 import { createEntryDraft, commitEntry } from "@/lib/trade-entry.mjs";
@@ -768,7 +769,7 @@ function PerformancePanel({ points, currentEquity, monthAssetDelta, monthKey, be
       const scale = window.devicePixelRatio || 1;
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
-      const context = canvas.getContext("2d");
+      const context = themedContext(canvas);
       if (!context) return;
       context.scale(scale, scale);
       context.clearRect(0, 0, width, height);
@@ -803,7 +804,8 @@ function PerformancePanel({ points, currentEquity, monthAssetDelta, monthKey, be
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
-    return () => observer.disconnect();
+    const themeObserver = observeChartTheme(draw);
+    return () => { observer.disconnect(); themeObserver.disconnect(); };
   }, [visiblePoints]);
 
   return <><section className="performance-summary"><article><span>{monthKey.slice(5)}月資產變化累計差額</span><b className={monthAssetDelta != null && monthAssetDelta >= 0 ? "positive" : "negative"}>{monthAssetDelta == null ? "—" : money(monthAssetDelta)}</b><small>月初前最後有效週資產至目前即時淨值</small></article><article><span>目前總資產</span><b>{currentEquity.totalUsd == null ? "—" : money(Number(currentEquity.totalUsd))}</b><small>{currentEquity.liveQuoteCount === currentEquity.positionCount ? `即時淨值・${new Date(currentEquity.asOf).toLocaleTimeString("zh-TW")}` : `${currentEquity.liveQuoteCount}/${currentEquity.positionCount} 個持倉為即時價`}</small></article><article><span>比較基準</span><b>{benchmarkSymbol}</b><small>{benchmarkState}</small></article></section><article className="panel performance-panel"><div className="panel-head performance-head"><div><h2>每週績效比較</h2></div><form className="benchmark-form" onSubmit={applyBenchmark}><label htmlFor="benchmark">ETF 比較基準</label><input id="benchmark" aria-label="ETF 比較基準" value={benchmarkInput} onChange={(event) => setBenchmarkInput(event.target.value.toUpperCase())} placeholder="例如 SPY"/><button className="primary">套用</button></form></div><div className="chart-legend"><span><i className="portfolio-color"/>我的資產</span><span><i className="benchmark-color"/>{benchmarkSymbol}</span><small>每週相較上週；中央線為 0%</small></div>{visiblePoints.length ? <><canvas ref={canvasRef} className="performance-canvas" role="img" aria-label={`每週資產績效與 ${benchmarkSymbol} 比較，中央為零軸`}>每週績效比較圖</canvas><div className="table-wrap performance-table" tabIndex={0} role="region" aria-label="每週績效資料表，可捲動"><table><thead><tr><th>週起始日</th><th>我的資產</th><th>{benchmarkSymbol}</th><th>週末總資產</th></tr></thead><tbody>{visiblePoints.map((point) => <tr key={point.weekStart}><td>{point.weekStart}</td><td className={point.portfolioPct != null && point.portfolioPct >= 0 ? "positive" : "negative"}>{pct(point.portfolioPct)}</td><td className={point.benchmarkPct != null && point.benchmarkPct >= 0 ? "benchmark-positive" : "negative"}>{pct(point.benchmarkPct)}</td><td>{point.totalUsd == null ? "—" : money(Number(point.totalUsd))}</td></tr>)}</tbody></table></div><div className="chart-foot"><small>歷史週績效以各週最後可用收盤價估值；目前總資產另以最新持倉報價計算。TWD 依目前 USDTWD {fxRate ? fxRate.toFixed(4) : "待更新"} 換算。</small></div></> : <Empty text="至少需要連續兩週有效資產資料，才能計算週績效"/>}</article></>;

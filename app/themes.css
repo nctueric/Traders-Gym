@@ -1,0 +1,96 @@
+/* Shared literal tokens preserve dark appearance; light remaps the same roles. */
+:root {
+  --tone-e1e6ef:#e1e6ef;
+  --tone-a6b0c1:#a6b0c1;
+  --tone-11151c:#11151c;
+  --tone-1b2029:#1b2029;
+  --tone-343c49:#343c49;
+  --tone-69c6a7:#69c6a7;
+  --tone-8ab8f4:#8ab8f4;
+  --tone-ee918b:#ee918b;
+  --tone-e6b66e:#e6b66e;
+  --tone-0005:#0005;
+  --tone-d9f36b22:#d9f36b22;
+  --tone-176b5018:#176b5018;
+  --tone-30291d:#30291d;
+  --tone-bcc5c126:#bcc5c126;
+  --tone-322326:#322326;
+  --tone-d63d3124:#d63d3124;
+  --tone-35645a:#35645a;
+  --tone-d63d3118:#d63d3118;
+  --tone-ffffff18:#ffffff18;
+  --tone-6e5531:#6e5531;
+  --tone-202b3c:#202b3c;
+  --tone-714047:#714047;
+  --tone-0002:#0002;
+  --tone-18312c:#18312c;
+  --tone-3d5c85:#3d5c85;
+  --tone-315e9b20:#315e9b20;
+  --tone-1c2b40:#1c2b40;
+  --tone-176b5016:#176b5016;
+  --tone-a8463b14:#a8463b14;
+  --tone-ffffff:#ffffff;
+  --tone-edf2ef:#edf2ef;
+  --tone-176b50:#176b50;
+  --tone-17211f18:#17211f18;
+  --tone-22334d:#22334d;
+  --tone-242c38:#242c38;
+  --tone-536078:#536078;
+  --tone-151a22:#151a22;
+  --tone-355985:#355985;
+  --tone-fff:#fff;
+  --tone-aacdfb:#aacdfb;
+  --tone-19251f:#19251f;
+  --tone-222c3a:#222c3a;
+  --tone-080b11b8:#080b11b8;
+  --primary-ink:#11151c;
+}
+:root[data-theme="light"] {
+  color-scheme:light;
+  --tone-322326:#fff0ef;
+  --tone-355985:#c9ddf8;
+  --tone-536078:#7a8799;
+  --tone-714047:#dba7a7;
+  --tone-e1e6ef:#202833;
+  --tone-a6b0c1:#536071;
+  --tone-11151c:#f4f6f8;
+  --tone-1b2029:#ffffff;
+  --tone-343c49:#b8c2ce;
+  --tone-69c6a7:#127353;
+  --tone-8ab8f4:#245fae;
+  --tone-ee918b:#b63838;
+  --tone-e6b66e:#855411;
+  --tone-30291d:#fff3da;
+  --tone-35645a:#d6ece3;
+  --tone-6e5531:#9b691f;
+  --tone-202b3c:#edf3fa;
+  --tone-18312c:#dfefe8;
+  --tone-3d5c85:#b8cce6;
+  --tone-1c2b40:#eaf1fa;
+  --tone-ffffff:#ffffff;
+  --tone-edf2ef:#edf2ef;
+  --tone-176b50:#176b50;
+  --tone-22334d:#e6effb;
+  --tone-242c38:#e9eef4;
+  --tone-151a22:#f0f3f7;
+  --tone-fff:#202833;
+  --tone-aacdfb:#174a8c;
+  --tone-19251f:#eaf6ef;
+  --tone-222c3a:#edf3fa;
+  --primary-ink:#ffffff;
+}
+.primary,.brand span { color:var(--primary-ink); }
+.quote-bar { color:var(--ink); }
+.appearance-toolbar { display:flex; justify-content:flex-end; padding:6px 16px; border-bottom:1px solid var(--line); background:var(--paper); }
+.appearance-toolbar>div { display:flex; align-items:center; gap:4px; }
+.appearance-toolbar span { font-size:.875rem; color:var(--muted); margin-right:8px; }
+.appearance-toolbar button { min-height:36px; min-width:56px; padding:6px 12px; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--muted); }
+.appearance-toolbar button[aria-pressed="true"] { background:var(--selected); border-color:var(--accent); color:var(--accent); }
+:root[data-theme="light"] .behavior-heatmap .heat.severity-3 { color:var(--red); }
+:root[data-theme="light"] .provider b,
+:root[data-theme="light"] .mobile-nav-toggle,
+:root[data-theme="light"] .sidebar nav button:hover,
+:root[data-theme="light"] .ledger-switch button[aria-pressed="true"],
+:root[data-theme="light"] .today-experiment,
+:root[data-theme="light"] .today-experiment .ghost { color:var(--ink); }
+@media(max-width:760px) { .appearance-toolbar { padding:4px 12px; } .appearance-toolbar button { min-height:44px; } }

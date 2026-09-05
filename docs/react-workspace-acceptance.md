@@ -46,8 +46,19 @@
 - 已知限制：手機上方框架約 404px；寬表格仍需橫向捲動；缺行情的績效空狀態已檢查，但合成資料未涵蓋填滿的績效圖；Google 真實帳號及正式環境未驗收。
 - GitHub CI／PR 狀態以 PR 上的實際結果為準。
 - 首次 GitHub CI 發現測試變數 module 命名規則問題，已改為 loadedModule 後重跑。
-- Cloudflare 非正式分支 webhook 仍設定 pnpm run build；2026-09-05 的失敗日誌確認 npm 安裝成功，但建置命令與 packageManager 不符。此部署設定未在 UI 分支任務中修改，Workers Builds 檢查仍未通過。正式發布不得視為就緒。
+- 2026-09-05 使用者確認介面驗收通過，授權開始部署設定修正；不代表正式發布核准。
+- Cloudflare 非正式分支已由 pnpm 改為 npm run build；部署命令暫設 npx wrangler deploy --dry-run --config dist/server/wrangler.json，僅驗證、不上傳版本。設定已讀回核對，main 設定未變動。
+- 遠端 build 5b1807c2-b83e-4f3e-8f8c-2a8ec166a4e3 對應 08ac368a2dab09cfce5040c4ad4d25300bbf9a43，Node 22.23.2 / npm 10.9.2 安裝、正式 build、Wrangler dry-run 全部成功。產物仍為 Sites 邏輯資源設定；未驗證正式 D1/R2 綁定，禁止當作正式可部署設定。
 
 ## 正式發布仍需完成
 
-使用者 UI 驗收、R2 開通與正式綁定、Google 正式登入設定、原交易資料歸屬遷移、Cloudflare 外部瀏覽器／真實帳號驗收。不得因 UI 建置成功直接發布，亦不得合併 main 覆蓋原版。
+### 淺色／深色切換追加驗收（2026-09-05）
+
+- 全站共用「外觀：淺色／深色」，預設深色；localStorage 僅記錄裝置外觀，不寫入交易 JSON。
+- 主題選擇重新整理後保留、跨分頁同步、儲存受阻仍可切換；圖表使用外觀轉接器重繪，不改計算與座標。
+- 248 項測試、lint、TypeScript、正式 build 通過。設計檢測器無 findings。
+- 登入、隔離交易工作區與後台完成瀏覽器檢查；1440px 與 390px 無整頁橫向溢出，無 pageerror。修正手機導覽與行情來源殘留白字。
+- 淺色主要文字、次要文字、選取、盈虧與主要按鈕六組對比皆至少 5.45:1。不是全站 WCAG 認證。
+- 此追加功能尚未取得使用者視覺驗收；正式部署閘門不變。
+
+R2 開通與正式綁定、Google 正式登入設定、原交易資料歸屬遷移、Cloudflare 外部瀏覽器／真實帳號驗收。R2 API 再次回覆 10042，需使用者於 Dashboard 啟用；在此閘門暫停。不得因 UI 建置成功直接發布，亦不得合併 main 覆蓋原版。

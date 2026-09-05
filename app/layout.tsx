@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./account.css";
 import "./react-workspace.css";
+import "./themes.css";
+import { ThemeToolbar } from "./theme-toolbar";
 
 export const metadata: Metadata = {
   title: "交易復盤顧問",
@@ -10,5 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-Hant"><body><div hidden dangerouslySetInnerHTML={{ __html: "<!-- THESIS: Inspect trades without losing the ledger. OWN-WORLD: Graphite, blue selection, green gains/red losses. STORY: Scan, select, inspect and save. FIRST VIEWPORT: Compact navigation, account/save strip, ledger plus right detail. FORM: user-pinned-react-workspace, code-led. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance -->" }}/>{children}</body></html>;
+  // Tiny same-origin preference script must run before paint to prevent a theme flash.
+  // eslint-disable-next-line @next/next/no-sync-scripts
+  return <html lang="zh-Hant" suppressHydrationWarning><head><script src="/theme-init.js" /></head><body><ThemeToolbar />{children}</body></html>;
 }
