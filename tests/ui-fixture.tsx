@@ -25,4 +25,4 @@ function FixtureImport() {
     button.hidden = true;
   }}>載入隔離匯入檔</button>;
 }
-createRoot(document.getElementById("root")!).render(<><TradeWorkspace /><FixtureImport /></>);
+createRoot(document.getElementById("root")!).render(<><TradeWorkspace user={{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",picture:"",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}} /><FixtureImport /></>);

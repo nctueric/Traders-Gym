@@ -40,7 +40,7 @@ const server = createServer(async (request, response) => {
       state.dataset = body.dataset; state.account = { ...state.account, name: body.accountName, version: state.account.version + 1, updatedAt: new Date().toISOString() }; state.writes++;
       return json({ account: state.account });
     }
-    return json(url.searchParams.has("accountId") ? { account: state.account, dataset: state.dataset } : { accounts: [state.account] });
+    return json({ account: state.account, dataset: state.dataset, accounts: [state.account] });
   }
   if (url.pathname === "/api/quotes") {
     const symbols = (url.searchParams.get("symbols") || "").split(",");

@@ -8,6 +8,27 @@
       "when": 1787670514791,
       "tag": "0000_fair_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788584067874,
+      "tag": "0001_foamy_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788584358696,
+      "tag": "0002_harsh_kitty_pryde",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789185809922,
+      "tag": "0003_lonely_fenris",
+      "breakpoints": true
     }
   ]
 }

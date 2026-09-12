@@ -1,4 +1,5 @@
 import { normalizeYahooHistory, normalizeYahooOhlcHistory } from "@/lib/quote-engine.mjs";
+import { rejectAnonymous } from "@/app/account-server";
 
 const SYMBOL_PATTERN = /^[A-Z0-9.^=-]{1,20}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -22,6 +23,7 @@ async function fetchYahooHistory(symbol: string, range: URLSearchParams) {
 }
 
 export async function GET(request: Request) {
+  const denied = await rejectAnonymous(request); if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const symbol = (searchParams.get("symbol") || "").trim().toUpperCase();
   const datasetSymbol = (searchParams.get("datasetSymbol") || symbol).trim().toUpperCase();

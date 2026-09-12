@@ -40,3 +40,10 @@ yarn-error.log*
 /work/
 /data/private/
 *.tsbuildinfo
+.dev.vars*
+!.env.example
+!.dev.vars.example
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+/.impeccable/review/
