@@ -1,2 +1,5 @@
 # Production Workers needs a separate Google Web client. No Client Secret is needed.
 GOOGLE_CLIENT_ID=
+
+# Private Sites only, never enable on a directly accessible Worker.
+# SITES_TRIAL_AUTH=true

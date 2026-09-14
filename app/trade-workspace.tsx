@@ -487,7 +487,7 @@ export default function TradeWorkspace({ user, storageTarget = "雲端" }: { use
       try { localStorage.setItem("tg.auth.changed", "logout"); } catch { /* Server session has already been revoked. */ }
       sessionScope.stop();
       setSessionEnded(true);
-      window.location.replace("/login");
+      window.location.replace(user.authProvider === "sites" ? "/signout-with-chatgpt?return_to=%2Flogin" : "/login");
     } catch (error) { handleSaveError(error); }
   }
   function openEntry() {
@@ -597,7 +597,7 @@ export default function TradeWorkspace({ user, storageTarget = "雲端" }: { use
       <nav id="primary-navigation" className={navOpen ? "is-open" : ""} aria-label="主要導覽">{[["today", "今日"], ["overview", "持倉"], ["cycles", "復盤"], ["performance", "績效"], ["trades", "資料"]].map(([key, label]) => <button key={key} className={navigationTab === key ? "active" : ""} aria-current={navigationTab === key ? "page" : undefined} onClick={() => changePage(key)}>{label}</button>)}</nav>
       <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並自動儲存。</small></div>
       <div className="local-note">雲端保存完整交易資料與行情快照<br/><b>手動儲存＋背景自動儲存</b><small>不會自動寫入 Obsidian；請下載 JSON 另存備份。</small></div>
-      <div className="account-identity"><strong>{user.name}</strong><span>{user.email}</span>{user.isOwner && <a href="/admin">系統管理</a>}<button type="button" onClick={() => void logout()}>登出</button></div>
+      <div className="account-identity"><strong>{user.name}</strong><span>{user.email}</span>{user.authProvider === "sites" && <small>獨立試用帳本 · Google／雲端完整驗收暫停</small>}{user.isOwner && <a href="/admin">系統管理</a>}<button type="button" onClick={() => void logout()}>登出</button></div>
     </aside>
     <main className="content" id="workspace-main" tabIndex={-1}>
       <header className="topbar"><div><h1>{title}</h1></div><div className="actions"><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => prepareImport(event.target.files?.[0])}/><button className="ghost" disabled={!storageReady} onClick={() => inputRef.current?.click()}>匯入 JSON／CSV</button><button type="button" className="ghost" disabled={!storageReady || !cloudReady || storageConflict || manualSaving} aria-busy={manualSaving} title="將目前帳號的完整資料寫入儲存位置，包含已載入的行情與匯率" onClick={() => void manualSave()}>{manualSaving ? "儲存中…" : "立即儲存"}</button><button className="ghost" disabled={!storageReady} onClick={exportJson}>匯出備份</button><button className="primary" disabled={!storageReady} onClick={openEntry}>新增交易</button></div></header>

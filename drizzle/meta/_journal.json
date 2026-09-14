@@ -29,6 +29,13 @@
       "when": 1789185809922,
       "tag": "0003_lonely_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789371321741,
+      "tag": "0004_sticky_shadowcat",
+      "breakpoints": true
     }
   ]
 }

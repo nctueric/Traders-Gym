@@ -1,3 +1,4 @@
+import { requireSitesTrialUser } from "../lib/sites-trial-auth.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -228,4 +229,28 @@ test('failed R2 cleanup retains history for a later retry', async t => {
   failing=false;
   const retry=await h.call(owner,'/api/admin/history?action=cleanup',{ids:[Number(row.id)]});
   assert.equal(retry.body.removed,1);assert.deepEqual(deleted,['old-object']);
+});
+
+
+test('Sites trial binds separately and cannot claim primary, bypass identity, or manage Google users', async t => {
+  const h=setup(t), original=h.sqlite.prepare('SELECT * FROM trade_account_snapshots WHERE account_id=?').get('primary');
+  const req=(path='/',body,session,subject='site-owner',email=OWNER_EMAIL)=>new Request(`https://app.example${path}`,{method:body?'POST':'GET',headers:{'oai-authenticated-user-id':subject,'oai-authenticated-user-email':email,Origin:'https://app.example','Content-Type':'application/json',...(session?{'x-workspace-session':session}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  await assert.rejects(requireSitesTrialUser(h.db,req('/api/trade-records')), {status:403});
+  const user=await requireSitesTrialUser(h.db,req(),{bootstrap:true});
+  assert.equal(h.sqlite.prepare('SELECT count(*) AS n FROM system_owner').get().n,0);
+  const api=createAccountApi({db:h.db,clientId:'',trial:true,authenticate:(request,options)=>requireSitesTrialUser(h.db,request,options)});
+  const current=await (await api.handle(req('/api/trade-records'))).json();
+  assert.notEqual(current.account.id,'primary');assert.equal(current.dataset.fills.length,0);
+  assert.deepEqual(h.sqlite.prepare('SELECT * FROM trade_account_snapshots WHERE account_id=?').get('primary'),original);
+  assert.equal((await api.handle(req('/api/trade-records?accountId=primary'))).status,403);
+  assert.equal((await api.handle(req('/api/admin/accounts'))).status,403);
+  assert.equal((await api.handle(req('/api/trade-records',null,null,'intruder'))).status,403);
+  assert.equal((await api.handle(new Request('https://app.example/api/trade-records'))).status,401);
+  const save=req('/api/trade-records',{accountId:current.account.id,accountName:'trial',dataset:current.dataset,baseVersion:current.account.version},user.sessionId);
+  const put=new Request(save,{method:'PUT'});assert.equal((await api.handle(put)).status,200);
+  const cross=req('/api/auth/logout',{},user.sessionId);cross.headers.set('Origin','https://evil.example');assert.equal((await api.handle(cross)).status,403);
+  assert.equal((await api.handle(req('/api/auth/logout',{},user.sessionId))).status,200);
+  assert.equal((await api.handle(req('/api/trade-records',null,user.sessionId))).status,401);
+  const google=await h.login(OWNER_EMAIL,'real-google-owner');
+  const legacy=await h.call(google,'/api/trade-records');assert.equal(legacy.body.account.id,'primary');assert.deepEqual(legacy.body.dataset,h.original);
 });

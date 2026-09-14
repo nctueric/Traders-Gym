@@ -41,3 +41,9 @@ export const snapshotHistory = sqliteTable("snapshot_history", {
   datasetJson: text("dataset_json").notNull(), objectKey: text("object_key"),
   sizeBytes: integer("size_bytes").notNull(), pinned: integer("pinned").notNull().default(0),
 }, table => [uniqueIndex("history_account_version").on(table.accountId, table.version), index("history_owner_date").on(table.ownerUserId, table.createdAt)]);
+
+// Separate identity binding; never links by email to the Google owner.
+export const sitesTrialIdentity = sqliteTable("sites_trial_identity", {
+  id: integer("id").primaryKey(), subject: text("subject").notNull().unique(),
+  userId: text("user_id").notNull().unique().references(() => appUsers.id),
+});
