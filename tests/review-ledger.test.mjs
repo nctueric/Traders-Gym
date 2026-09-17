@@ -75,3 +75,17 @@ test('same symbol on distinct markets must not share prices',()=>{
 test('a later deposit cannot imply an unknown earlier opening balance',()=>{
  const d=base();d.cashActivities=[cash('late','2026-01-03',1000)];assert.equal(historicalEquityAt(d,'2026-01-04').total,null);
 });
+
+test('shared dollar pool funds Taiwan trades from USD cash without a second opening balance',async()=>{
+ const {sharedDollarEquityAt}=await import('../lib/review-ledger.mjs');
+ const data={accounts:[{id:'a'},{id:'tw'}],cashActivities:[cash('fund','2026-01-01',1000)],fills:[fill('tw-buy','2026-01-02','BUY',10,320,{accountId:'tw',symbol:'2330',market:'TWSE',currency:'TWD',fee:32}),fill('tw-add','2026-01-03','BUY',5,640,{accountId:'tw',symbol:'2330',market:'TWSE',currency:'TWD'}),fill('tw-exit','2026-01-04','SELL',15,600,{accountId:'tw',symbol:'2330',market:'TWSE',currency:'TWD'})],marketBars:[bar('2026-01-02',32,{symbol:'USDTWD=X'}),bar('2026-01-03',40,{symbol:'USDTWD=X'}),bar('2026-01-03',600,{symbol:'2330.TW'}),bar('2026-01-05',10,{symbol:'USDTWD=X'})]};
+ const before=JSON.stringify(data),e=sharedDollarEquityAt(data,'2026-01-03');
+ assert.equal(e.cashUsd,819);assert.equal(e.positionsUsd,225);assert.equal(e.total,1044);assert.deepEqual(e.problems,[]);
+ const cycles=buildCycles(data).cycles,m=buildReviewLedgerMetrics(data,cycles,cycles).rows[cycles[0].id];assert.equal(m.investedUsd,180);assert.equal(m.allocation,180/1044);assert.equal(m.equity.currency,'USD');assert.equal(JSON.stringify(data),before);
+ data.marketBars=data.marketBars.filter(b=>b.symbol!=='USDTWD=X'||b.date>'2026-01-03');assert.equal(sharedDollarEquityAt(data,'2026-01-03').total,null);
+});
+test('shared pool preserves prior Taiwan cash flows after exit and values short liabilities in USD',async()=>{
+ const {sharedDollarEquityAt}=await import('../lib/review-ledger.mjs');const d={accounts:[{id:'a'},{id:'tw'}],cashActivities:[cash('fund','2026-01-01',1000)],fills:[fill('tw','2026-01-02','SELL',10,320,{accountId:'tw',symbol:'2330',currency:'TWD'}),fill('cover','2026-01-03','BUY',10,400,{accountId:'tw',symbol:'2330',currency:'TWD'})],marketBars:[bar('2026-01-02',32,{symbol:'USDTWD=X'}),bar('2026-01-03',40,{symbol:'USDTWD=X'}),bar('2026-01-02',384,{symbol:'2330'})]};
+ assert.equal(sharedDollarEquityAt(d,'2026-01-02').total,980);assert.equal(sharedDollarEquityAt(d,'2026-01-04').total,1000);
+ assert.deepEqual(reviewHistoryRequests(d,[{direction:'LONG',fills:[fill('later','2026-02-10','BUY',1,1)]}]).find(r=>r.symbol==='USDTWD=X').start,'2025-11-23');
+});
