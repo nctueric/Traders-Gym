@@ -58,7 +58,9 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
   const [cachedRows, setCachedRows] = useState<Record<string, any>>({});
   const valuationCycles = allCycles || cycles;
   const input = useMemo(() => ({accounts:dataset.accounts, fills:dataset.fills, cashActivities:dataset.cashActivities, marketBars:dataset.marketBars}), [dataset.accounts,dataset.fills,dataset.cashActivities,dataset.marketBars]);
+  const valuationInput = useMemo(() => JSON.stringify({input, cycles: valuationCycles.map(c => ({id:c.id,pnl:c.pnl,entryNotional:c.entryNotional,mfePct:c.mfePct,currency:c.currency,direction:c.direction,fills:c.fills,openAt:c.openAt,closeAt:c.closeAt,symbol:c.symbol,market:c.market,exchange:c.exchange}))}),[input,valuationCycles]);
   useEffect(() => {
+    const {input,cycles:valuationCycles} = JSON.parse(valuationInput);
     const controller = new AbortController();
     const forceRefresh = refreshRequested.current; refreshRequested.current = false;
     const load = async () => {
@@ -72,7 +74,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
           const response = await fetchHistory(url,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});
           if(response.ok) {
             const saved = await response.json();
-            if(validReviewCache(saved,key) && valuationCycles.every(c => saved.rows[c.id])) {
+            if(validReviewCache(saved,key) && valuationCycles.every((c:any) => saved.rows[c.id])) {
               if(controller.signal.aborted)return;
               setCachedRows(saved.rows);setState(`已讀取雲端估值 · ${new Date(saved.savedAt).toLocaleString("zh-TW")}`);return;
             }
@@ -105,7 +107,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
     };
     void load().catch(()=>{if(!controller.signal.aborted)setState("歷史估值讀取失敗，可重試。");});
     return ()=>controller.abort();
-  },[input,valuationCycles,accountId,fetchHistory,retry]);
+  },[valuationInput,accountId,fetchHistory,retry]);
   const metrics = useMemo(()=>scopedReviewMetrics(cachedRows,lossSampleCycles),[cachedRows,lossSampleCycles]);
   return <section className="quality-ledger" id="quick-rating" tabIndex={-1}>
     <div className="panel-head"><div><h2>逐筆交易復盤</h2><p className="muted">評價顯示已保存的判斷；點「看 K 線與復盤」修改。</p></div><div className="review-history-status"><span role="status">{state}</span>{<button type="button" className="text-button" onClick={() => {refreshRequested.current=true;setRetry(n => n + 1);}}>{state.includes("失敗") || state.includes("未取得") ? "重試估值" : "重新整理估值"}</button>}</div></div>
