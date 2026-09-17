@@ -24,3 +24,17 @@ export function QualityTagPicker({ cycle, kind, value, compact = false, onChange
       if (next.value !== value) onChange(next.value);
     }}/><span><b>{tag.label}</b>{!compact && <small>{tag.description}</small>}</span></label>; })}</div></fieldset>;
 }
+
+export function QualityTagSelect({ cycle, kind, value, onChange }: { cycle: any; kind: "entry" | "exit"; value?: string | null; onChange: (value: string) => void }) {
+  const id = useId();
+  const group = kind === "entry" ? "ENTRY" : exitQualityGroup(cycle);
+  const definitions = kind === "entry" ? ENTRY_QUALITY_TAGS : group === "PROFIT_EXIT" ? PROFIT_EXIT_QUALITY_TAGS : STOP_EXIT_QUALITY_TAGS;
+  const selected = definitions.find((tag) => tag.value === value);
+  return <label className="review-quality-select" htmlFor={id}>
+    <span>{kind === "entry" ? "進場判斷" : "出場判斷"}{kind === "exit" && <small>{group === "PROFIT_EXIT" ? "獲利離場" : "止損離場"}</small>}</span>
+    <select id={id} aria-label={kind === "entry" ? "進場判斷" : "出場判斷"} value={selected?.value || ""} aria-describedby={`${id}-help`} onChange={(event) => onChange(event.target.value)}>
+      <option value="">待評</option>{definitions.map((tag) => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
+    </select>
+    <small id={`${id}-help`}>{selected?.description || "依當時的計畫與條件判斷。"}</small>
+  </label>;
+}

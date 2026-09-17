@@ -52,6 +52,11 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       canvas.height = Math.round(height * scale);
       const context = canvas.getContext("2d");
       if (!context) return;
+      const styles = getComputedStyle(canvas);
+      const chartText = styles.getPropertyValue("--review-chart-text").trim() || "#66716e";
+      const chartLine = styles.getPropertyValue("--review-chart-line").trim() || "#e4e5dc";
+      const darkReview = Boolean(styles.getPropertyValue("--review-chart-text").trim());
+      const eventColor = (type: string) => darkReview ? ({ ENTRY: "#8bd6b4", ADD: "#8bd6b4", REDUCE: "#f1b771", EXIT: "#f1b771", MAE: "#ffa59a", MFE: "#8bd6b4" } as Record<string, string>)[type] || chartText : EVENT_COLOR[type] || "#17211f";
       context.scale(scale, scale);
       context.clearRect(0, 0, width, height);
       const padding = { top: 24, right: 64, bottom: 28, left: 16 };
@@ -73,13 +78,13 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const step = chartWidth / Math.max(visibleCandles.length, 1);
       const xFor = (index: number) => padding.left + step * (index + 0.5);
 
-      context.strokeStyle = "#e4e5dc";
+      context.strokeStyle = chartLine;
       context.lineWidth = 1;
       for (let row = 0; row <= 4; row += 1) {
         const y = padding.top + chartHeight * row / 4;
         context.beginPath(); context.moveTo(padding.left, y); context.lineTo(width - padding.right, y); context.stroke();
         const price = high - (high - low) * row / 4;
-        context.fillStyle = "#66716e"; context.font = "12px system-ui"; context.fillText(price.toFixed(2), width - padding.right + 8, y + 3);
+        context.fillStyle = chartText; context.font = "12px system-ui"; context.fillText(price.toFixed(2), width - padding.right + 8, y + 3);
       }
 
       visibleCandles.forEach((candle: any, index: number) => {
@@ -98,9 +103,9 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const volumeAverages = visibleCandles.map((candle: any) => Number(candle.averageVolume20) || 0);
       const maximumVolume = Math.max(...volumes, ...volumeAverages, 1);
       const volumeY = (value: number) => volumeTop + volumeHeight - value / maximumVolume * volumeHeight;
-      context.strokeStyle = "#e4e5dc";
+      context.strokeStyle = chartLine;
       context.beginPath(); context.moveTo(padding.left, volumeTop); context.lineTo(width - padding.right, volumeTop); context.stroke();
-      context.fillStyle = "#66716e"; context.font = "12px system-ui"; context.fillText("成交量", padding.left, volumeTop - 6);
+      context.fillStyle = chartText; context.font = "12px system-ui"; context.fillText("成交量", padding.left, volumeTop - 6);
       visibleCandles.forEach((candle: any, index: number) => {
         if (candle.volume == null || candle.volume < 0) return;
         const x = xFor(index);
@@ -121,7 +126,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
       const holdingStart = visibleCandles.findIndex((candle: any) => candle.phase === "HOLDING");
       const holdingEnd = visibleCandles.findLastIndex((candle: any) => candle.phase === "HOLDING");
       if (holdingStart >= 0 && holdingEnd >= holdingStart) {
-        drawDashedLine(context, xFor(holdingStart), yFor(model.averageEntry), xFor(holdingEnd), "#2f5f7c", `均價 ${model.averageEntry.toFixed(2)}`);
+        drawDashedLine(context, xFor(holdingStart), yFor(model.averageEntry), xFor(holdingEnd), darkReview ? "#9dcced" : "#2f5f7c", `均價 ${model.averageEntry.toFixed(2)}`);
       }
       const planEvents = model.events.filter((event: any) => !event.legacy && ["PLAN_STOP", "PLAN_TARGET"].includes(event.type) && event.price > 0);
       planEvents.forEach((event: any, index: number) => {
@@ -130,7 +135,7 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         const next = planEvents.slice(index + 1).find((candidate: any) => candidate.type === event.type && candidate.date);
         const nextIndex = next ? visibleCandles.findIndex((candle: any) => candle.date >= next.date) : -1;
         const endIndex = nextIndex > startIndex ? Math.min(visibleCandles.length - 1, nextIndex) : Math.min(visibleCandles.length - 1, Math.max(startIndex, holdingEnd));
-        const color = event.type === "PLAN_STOP" ? "#b43f35" : "#3f8a4d";
+        const color = event.type === "PLAN_STOP" ? (darkReview ? "#ffa59a" : "#b43f35") : (darkReview ? "#8bd6b4" : "#3f8a4d");
         drawDashedLine(context, xFor(startIndex), yFor(event.price), xFor(Math.max(startIndex, endIndex)), color, `${event.label} ${event.price.toFixed(2)}`);
       });
 
@@ -142,16 +147,16 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
         const y = yFor(event.price);
         const selected = event.id === selectedEventId;
         context.beginPath(); context.arc(x, y, selected ? 7 : 5, 0, Math.PI * 2);
-        context.fillStyle = EVENT_COLOR[event.type] || "#17211f"; context.fill();
+        context.fillStyle = eventColor(event.type); context.fill();
         context.strokeStyle = selected ? "#17211f" : "#fffef9"; context.lineWidth = selected ? 3 : 1.5; context.stroke();
         if (["ENTRY", "ADD", "REDUCE", "EXIT"].includes(event.type)) {
-          context.fillStyle = EVENT_COLOR[event.type] || "#17211f";
+          context.fillStyle = eventColor(event.type);
           context.font = "bold 12px system-ui";
           context.fillText(event.label, Math.min(width - padding.right - 24, x + 6), Math.max(12, y - 7));
         }
       });
 
-      context.fillStyle = "#66716e"; context.font = "12px system-ui";
+      context.fillStyle = chartText; context.font = "12px system-ui";
       const labelIndexes = [...new Set([0, Math.floor((visibleCandles.length - 1) / 2), visibleCandles.length - 1])];
       labelIndexes.forEach((index) => { const label = visibleCandles[index]?.date || ""; context.fillText(label.slice(5), Math.max(0, xFor(index) - 14), height - 10); });
       context.save(); context.strokeStyle = "#17211f33"; context.setLineDash([3, 4]); context.beginPath(); context.moveTo(xFor(visibleCandles.length - 1), padding.top); context.lineTo(xFor(visibleCandles.length - 1), volumeTop + volumeHeight); context.stroke(); context.restore();
@@ -159,13 +164,15 @@ function ReplayCanvas({ model, cursor, selectedEventId }: { model: any; cursor: 
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
-    return () => observer.disconnect();
+    const theme = matchMedia("(prefers-color-scheme: dark)");
+    theme.addEventListener("change", draw);
+    return () => { observer.disconnect(); theme.removeEventListener("change", draw); };
   }, [model, selectedEventId, visibleCandles]);
 
   return <canvas ref={canvasRef} className="replay-canvas" role="img" aria-label={`${model.symbol} 進場前三個月到出場後三個月的日線交易決策重播；包含成交量、成交、計畫、MAE及MFE`}>交易決策重播圖</canvas>;
 }
 
-export function ReplayBoard({ entryContexts = {}, initialEventId, cycle, marketBars, planHistory, review, rapidPairs, decisionLinks, strategies = [], strategyAssignments = {}, onAddPlanVersion, openPlan }: { entryContexts?: Record<string, any>; initialEventId?: string; cycle: any; marketBars: any[]; planHistory: any[]; review: any; rapidPairs: any[]; decisionLinks: Record<string, any>; strategies?: any[]; strategyAssignments?: Record<string, any>; onAddPlanVersion: (version: any) => void; openPlan?: any }) {
+export function ReplayBoard({ entryContexts = {}, initialEventId, cycle, marketBars, planHistory, review, rapidPairs, decisionLinks, strategies = [], strategyAssignments = {}, onAddPlanVersion, openPlan, showPlanEditor = true, showEntryEvidence = true }:  { entryContexts?: Record<string, any>; initialEventId?: string; cycle: any; marketBars: any[]; planHistory: any[]; review: any; rapidPairs: any[]; decisionLinks: Record<string, any>; strategies?: any[]; strategyAssignments?: Record<string, any>; onAddPlanVersion: (version: any) => void; openPlan?: any; showPlanEditor?: boolean; showEntryEvidence?: boolean }) {
   const isOpen = cycle.status === "OPEN";
   const model = useMemo(() => isOpen ? buildOpenPositionReplay(cycle, marketBars, planHistory, openPlan || {}, new Date(), strategies, strategyAssignments, entryContexts) : buildCycleReplay(cycle, marketBars, planHistory, review, rapidPairs, decisionLinks, strategies, strategyAssignments, entryContexts), [cycle, decisionLinks, isOpen, marketBars, openPlan, planHistory, rapidPairs, review, strategies, strategyAssignments, entryContexts]);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -199,9 +206,9 @@ export function ReplayBoard({ entryContexts = {}, initialEventId, cycle, marketB
     {model.sameDay && <div className="precision-warning"><b>同日交易・日線近似</b><span>只顯示當日OHLC，不推測盤中成交先後與MAE／MFE發生順序。</span></div>}
     {focused.missingCandle && <p className="precision-warning" role="status">已選取 {focused.event.date} 的成交／事件，但目前缺少該日日K；保留事件資料，不以其他日期代替。</p>}
     <div className="replay-layout"><div className="replay-chart">{!model.candles.length ? <div className="replay-empty"><b>缺少可重播的OHLC行情</b><span>圖表不補造價格；右側仍保留成交與計畫證據。</span></div> : <><ReplayCanvas model={model} cursor={replayCursor} selectedEventId={selectedEventId}/>{cursorCandle && <div className="replay-market-strip"><div className="replay-market-day"><b>{cursorCandle.date}</b><span>{cursorPhase}</span></div><div><span>開盤</span><b>{cursorCandle.open.toFixed(2)}</b></div><div><span>最高</span><b>{cursorCandle.high.toFixed(2)}</b></div><div><span>最低</span><b>{cursorCandle.low.toFixed(2)}</b></div><div><span>收盤</span><b>{cursorCandle.close.toFixed(2)}</b></div><div><span>當日成交量</span><b>{volume(cursorCandle.volume)}</b></div><div><span>20日均量</span><b>{volume(cursorCandle.averageVolume20)}</b></div><div><span>量比</span><b className={cursorCandle.volumeRatio != null && cursorCandle.volumeRatio >= 1.5 ? "volume-hot" : ""}>{cursorCandle.volumeRatio == null ? "—" : `${cursorCandle.volumeRatio.toFixed(2)}x`}</b></div></div>}<label className="replay-slider"><span>重播至 {cursorDate}</span><input aria-label="交易重播日期" type="range" min="0" max={Math.max(0, model.candles.length - 1)} value={replayCursor} onChange={(event) => setCursor(Number(event.target.value))}/><small>{replayCursor + 1}/{model.candles.length}・進場前 {model.preEntryCount}／持有 {model.holdingCount}／出場後 {model.postExitCount} 個交易日</small></label></>} </div><aside className="replay-timeline"><div className="timeline-title"><b>事件時間軸</b><span>{model.events.length} 個可追溯事件</span></div><div className="timeline-events">{model.events.map((event: any) => <button key={event.id} type="button" className={`${selectedEventId === event.id ? "selected" : ""} ${event.date && event.date > cursorDate ? "future" : ""}`} onClick={() => selectEvent(event)}><i style={{ background: EVENT_COLOR[event.type] || "#765caa" }}/><span><b>{event.label}</b><small>{event.date || "時間不明"}・{event.detail}</small></span></button>)}</div>{selectedEvent && <div className="event-inspector"><span>目前選取</span><b>{selectedEvent.label}</b><p>{selectedEvent.detail}</p>{selectedEvent.price > 0 && <small>價格 {money(selectedEvent.price, cycle.currency)}</small>}{"quantity" in selectedEvent && selectedEvent.quantity > 0 && <small>數量 {selectedEvent.quantity} 股・部位 {selectedEvent.beforeQuantity} → {selectedEvent.afterQuantity}</small>}{"note" in selectedEvent && selectedEvent.note && <small>{selectedEvent.note}</small>}</div>}</aside></div>
-    {selectedEvent && "entryContext" in selectedEvent && <EntryContextEvidence contexts={{[(selectedEvent as any).entryContext.fillId]:(selectedEvent as any).entryContext}} cycleId={cycle.id}/>}
+    {showEntryEvidence && selectedEvent && "entryContext" in selectedEvent && <EntryContextEvidence contexts={{[(selectedEvent as any).entryContext.fillId]:(selectedEvent as any).entryContext}} cycleId={cycle.id}/>}
     {model.legacyPlanCount > 0 && <div className="legacy-plan-note">有 {model.legacyPlanCount} 項舊計畫只有最終值、沒有生效時間；已顯示為「歷史值」，不加入動畫時序。</div>}
-    {isOpen ? <div className="open-plan-replay-note">請在下方「目前計畫」更新停損、停利與失效條件；每次離開欄位即追加版本，平倉後會沿同一筆交易 ID 進入閉環與行為分析。</div> : <form className="plan-version-form" onSubmit={addVersion}><div><b>新增計畫版本</b><small>建立後只追加，不覆蓋舊版本；事後補登會保留建立時間。</small></div><label>類型<select value={planForm.field} onChange={(event) => setPlanForm({ ...planForm, field: event.target.value })}><option value="stopLoss">停損</option><option value="takeProfit">停利</option><option value="invalidation">失效條件</option></select></label><label>{planForm.field === "invalidation" ? "條件" : "價格"}<input required type={planForm.field === "invalidation" ? "text" : "number"} min={planForm.field === "invalidation" ? undefined : "0"} step="any" value={planForm.value} onChange={(event) => setPlanForm({ ...planForm, value: event.target.value })}/></label><label>生效時間<input required type="datetime-local" value={planForm.effectiveAt} onChange={(event) => setPlanForm({ ...planForm, effectiveAt: event.target.value })}/></label><label>理由<input value={planForm.reason} placeholder="支撐、型態或規則依據" onChange={(event) => setPlanForm({ ...planForm, reason: event.target.value })}/></label><button className="primary" type="submit">加入時間線</button></form>}
+    {isOpen ? <div className="open-plan-replay-note">請在下方「目前計畫」更新停損、停利與失效條件；每次離開欄位即追加版本，平倉後會沿同一筆交易 ID 進入閉環與行為分析。</div> : showPlanEditor ? <form className="plan-version-form" onSubmit={addVersion}><div><b>新增計畫版本</b><small>建立後只追加，不覆蓋舊版本；事後補登會保留建立時間。</small></div><label>類型<select value={planForm.field} onChange={(event) => setPlanForm({ ...planForm, field: event.target.value })}><option value="stopLoss">停損</option><option value="takeProfit">停利</option><option value="invalidation">失效條件</option></select></label><label>{planForm.field === "invalidation" ? "條件" : "價格"}<input required type={planForm.field === "invalidation" ? "text" : "number"} min={planForm.field === "invalidation" ? undefined : "0"} step="any" value={planForm.value} onChange={(event) => setPlanForm({ ...planForm, value: event.target.value })}/></label><label>生效時間<input required type="datetime-local" value={planForm.effectiveAt} onChange={(event) => setPlanForm({ ...planForm, effectiveAt: event.target.value })}/></label><label>理由<input value={planForm.reason} placeholder="支撐、型態或規則依據" onChange={(event) => setPlanForm({ ...planForm, reason: event.target.value })}/></label><button className="primary" type="submit">加入時間線</button></form> : null}
   </section>;
 }
 

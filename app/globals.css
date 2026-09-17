@@ -841,3 +841,39 @@ td button { white-space: nowrap; }
   .review-step-actions > span { display: none; }
   .review-step-actions { grid-template-columns: 1fr 1fr; }
 }
+
+/* Single-page review: preserve shared chart and strategy layouts elsewhere. */
+.single-page-review .review-overview { display: grid; gap: 20px; }
+.single-page-review .review-judgment { margin-top: 28px; }
+.review-quality-selects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.review-quality-select { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.review-quality-select > span { display: flex; gap: 12px; align-items: baseline; font-weight: 700; }
+.review-quality-select small { color: var(--muted); font-weight: 400; }
+.review-quality-select select { width: 100%; min-height: 44px; }
+.single-page-review .review-strategy { margin: 28px 0 20px; padding: 20px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+.review-strategy .strategy-check-head { flex-wrap: wrap; }
+.review-strategy .strategy-check-head select { max-width: 100%; min-height: 44px; }
+.review-strategy .strategy-assignment-banner { flex-wrap: wrap; }
+.review-strategy .strategy-check-row { grid-template-columns: minmax(0, 1.5fr) 130px minmax(0, 1fr); }
+.strategy-rule-disclosure > summary { padding: 12px 0; min-height: 44px; cursor: pointer; color: var(--green); font-weight: 700; }
+.review-close-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
+.review-close-actions > span { color: var(--muted); font-size: 13px; }
+.review-close-actions > button { min-height: 44px; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .review-quality-selects { grid-template-columns: 1fr; gap: 20px; }
+  .review-strategy .strategy-check-head > label { width: 100%; min-width: 0; }
+  .review-strategy .strategy-check-row { grid-template-columns: 1fr; }
+  .review-strategy .strategy-assignment-banner small { margin-left: 0; }
+}
+@media (prefers-color-scheme: dark) {
+  .review-dialog { color-scheme: dark; --ink: #e3ece8; --muted: #b3c3bb; --line: #3d5047; --green: #8bd6b4; --red: #ffa59a; --surface: #17231e; --surface-muted: #22352b; --card: #17231e; --review-chart-text: #b3c3bb; --review-chart-line: #3d5047; }
+  .review-dialog .detail-header, .review-dialog .close, .review-dialog .replay-chart, .review-dialog .replay-timeline, .review-dialog .strategy-check-row { background: var(--surface); color: var(--ink); }
+  .review-dialog input, .review-dialog select { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  .review-dialog .strategy-assignment-banner, .review-dialog .event-inspector, .review-dialog .timeline-events button.selected, .review-dialog .timeline-events button:hover { background: var(--surface-muted); }
+  .review-dialog .primary { background: #8bd6b4; color: #17231e; }
+  .review-dialog .direction { background: var(--surface-muted); color: var(--ink); }
+  .review-dialog th, .review-dialog td { border-color: var(--line); }
+  .review-dialog .replay-canvas { background: var(--surface); }
+}
+
+.single-page-review .timeline-events button.future { opacity: 1; }
