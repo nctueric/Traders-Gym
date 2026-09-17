@@ -33,3 +33,10 @@ test("full-period trend keeps all strategy samples when rating subset is limited
   assert.equal(calls.find(c=>c.name==="buildTradeQualityAnalysis").args[0].length,3);
   assert.equal(calls.find(c=>c.name==="buildStrategyAnalysis").args[0].length,3);
 });
+test("review ledger renders the requested read-only columns and retains K-line access",()=>{
+ const {html}=renderTraining();const table=html.slice(html.indexOf('id="quick-rating"'),html.indexOf('id="performance-structure"'));
+ const columns=['閉環','交易損益（＄）','投入金額（＄）','投入時部位比（％）','交易期望值','進場評價','出場評價','進場後3日','MAE','MFE留存','出場後5日','K線'];
+ let last=-1;for(const column of columns){const i=table.indexOf('scope="col">'+column+'</th>');assert.ok(i>last,column);last=i;}
+ assert.doesNotMatch(table,/type="radio"|進場位置旁證|出場位置旁證|回顧證據/);
+ assert.match(table,/未評/);assert.match(table,/看 K 線與復盤/);assert.match(table,/估值說明/);
+});
