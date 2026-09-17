@@ -30,3 +30,13 @@
 發布前標準歷史帳本 v67、561 筆成交，SHA-256 `abfad25a262d56d23997572eba008235828e644468fa7bec6a7725cc46f5ff73`；測試帳本 v13、0 筆成交，SHA-256 `bab834f32b35f440aaaefe76eef7fd458ffde3c65ee9489d663954557100410c`。
 
 前一個發布版本為 `1a167a58-7422-40f6-950d-5e780a244d75`。若新介面出現阻擋問題，使用 Wrangler rollback 回到該版本；本次未改 schema，無須回退或重建帳本。
+
+### 發布結果
+
+- 程式 commit：`5147294`。
+- Cloudflare version：`1cfc48d0-da7e-4064-9490-5e2fcb6e2d7d`。
+- 網址：https://traders-gym.nctueric.workers.dev
+- Wrangler dry-run 與正式部署成功，沒有套用遠端遷移。
+- 線上 Chrome 唯讀驗收：既有登入有效，歷史閉環開啟新版單頁，兩個下拉存在，無文字判斷及新增計畫表單，無 pageerror。
+- 發布後兩份帳本均維持原版本、成交筆數與完整內容 SHA-256，與上述發布前值完全一致。
+- 這次未更新 GitHub `main` 或既有 `v2.1.0` 標籤。
