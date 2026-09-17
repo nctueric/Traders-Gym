@@ -43,6 +43,13 @@
       "when": 1789629628851,
       "tag": "0005_sturdy_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789631120881,
+      "tag": "0006_classy_molly_hayes",
+      "breakpoints": true
     }
   ]
 }

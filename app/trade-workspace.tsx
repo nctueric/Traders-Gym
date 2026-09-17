@@ -97,7 +97,7 @@ function fetchHistoryInBackground(url: string, signal: AbortSignal, fetcher: typ
   return task;
 }
 
-export default function TradeWorkspace({ user, storageTarget = "雲端" }: { user: AccountUser; storageTarget?: string }) {
+export default function TradeWorkspace({ user, requestedAccountId, storageTarget = "雲端" }: { user: AccountUser; requestedAccountId?:string; storageTarget?: string }) {
   const sessionScope = useMemo(() => createSessionScope(user.sessionId, fetch), [user.sessionId]);
   const storageKey = `${STORAGE_KEY}.user.${user.id}`;
   const [sessionEnded, setSessionEnded] = useState(false);
@@ -165,14 +165,14 @@ export default function TradeWorkspace({ user, storageTarget = "雲端" }: { use
     sessionScope.activate();
     const restore = async () => {
       try {
-        const response = await sessionScope.fetch("/api/trade-records", { cache: "no-store" });
+        const response = await sessionScope.fetch(`/api/trade-records${requestedAccountId ? `?accountId=${encodeURIComponent(requestedAccountId)}` : ''}`, { cache: "no-store" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "帳本讀取失敗");
         if (!active) return;
         const recovery = readPendingRecord(browserRecordStorage(), storageKey, payload.account.id, payload.dataset);
         loadDataset(recovery.dataset);
         setStorageConflict(Boolean(recovery.conflict));
-        setRecordAccounts([payload.account]);
+        setRecordAccounts(payload.accounts || [payload.account]);
         setActiveRecordAccountId(payload.account.id);
         recordVersionRef.current = payload.account.version;
         lastSavedJsonRef.current = recovery.conflict ? recovery.baselineJson : completeTradeJson(payload.dataset);
@@ -189,7 +189,7 @@ export default function TradeWorkspace({ user, storageTarget = "雲端" }: { use
     };
     void restore();
     return () => { active = false; sessionScope.stop(); };
-  }, [loadDataset, sessionScope, storageKey]);
+  }, [loadDataset, sessionScope, storageKey,requestedAccountId]);
 
   const persistCompleteSnapshot = useCallback((force = false, label = "自動") => saveQueueRef.current(async () => {
     sessionScope.assertActive();
@@ -603,6 +603,11 @@ export default function TradeWorkspace({ user, storageTarget = "雲端" }: { use
       <header className="topbar"><div><h1>{title}</h1></div><div className="actions"><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => prepareImport(event.target.files?.[0])}/><button className="ghost" disabled={!storageReady} onClick={() => inputRef.current?.click()}>匯入 JSON／CSV</button><button type="button" className="ghost" disabled={!storageReady || !cloudReady || storageConflict || manualSaving} aria-busy={manualSaving} title="將目前帳號的完整資料寫入儲存位置，包含已載入的行情與匯率" onClick={() => void manualSave()}>{manualSaving ? "儲存中…" : "立即儲存"}</button><button className="ghost" disabled={!storageReady} onClick={exportJson}>匯出備份</button><button className="primary" disabled={!storageReady} onClick={openEntry}>新增交易</button></div></header>
       <section className="account-store" aria-label="交易帳號資料庫">
         <div><span>你的交易帳本</span><strong>{activeRecordAccountName}</strong></div>
+        {recordAccounts.length>1 && <label>切換帳本 <select aria-label="切換帳本" value={activeRecordAccountId} disabled={!cloudReady || manualSaving || storageConflict} onChange={async event=>{
+          const id=event.target.value;setManualSaving(true);
+          try { await persistCompleteSnapshot(true,'切換前'); if(completeTradeJson(latestSaveRef.current.dataset)!==lastSavedJsonRef.current) throw new Error('仍有新修改，請稍後再切換'); sessionScope.stop();window.location.assign(`/?accountId=${encodeURIComponent(id)}`); }
+          catch(error){setMessage(error instanceof Error?error.message:'切換失敗，已保留目前帳本');setManualSaving(false);}
+        }}>{recordAccounts.map(account=><option key={account.id} value={account.id}>{account.name}</option>)}</select></label>}
         <p role="status" aria-live="polite" className={saveFailed ? "save-error" : ""}><span className="save-dot"/> {saveState}</p>
       </section>
       <div className={`notice notice-${noticeTone}`} role={noticeTone === "error" ? "alert" : "status"}>

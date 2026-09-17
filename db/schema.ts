@@ -31,7 +31,7 @@ export const tradeAccountSnapshots = sqliteTable("trade_account_snapshots", {
   saveMode: text("save_mode").notNull().default("legacy"),
   sizeBytes: integer("size_bytes"),
   objectKey: text("object_key"),
-}, table => [uniqueIndex("snapshot_owner_unique").on(table.ownerUserId)]);
+}, table => [index("snapshot_owner_idx").on(table.ownerUserId)]);
 
 export const snapshotHistory = sqliteTable("snapshot_history", {
   id: integer("id").primaryKey({ autoIncrement: true }),
