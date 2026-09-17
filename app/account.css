@@ -1,6 +1,11 @@
 /* Operate surface: inherit V2's green, paper, system type and sidebar. The first viewport
    exposes account search and invitations; mobile rows retain labels and actions. */
 .auth-page{min-height:100dvh;display:grid;place-items:center;padding:32px 20px}
+.password-login-form{display:grid;gap:12px;margin:28px 0}
+.password-login-form label{font-size:16px;font-weight:600}
+.password-login-form input{width:100%;min-height:48px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.password-login-form button{min-height:48px;margin-top:12px}
+.password-login-form input:focus-visible{outline:2px solid var(--green);outline-offset:2px}
 .auth-panel{width:min(100%,560px);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:clamp(24px,5vw,48px)}
 .auth-panel h1{font-size:clamp(26px,5vw,34px);margin-top:36px;text-wrap:balance}
 .auth-panel p{font-size:16px;line-height:1.75;color:var(--muted);margin:18px 0}

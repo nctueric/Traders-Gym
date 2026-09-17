@@ -1,5 +1,7 @@
 # Google 帳號與 Cloudflare 上線手冊
 
+> 2026-09-17 更新：目前使用者改採個人密碼試用，Google 暫停。最新部署狀態與操作見 [Cloudflare 個人試用紀錄](cloudflare-personal-trial.md)；以下保留為未來 Google 模式參考。
+
 ## 本次交付與上線閘門
 
 目前在 `feat/google-account-admin` 分支開發；既有 `main`／`v2.0.0` 維持正式版。使用者已確認未來部署到自有 Cloudflare，本次不部署 Sites、不公開入口、不發布正式 Release。Google Web Client ID 尚未建立，登入頁因此顯示「尚未開放」。本機測試使用隔離資料庫與明確標示的測試身分，並不等於通過真實 Google 登入。
@@ -26,7 +28,7 @@
 
 1. 在自己的 Cloudflare 帳號建立 D1 `traders-gym` 與私有 R2 `traders-gym-snapshots`。不要啟用 R2 公開網域或 r2.dev。
 2. 執行 `npm ci`、`npm test`、`npm run lint`、`npx tsc --noEmit`、`npm run build`。
-3. 執行 `node scripts/prepare-cloudflare.mjs --database-id=<實際UUID> --google-client-id=<正式WebClientID> --bucket=traders-gym-snapshots`。此步只產生 `dist/server/wrangler.cloudflare.json`，不建立資源或部署；每次重新建置後重跑。
+3. 執行 `node scripts/prepare-cloudflare.mjs --account-id=<Cloudflare帳號ID> --database-id=<實際UUID> --google-client-id=<正式WebClientID> --bucket=traders-gym-snapshots`。此步只產生 `dist/server/wrangler.cloudflare.json`，不建立資源或部署；每次重新建置後重跑。
 4. 使用產生的 config，以 `wrangler d1 migrations apply DB --remote --config dist/server/wrangler.cloudflare.json` 套用 append-only migrations，再部署該 config。不要使用原本包含 placeholder database ID 的預設 build config。
 5. 在開放團隊使用前完成舊資料移入與真實 Google 驗收；若使用 Cloudflare Access 暫時限制入口，需允許 Google callback 正常完成，不能把 Access 當成 app 權限驗證的替代。
 

@@ -4,6 +4,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { authError, json, requireSession } from "@/lib/auth-core.mjs";
 import { createAccountApi } from "@/lib/account-api.mjs";
+import { createPasswordAuth } from "@/lib/password-auth.mjs";
+
+function passwordAuth() {
+  return createPasswordAuth({ db: env.DB, email: String(env.PERSONAL_LOGIN_EMAIL || ""), passwordHash: String(env.PERSONAL_PASSWORD_HASH || "") });
+}
 
 export type AccountUser = { id: string; email: string; name: string; picture: string; isOwner: boolean; sessionId: string; expiresAt: string; authProvider?: string };
 export async function apiUser(request: Request, owner = false): Promise<AccountUser> {
@@ -17,13 +22,14 @@ export async function apiUser(request: Request, owner = false): Promise<AccountU
     return payload.user;
   }
   if (!env.DB) throw authError("帳號服務尚未設定", 503);
+  if (env.PERSONAL_PASSWORD_LOGIN === "true") return passwordAuth().authenticate(request, { owner });
   return env.SITES_TRIAL_AUTH === "true" ? requireSitesTrialUser(env.DB, request) : requireSession(env.DB, request, { owner });
 }
 export async function pageUser(owner = false) {
   const incoming = await headers();
   const request = new Request(`https://${incoming.get("host") || "localhost"}/`, { headers: incoming });
   try {
-    if (env.SITES_TRIAL_AUTH === "true" && env.LOCAL_ACCOUNT_SERVICE !== "true") return await requireSitesTrialUser(env.DB, request, { bootstrap: true });
+    if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true" && env.LOCAL_ACCOUNT_SERVICE !== "true") return await requireSitesTrialUser(env.DB, request, { bootstrap: true });
     return await apiUser(request, owner);
   }
   catch (error) {
@@ -33,6 +39,11 @@ export async function pageUser(owner = false) {
 }
 export async function accountHandler(request: Request) {
   if (!env.DB) return json({ error: "帳號服務尚未設定" }, 503);
+  if (env.PERSONAL_PASSWORD_LOGIN === "true") {
+    const auth = passwordAuth();
+    if (new URL(request.url).pathname === "/api/auth/password") return auth.login(request);
+    return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: "", trial: true, authenticate: auth.authenticate }).handle(request);
+  }
   return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: String(env.GOOGLE_CLIENT_ID || ""), ...(env.SITES_TRIAL_AUTH === "true" ? { trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) } : {}) }).handle(request);
 }
 export async function rejectAnonymous(request: Request) {

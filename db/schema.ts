@@ -47,3 +47,11 @@ export const sitesTrialIdentity = sqliteTable("sites_trial_identity", {
   id: integer("id").primaryKey(), subject: text("subject").notNull().unique(),
   userId: text("user_id").notNull().unique().references(() => appUsers.id),
 });
+
+export const passwordLoginLimits = sqliteTable("password_login_limits", {
+  key: text("key").primaryKey(), windowStart: integer("window_start").notNull(), attempts: integer("attempts").notNull(),
+}, table => [index("password_limits_window_idx").on(table.windowStart)]);
+export const passwordSessionCredentials = sqliteTable("password_session_credentials", {
+  sessionId: text("session_id").primaryKey().references(() => authSessions.id, { onDelete: "cascade" }),
+  fingerprint: text("fingerprint").notNull(),
+});

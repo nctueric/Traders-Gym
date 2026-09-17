@@ -3,3 +3,8 @@ GOOGLE_CLIENT_ID=
 
 # Private Sites only, never enable on a directly accessible Worker.
 # SITES_TRIAL_AUTH=true
+
+# Cloudflare personal trial: set hash using Wrangler secret, never store plaintext.
+# PERSONAL_PASSWORD_LOGIN=true
+# PERSONAL_LOGIN_EMAIL=your-email@example.com
+# PERSONAL_PASSWORD_HASH=<salted password verifier; secret>
