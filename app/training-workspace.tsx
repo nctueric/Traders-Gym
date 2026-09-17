@@ -466,7 +466,7 @@ function QualityTagDistribution({ analysis, cycles, onSelectCycle }: { analysis:
   return <section className="quality-tag-distribution"><div className="panel-head"><div><h2>交易品質標籤分布</h2><p>人工單選是主要評分結論；點擊標的可回到原始閉環、K 線與回顧證據。</p></div><div className="quality-rating-total"><span>進出場皆完成</span><b>{analysis.fullyRatedCount}/{analysis.total}</b><small>完整覆蓋率 {plainPct(analysis.completeCoverage)}</small></div></div><div className="quality-distribution-grid"><QualityDistributionCard group={analysis.entry} cycles={cycles} onSelectCycle={onSelectCycle}/><QualityDistributionCard group={analysis.profitExit} cycles={cycles} onSelectCycle={onSelectCycle}/><QualityDistributionCard group={analysis.stopExit} cycles={cycles} onSelectCycle={onSelectCycle}/></div></section>;
 }
 
-export function TrainingWorkspace({ entryContexts = {}, cycles, marketBars, reviews, fxRate, strategies = [], strategyAssignments = {}, onSelectCycle, dataset, fetchHistory }: { dataset: any; fetchHistory: typeof fetch; entryContexts?: Record<string, any>; cycles: any[]; marketBars: any[]; reviews: Record<string, any>; fxRate: number | null; strategies?: any[]; strategyAssignments?: Record<string, any>; onSelectCycle: (cycleId: string) => void }) {
+export function TrainingWorkspace({ accountId = "", entryContexts = {}, cycles, marketBars, reviews, fxRate, strategies = [], strategyAssignments = {}, onSelectCycle, dataset, fetchHistory }: { accountId?: string; dataset: any; fetchHistory: typeof fetch; entryContexts?: Record<string, any>; cycles: any[]; marketBars: any[]; reviews: Record<string, any>; fxRate: number | null; strategies?: any[]; strategyAssignments?: Record<string, any>; onSelectCycle: (cycleId: string) => void }) {
   const [scope, setScope] = useState("all");
   const [strategyId, setStrategyId] = useState("");
   const [versionId, setVersionId] = useState("");
@@ -495,7 +495,7 @@ export function TrainingWorkspace({ entryContexts = {}, cycles, marketBars, revi
     <SectionLinks label="交易行為分析區段" links={[{id:"quality-rating",label:"品質評分"},{id:"performance-structure",label:"績效結構"},{id:"strategy-audit",label:"規則稽核"},{id:"price-evidence",label:"價格旁證"}]}/>
     <section className="analysis-section" id="quality-rating" tabIndex={-1}>
     <QualityTagDistribution analysis={quality.tagAnalysis} cycles={periodCycles} onSelectCycle={onSelectCycle}/>
-    <ReviewLedgerTable dataset={dataset} cycles={periodCycles} lossSampleCycles={scopedCycles} trades={quality.trades} fetchHistory={fetchHistory} onSelectCycle={onSelectCycle}/>
+    <ReviewLedgerTable accountId={accountId} allCycles={cycles} dataset={dataset} cycles={periodCycles} lossSampleCycles={scopedCycles} trades={quality.trades} fetchHistory={fetchHistory} onSelectCycle={onSelectCycle}/>
     </section>
     <section className="analysis-section" id="performance-structure" tabIndex={-1}>
     <ProfitLossAnalysis stats={profitLossStats} scope={scope} period={period}/>
