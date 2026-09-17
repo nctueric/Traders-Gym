@@ -2,6 +2,8 @@
 
 更新：2026-09-17。以已發布的 `v2.1.0`（`334d3cb3db0fea4206fdade9ffb13f9ec3517c6c`）為基準，開發分支 `feat/cloudflare-personal-trial`。不改寫既有標籤、不更新既有 Sites。
 
+**已發布，可開始個人試用。** 發布程式 commit：`8f527cb`。Cloudflare version ID：`ffaa9db7-d08f-42f7-a3a3-df02c6ac49f7`。2026-09-17 07:36 UTC 完成正式 HTTPS 網址端到端測試；7 天完整功能驗收尚未完成。
+
 ## 已完成
 
 - 單一個人帳號 Email／密碼登入，Google 入口停用。密碼以隨機 32-byte salt 的 PBKDF2-SHA256 驗證值保存在 Worker Secret；程式碼、前端資源及本文件不含密碼。
@@ -16,12 +18,12 @@
 | 項目 | 值／狀態 |
 | --- | --- |
 | Cloudflare account | `3d09d501e6a0115eb8538e8f9f197a48` |
-| Worker | `traders-gym`，原有 dashboard placeholder 尚未換成新版 |
+| Worker | `traders-gym`，已部署個人密碼試用版 |
 | D1 | `traders-gym`／`4c8fb415-7edd-4fc0-bced-b9b4d7a13e2f` |
 | R2 | `traders-gym-snapshots`，APAC／Standard，r2.dev 公開存取停用 |
 | 登入 email | `nctueric@gmail.com` |
 | Secret | `PERSONAL_PASSWORD_HASH` 已設至既有 Worker |
-| 預期網址 | `https://traders-gym.nctueric.workers.dev`；尚未以新版實際發布驗證 |
+| 正式試用網址 | `https://traders-gym.nctueric.workers.dev`，已實測 |
 
 線上 D1 原先為空白，2026-09-17 07:25 UTC 已依序套用 `0000`–`0005`，並記錄至標準 `d1_migrations`。37 個 SQL 敘述成功，外鍵檢查無錯，交易帳本筆數仍為 0。
 
@@ -39,13 +41,16 @@ R2 原先沒有 bucket，已建立上述私人桶。07:28 UTC 寫入 1,920,083-b
 | 本機復原／登出 | 恢復原始空白帳本、登出後讀取 401 通過 |
 | 瀏覽器 | 登入表單進入工作台、讀取帳本、自動儲存成功；未見 console error |
 | 線上 D1/R2 | 遷移、外鍵、私人設定、R2 服務讀寫通過 |
-| 正式 Worker | 待部署後驗證；不可標記個人完整試用完成 |
+| 正式 Worker | 登入／session／登出、Google 停用、未登入與其他帳本拒絕、跨站拒絕、小型 D1／大型 R2 SHA-256 讀回、409 衝突、歷史還原通過 |
+| 正式瀏覽器 | 指定帳號登入工作台成功，雲端自動儲存 v6，console 無 error |
+
+正式測試使用合成資料，結束時已恢復原始空白交易帳本至 v5，內容 SHA-256 為 `52c41f1f0fe5bcc41e3a4254ec6c4e2c1bd3d4a4b216f7dca9019a8226462b45`。隨後瀏覽器正常載入行情並自動儲存至 v6，沒有真實成交／資金資料。測試 v3 的 1,900,527-byte R2 物件仍由歷史版本引用，因此保留；物件 SHA-256 metadata 為 `4d0cf20ae8abe3749841f3bcc096df9d795717f40fc3b12ac6da7e8b15a88cbc`。私人桶公開存取仍關閉。
 
 建置設定沿用專案已測試的 compatibility date；不可改成超出已安裝 workerd 支援日期的當日日期。
 
-## 尚待完成的部署步驟
+## 部署與後續更新步驟
 
-Wrangler 尚未登入；兩次官方 OAuth listener 等待逾時。這與 D1/R2 服務啟用無關，也不是審查模型容量問題。需使用者在 Cloudflare 官方 OAuth 頁完成首次 CLI 授權。不要在聊天貼 API token。
+Wrangler 已完成官方 OAuth 授權並成功發布。先前兩次等待逾時已排除，無需再重複授權。只有登入憑證失效時才重新執行步驟 1；不要在聊天貼 API token。
 
 1. 在專案目錄執行 `WRANGLER_LOG_PATH=.wrangler/wrangler.log ./node_modules/.bin/wrangler login --browser=false --scopes account:read user:read workers:write workers_scripts:write d1:write`，立即開啟該次新產生的網址，登入並 Allow。
 2. 重建時執行 `npm run build`，然後執行：
