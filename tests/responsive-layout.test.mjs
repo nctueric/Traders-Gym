@@ -60,15 +60,15 @@ test("overview has three categories with asset history and plan editing inside d
   const visit = node => { if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) elements.push(node); ts.forEachChild(node, visit); };
   visit(source);
   const className = node => node.openingElement?.attributes.properties.find(attr => ts.isJsxAttribute(attr) && attr.name.text === "className")?.initializer?.text;
-  const metrics = elements.find(node => className(node) === "metrics");
+  const metrics = elements.find(node => className(node) === "asset-summary-grid");
   const metadata = elements.find(node => className(node) === "secondary-metrics");
   const chart = elements.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(source) === "MonthlyAssets");
   assert.ok(metrics && metadata && chart);
-  assert.match(metrics.getText(source), /metrics\.slice\(0, 3\)/);
+  assert.match(metrics.getText(source), /metrics\.slice\(1,\s*3\)/);
   assert.match(metrics.getText(source), /<EquityBreakdown equity=\{currentEquity\}/);
   assert.equal(chart.parent.openingElement.tagName.getText(source), "OverviewDisclosure");
-  assert.equal(chart.parent.parent.pos, metrics.parent.pos);
-  assert.equal(metrics.parent.pos, metadata.parent.pos);
+  assert.equal(chart.parent.parent.pos, metrics.parent.parent.pos);
+  assert.equal(metrics.parent.parent.pos, metadata.parent.pos);
   assert.ok(metrics.end < metadata.pos && metadata.end < chart.pos);
   assert.match(chart.getText(source), /data=\{data\} quotes=\{quotes\} fxRate=\{fxRate\} asOf=\{currentEquity\.asOf\}/);
   assert.doesNotMatch(stylesheet.toString(), /overview-finances|overview-equity|overview-results/);
@@ -77,7 +77,7 @@ test("overview has three categories with asset history and plan editing inside d
   assert.doesNotMatch(page, /\["positions", "目前持倉"\]|tab === "positions" &&/);
   const plans = elements.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(source) === "PositionsPanel");
   assert.equal(plans.parent.openingElement.tagName.getText(source), "OverviewDisclosure");
-  assert.match(plans.getText(source), /onPlanChange=\{updatePositionPlan\} onPlanCommit=\{commitPositionPlan\} onOpenChart=\{openPositionChart\}/);
+  assert.match(plans.getText(source), /onOpenChart=\{openPositionChart\}/);
   assert.equal(stylesAt(".overview-section .panel", 1440).border, "0");
   assert.equal(stylesAt(".overview-disclosure > summary", 390)["min-height"], "44px");
 });

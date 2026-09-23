@@ -39,7 +39,7 @@ export function renderTraining({scenario = "rich", filters = ["all", "", "", "",
   const dataset = fixtureDataset(scenario);
   const before = JSON.stringify(dataset);
   const report = summarize(dataset);
-  const props = { cycles: report.cycles, marketBars: dataset.marketBars, reviews: dataset.cycleReviews || {}, fxRate: scenario === "missing" ? null : 32, strategies: dataset.strategies || [], strategyAssignments: dataset.strategyAssignments || {}, entryContexts, onSelectCycle() {}, onQualityRatingChange() {} };
+  const props = { dataset, fetchHistory: fetch, cycles: report.cycles, marketBars: dataset.marketBars, reviews: dataset.cycleReviews || {}, fxRate: scenario === "missing" ? null : 32, strategies: dataset.strategies || [], strategyAssignments: dataset.strategyAssignments || {}, entryContexts, onSelectCycle() {}, onQualityRatingChange() {} };
   const html = renderToStaticMarkup(React.createElement(load(new URL("training-workspace.tsx", app), source).TrainingWorkspace, props));
   const digest = createHash("sha256").update(JSON.stringify([...calls].sort((a,b) => a.name.localeCompare(b.name)))).digest("hex");
   return { html, calls, digest, unchanged: before === JSON.stringify(dataset) };

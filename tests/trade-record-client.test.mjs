@@ -86,3 +86,11 @@ test("manual and auto saving share complete snapshots, and unload is guarded", (
   assert.match(source, /writeLocalRecord\(browserRecordStorage\(\)/);
   assert.doesNotMatch(source, /雲端儲存失敗，本機備份仍安全/);
 });
+
+
+test("HTML gateway errors retain HTTP status and keep pending saves retryable", async () => {
+  await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"帳號",baseVersion:1,serialized:durableTradeJson(data()),fetcher:async()=>({ok:false,status:503,json:async()=>{throw new SyntaxError("The string did not match the expected pattern.");}})}),e=>e.status===503 && e.retryable && e.message.includes("HTTP 503") && !e.message.includes("expected pattern"));
+});
+test("malformed successful response never reports a confirmed save", async()=>{
+  for(const body of [null,[],{}, {account:{version:"2"}}]) await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"帳號",baseVersion:1,serialized:durableTradeJson(data()),fetcher:async()=>response(200,body)}),e=>e.status===502 && e.retryable);
+});

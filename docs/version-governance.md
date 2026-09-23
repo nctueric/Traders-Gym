@@ -23,3 +23,7 @@
 - 功能工作推送到獨立分支，再由 GitHub Pull Request 合併。
 
 此保護適用於已設定 `core.hooksPath=.githooks` 的 clone。若日後升級 GitHub Pro，應改用伺服器端 branch protection，要求 Pull Request、`validate` 成功、禁止 force push 與刪除，並保留本機 hook 作第二層防護。
+
+## v2.1.0 整合版本
+
+`v2.1.0` 封存帳號／歷史快照整合版本，來源為 `feat/v2-sites-trial`，不代表 Sites 正式驗收完成。`main` 的變更仍需 PR 與 CI；本次不直接推送 main。

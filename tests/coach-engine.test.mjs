@@ -152,7 +152,7 @@ test("behavior engine creates traceable deterministic findings and visual datase
   assert.ok(events.some((event) => event.type === "LOSS_ADDING"));
   assert.ok(events.some((event) => event.type === "POST_HOC_PLAN"));
   const dashboard = buildBehaviorDashboard([cycle], bars, reviews, [], events);
-  assert.equal(dashboard.retention[0].category, "LOW_CAPTURE");
+  assert.equal(dashboard.mfeReturn[0].category, "PROFIT");
   assert.equal(dashboard.maeReturn[0].cycleId, cycle.id);
   assert.equal(dashboard.funnel.at(-1).count, 1);
   assert.ok(dashboard.heatmap.length > 0);

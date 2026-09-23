@@ -38,7 +38,7 @@ function harness(initial = source()) {
       if (payload.baseVersion !== version) return response(409,{});
       stored=payload.dataset;version++;return response(200,{account:{...account,version}});
     }
-    if (url === "/api/trade-records") return response(200,{accounts:[account]});
+    if (url === "/api/trade-records") return response(200,{account,dataset:structuredClone(stored),accounts:[account]});
     if (url.startsWith("/api/trade-records?")) return response(200,{account,dataset:structuredClone(stored)});
     if (onlineMarkets && url.startsWith("/api/quotes")) return response(200,{quotes:[{symbol:"AAA",price:15,updatedAt:"2026-08-28T00:00:00Z"}],errors:[]});
     return response(503,{error:"離線測試"});
@@ -53,7 +53,7 @@ function harness(initial = source()) {
     }
     return require(id);
   },componentModule,componentModule.exports,window,{getElementById:()=>null},storage,fetcher,timer,window.clearTimeout);
-  function render() { index=0;dirty=false;tree=componentModule.exports.default(); for(const effect of effects.splice(0)) effect();return tree; }
+  function render() { index=0;dirty=false;tree=componentModule.exports.default({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}}); for(const effect of effects.splice(0)) effect();return tree; }
   return {
     render, get tree(){return tree;},get stored(){return stored;}, writes,events,
     async settle(){ for(let i=0;i<15;i++){if(dirty)render();await new Promise(resolve=>setImmediate(resolve));}return tree; },
@@ -72,7 +72,7 @@ test("homepage manual button waits for full write, prevents duplicates, and rest
   assert.deepEqual(h.stored.marketBars,source().marketBars);
   assert.deepEqual(h.stored.marketSnapshot,source().marketSnapshot);
   assert.deepEqual(h.stored.positionPlans,source().positionPlans);
-  assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("手動儲存完成")));
+  assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("雲端已儲存（手動）")));
   const restarted=harness(JSON.parse(completeTradeJson(h.stored)));t.after(()=>restarted.close());await restarted.settle();
   manual(restarted).props.onClick();await restarted.settle();assert.deepEqual(restarted.stored,h.stored);
 });
@@ -84,7 +84,8 @@ test("price-only updates and plan edits autosave complete snapshots through the 
   assert.equal(h.stored.marketSnapshot.quotes["USDTWD=X"].price,32,"failed refresh must not remove FX");
   find(h.tree,n=>n.type==="button"&&n.props.children==="持倉").props.onClick();await h.settle();
   const panel=find(h.tree,n=>n.type?.name==="PositionsPanel");
-  panel.props.onPlanChange(panel.props.positions[0],"note","新的持倉計畫");
+  panel.props.onOpenChart(panel.props.positions[0]);await h.settle();
+  find(h.tree,n=>n.type?.name==="OpenPositionDetail").props.onPlanChange(panel.props.positions[0],"note","新的持倉計畫");
   await h.settle();h.runTimers(900);await h.settle();
   assert.ok(Object.values(h.stored.positionPlans).some(p=>p.note==="新的持倉計畫"));
   assert.deepEqual(h.stored.marketBars,source().marketBars);
@@ -94,7 +95,7 @@ test("price-only updates and plan edits autosave complete snapshots through the 
 test("failed manual write never reports success or removes the current data", async t => {
   const h=harness();t.after(()=>h.close());await h.settle();h.fail=true;
   manual(h).props.onClick();await h.settle();assert.equal(manual(h).props.children,"立即儲存");
-  assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("儲存尚未完成")));
+  assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("等待重試")));
   assert.equal(h.writes.length,0);assert.deepEqual(h.stored,source());
 });
 
