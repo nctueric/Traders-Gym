@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildCycles } from '../lib/trade-engine.mjs';
+import { positionDayChange } from '../lib/position-day-change.mjs';
+const fill = (side,quantity,price,timestamp='2026-09-23T14:00:00Z') => ({id:Math.random().toString(),symbol:'X',side,quantity,price,timestamp,currency:'USD'});
+const quote = {price:30.41,previousClose:30.13,updatedAt:'2026-09-23T15:00:00Z'};
+const calc = (fills,q=quote) => positionDayChange(buildCycles({fills}).positions[0],q);
+const near = (a,b) => assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
+test('same-day new position uses execution price, not previous close',()=>{const r=calc([fill('BUY',560,30.5)]);near(r.amount,-50.4);near(r.rate,-.09/30.5);});
+test('overnight and intraday additions use separate bases',()=>{near(calc([fill('BUY',100,20,'2026-09-22T14:00:00Z'),fill('BUY',50,30.5)]).amount,28-4.5);});
+test('FIFO reductions remove overnight shares before today shares',()=>{near(calc([fill('BUY',100,20,'2026-09-22T14:00:00Z'),fill('BUY',50,30.5),fill('SELL',120,31)]).amount,-2.7);});
+test('short, cover and reversal retain only current position day exposure',()=>{near(calc([fill('SELL',100,31),fill('BUY',40,30)]).amount,35.4);near(calc([fill('BUY',100,20,'2026-09-22T14:00:00Z'),fill('SELL',150,31)]).amount,29.5);});
+test('US session after midnight Taiwan remains same trading day',()=>{near(calc([fill('BUY',10,30.5,'2026-09-24T02:00:00+08:00')],{...quote,updatedAt:'2026-09-23T19:00:00Z'}).amount,-.9);});
+test('Taiwan session uses Taipei date',()=>{near(calc([{...fill('BUY',10,30.5,'2026-09-23T01:30:00Z'),currency:'TWD',market:'TWSE'}],{...quote,updatedAt:'2026-09-23T04:00:00Z'}).amount,-.9);});
+test('missing previous close is allowed for today-only holdings',()=>{near(calc([fill('BUY',10,30.5)],{...quote,previousClose:null}).amount,-.9);assert.equal(calc([fill('BUY',10,30.5,'2026-09-22T14:00:00Z')],{...quote,previousClose:null}).amount,null);});
+test('future fills and absent quote timestamps are not silently priced',()=>{assert.equal(calc([fill('BUY',10,30,'2026-09-24T14:00:00Z')]).amount,null);assert.equal(calc([fill('BUY',10,30)],{...quote,updatedAt:null}).amount,null);});

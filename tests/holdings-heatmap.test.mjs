@@ -9,6 +9,6 @@ test('treemap conserves exact areas without overlap at desktop and mobile sizes'
  }assert.equal(JSON.stringify(items),before);
 });
 test('missing valuation is excluded, missing daily change remains gray; short gains reverse',()=>{
- const rows=[{position:{id:'a',symbol:'A',quantity:10,direction:'LONG'},metrics:{marketValueUsd:100},quote:{price:10,previousClose:null}},{position:{id:'b',symbol:'A',quantity:10,direction:'SHORT'},metrics:{marketValueUsd:200},quote:{price:10,previousClose:20}},{position:{id:'c'},metrics:{marketValueUsd:null}}];
+ const rows=[{position:{id:'a',symbol:'A',quantity:10,direction:'LONG'},metrics:{marketValueUsd:100},quote:{price:10,previousClose:null}},{position:{id:'b',symbol:'A',quantity:10,direction:'SHORT',fills:[{side:'SELL',quantity:10,price:15,timestamp:'2026-09-22T14:00:00Z'}]},metrics:{marketValueUsd:200},quote:{price:10,previousClose:20,updatedAt:"2026-09-23T15:00:00Z"}},{position:{id:'c'},metrics:{marketValueUsd:null}}];
  const items=heatmapItems(rows);assert.equal(items[0].rate,null);assert.equal(items[1].rate,.5);assert.equal(layoutHoldings(items,400,240).length,2);assert.equal(heatmapColor(null),'#65716c');assert.notEqual(heatmapColor(-.05),heatmapColor(.05));assert.deepEqual(layoutHoldings([],100,100),[]);
 });
