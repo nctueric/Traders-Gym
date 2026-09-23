@@ -53,6 +53,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
     saveOrder(next, `${titles[id]}已移至第 ${next.indexOf(id) + 1} 欄`);
   }
   const [state, setState] = useState("");
+  const [calculating, setCalculating] = useState(true);
   const [retry, setRetry] = useState(0);
   const refreshRequested = useRef(false);
   const [cachedRows, setCachedRows] = useState<Record<string, any>>({});
@@ -64,6 +65,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
     const controller = new AbortController();
     const forceRefresh = refreshRequested.current; refreshRequested.current = false;
     const load = async () => {
+      setCalculating(true);
       setState("讀取雲端歷史估值…");
       setCachedRows({});
       const key = await reviewCacheKey(input, valuationCycles);
@@ -76,7 +78,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
             const saved = await response.json();
             if(validReviewCache(saved,key) && valuationCycles.every((c:any) => saved.rows[c.id])) {
               if(controller.signal.aborted)return;
-              setCachedRows(saved.rows);setState(`已讀取雲端估值 · ${new Date(saved.savedAt).toLocaleString("zh-TW")}`);return;
+              setCachedRows(saved.rows);setCalculating(false);setState(`已讀取雲端估值 · ${new Date(saved.savedAt).toLocaleString("zh-TW")}`);return;
             }
           }
         } catch { if(controller.signal.aborted)return; }
@@ -97,6 +99,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
       if(controller.signal.aborted)return;
       const result=buildReviewLedgerMetrics(input,valuationCycles,valuationCycles,bars);
       setCachedRows(result.rows);
+      setCalculating(false);
       if(failed){setState(`${failed} 個標的歷史資料未取得，可重試；未保存不完整估值。`);return;}
       if(!accountId){setState("歷史估值資料已更新");return;}
       try {
@@ -105,7 +108,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
         if(!controller.signal.aborted)setState("歷史估值已儲存至雲端");
       } catch {if(!controller.signal.aborted)setState("估值可用，雲端保存失敗；可重試。");}
     };
-    void load().catch(()=>{if(!controller.signal.aborted)setState("歷史估值讀取失敗，可重試。");});
+    void load().catch(()=>{if(!controller.signal.aborted){setCalculating(false);setState("歷史估值讀取失敗，可重試。");}});
     return ()=>controller.abort();
   },[valuationInput,accountId,fetchHistory,retry]);
   const metrics = useMemo(()=>scopedReviewMetrics(cachedRows,lossSampleCycles),[cachedRows,lossSampleCycles]);
@@ -150,15 +153,14 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
       </button>
     </th>)}</tr></thead><tbody>
       {[...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate)).map(trade => {
-        const m = metrics.rows[trade.cycleId];
-        if (!m) return null;
+        const m = metrics.rows[trade.cycleId] || {allocation:null,currency:valuationCycles.find(c=>c.id===trade.cycleId)?.currency || "USD"};
         const cells = {
           cycle: <td key="cycle"><b>{trade.symbol}</b><small>{trade.direction === "SHORT" ? "空" : "多"}・{trade.openDate} → {trade.closeDate}</small></td>,
           pnl: <td key="pnl" className={m.pnl >= 0 ? "positive" : "negative"}>{money(m.pnl, m.currency)}</td>,
           return: <td key="return" className={m.returnPct == null ? "" : m.returnPct >= 0 ? "positive" : "negative"}>{signedPct(m.returnPct)}</td>,
           days: <td key="days" title="依個股日 K 日期計數，進出場日皆計入">{m.holdingTradingDays == null ? "—（缺日線資料）" : `${m.holdingTradingDays} 日`}</td>,
           investment: <td key="investment">{money(m.invested, m.currency)}</td>,
-          allocation: <td key="allocation" className="allocation-cell"><b>{pct(m.allocation)}</b><small>{m.allocation == null ? "估值資料不足" : "日終估算"}</small><details><summary>估值說明</summary><div className="allocation-evidence"><p>最後投入日：{m.equity.date || "—"}</p><p>累計投入：{money(m.invested, m.currency)}</p><p>共用資金池總資產：{money(m.equity.total, "USD")}</p><p>投入美元等值：{money(m.investedUsd, "USD")}</p><p>美股與台股共用美元資金池。成交依成交日匯率計入現金，持倉依估值日匯率換算。</p><p>資產＝美元現金＋多頭市值－空頭負債；含當日全部成交及資金活動。</p>{m.equity.fxHistory?.length > 0 && <details><summary>採用的歷史匯率</summary>{m.equity.fxHistory.map((f: any) => <p key={f.date}>{f.date}：USDTWD {f.rate}</p>)}</details>}{m.equity.fx && <p>USDTWD：{m.equity.fx.rate}（{m.equity.fx.date}）</p>}{m.equity.prices.map((p: any) => <p key={p.symbol}>{p.symbol}：{p.close}（{p.date} 收盤）</p>)}{[...new Set([...m.equity.problems, ...m.equity.warnings, ...m.investmentProblems])].map((problem: string) => <p key={problem}>{problem}</p>)}</div></details></td>,
+          allocation: <td key="allocation" className="allocation-cell" title={m.allocation == null && !calculating ? "估值資料不足，請重試估值" : undefined}><b>{m.allocation != null ? pct(m.allocation) : calculating ? "計算中" : "—"}</b></td>,
           expectancy: <td key="expectancy" className={m.expectancy == null ? "" : m.expectancy >= 0 ? "positive" : "negative"}>{m.expectancy == null ? "—" : `${m.expectancy >= 0 ? "+" : ""}${m.expectancy.toFixed(2)} 倍`}{m.expectancy == null && <small>{metrics.averageLoss == null ? "無虧損樣本" : "計算資料不足"}</small>}</td>,
           entry: <td key="entry">{label(trade.entryQualityTag, true)}</td>,
           exit: <td key="exit">{label(trade.exitQualityTag, false)}</td>,

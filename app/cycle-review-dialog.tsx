@@ -4,7 +4,7 @@
 import { analyzeCycle } from "@/lib/review-engine.mjs";
 import { cycleReviewProgress } from "@/lib/review-flow.mjs";
 import { DialogFrame } from "./workspace-ui";
-import { QualityTagSelect } from "./quality-rating-control";
+import { QualityJudgmentButtons } from "./quality-rating-control";
 import { StrategyChecklist } from "./strategy-workspace";
 import { ReplayBoard } from "./training-workspace";
 
@@ -30,12 +30,13 @@ export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, pl
       <section className="review-judgment" aria-labelledby="review-judgment-title">
         <h3 id="review-judgment-title">進出場判斷</h3>
         <div className="review-quality-selects">
-          <QualityTagSelect cycle={cycle} kind="entry" value={review.entryQualityTag} onChange={(value) => change("entryQualityTag", value)}/>
-          <QualityTagSelect cycle={cycle} kind="exit" value={review.exitQualityTag} onChange={(value) => change("exitQualityTag", value)}/>
+          <QualityJudgmentButtons cycle={cycle} kind="entry" value={review.entryQualityTag} onChange={(value) => change("entryQualityTag", value)}/>
+          <QualityJudgmentButtons cycle={cycle} kind="exit" value={review.exitQualityTag} onChange={(value) => change("exitQualityTag", value)}/>
         </div>
         <p className="review-save-note">選擇後自動儲存・最後評分：{localDateTime(review.qualityRatedAt)}</p>
       </section>
       <StrategyChecklist cycle={cycle} strategies={strategies} assignment={strategyAssignments[cycle.id]} phase="post" compact onAssign={onAssignStrategy} onCheck={onStrategyCheck}/>
+      <label className="review-comment">評論<input type="text" value={review.reflection || ""} placeholder="記下這筆交易的觀察與評論…" onChange={(event) => change("reflection", event.target.value)}/></label>
       <div className="review-reference">
           <details className="review-glossary"><summary>MAE、MFE、R 與點位分數怎麼看？</summary><dl><div><dt>MAE</dt><dd>持有期間最不利的價格波動；越負代表曾承受越深回撤。</dd></div><div><dt>MFE</dt><dd>持有期間最有利的價格波動；用來觀察曾經出現、但未必實現的機會。</dd></div><div><dt>R</dt><dd>實際損益相對事前風險的倍數；沒有事前停損時不計算。</dd></div><div><dt>點位分數</dt><dd>進出場價在可驗證價格區間的相對位置，不代表未來勝率。</dd></div></dl></details>
           <details className="review-evidence"><summary>查看 {cycle.fills.length} 筆原始成交</summary><div className="table-wrap" tabIndex={0} role="region" aria-label="原始成交資料表，可捲動"><table><thead><tr><th>時間</th><th>方向</th><th>數量</th><th>成交價</th><th>費用</th></tr></thead><tbody>{cycle.fills.map((fill: any) => <tr key={fill.id}><td>{localDateTime(fill.timestamp)}</td><td>{fill.side === "BUY" ? "買進" : "賣出"}</td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee || 0, fill.currency)}</td></tr>)}</tbody></table></div></details>

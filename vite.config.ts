@@ -50,17 +50,18 @@ export default defineConfig(async ({ command, mode }) => {
   return {
     server: {
       host: "127.0.0.1",
+      strictPort: true,
       ...(isCodexSeatbeltSandbox
-        ? { watch: { useFsEvents: false, usePolling: true } }
+        ? { watch: { useFsEvents: false, usePolling: true, awaitWriteFinish: { stabilityThreshold: 1200, pollInterval: 200 } } }
         : {}),
     },
     plugins: [
-      localAccountPlugin({ directory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
+      localAccountPlugin({ personalEmail: settings.LOCAL_PERSONAL_EMAIL || "", passwordHash: Buffer.from(settings.LOCAL_PASSWORD_HASH_BASE64 || "", "base64").toString("utf8"), directory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
       vinext(),
       sites(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: { ...localBindingConfig, ...(command === "serve" ? { vars: { LOCAL_ACCOUNT_SERVICE: "true", GOOGLE_CLIENT_ID: googleClientId } } : {}) },
+        config: { ...localBindingConfig, ...(command === "serve" ? { vars: { LOCAL_ACCOUNT_SERVICE: "true", PERSONAL_PASSWORD_LOGIN: settings.LOCAL_PERSONAL_EMAIL ? "true" : "false", GOOGLE_CLIENT_ID: googleClientId } } : {}) },
         inspectorPort: false,
       }),
     ],

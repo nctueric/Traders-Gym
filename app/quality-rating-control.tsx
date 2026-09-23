@@ -38,3 +38,12 @@ export function QualityTagSelect({ cycle, kind, value, onChange }: { cycle: any;
     <small id={`${id}-help`}>{selected?.description || "依當時的計畫與條件判斷。"}</small>
   </label>;
 }
+
+export function QualityJudgmentButtons({ cycle, kind, value, onChange }: { cycle: any; kind: "entry" | "exit"; value?: string | null; onChange: (value: string) => void }) {
+  const group = kind === "entry" ? "ENTRY" : exitQualityGroup(cycle);
+  const definitions = kind === "entry" ? ENTRY_QUALITY_TAGS : group === "PROFIT_EXIT" ? PROFIT_EXIT_QUALITY_TAGS : STOP_EXIT_QUALITY_TAGS;
+  const selected = definitions.find((tag) => tag.value === value);
+  const options = [{ value: "", label: "待評", description: "依當時的計畫與條件判斷。" }, ...definitions];
+  const ordered = [...options.filter((tag) => tag.value === (selected?.value || "")), ...options.filter((tag) => tag.value !== (selected?.value || ""))];
+  return <fieldset className="judgment-buttons"><legend>{kind === "entry" ? "進場判斷" : "出場判斷"}{kind === "exit" && <small>{group === "PROFIT_EXIT" ? "獲利離場" : "止損離場"}</small>}</legend><div className="judgment-options">{ordered.map((tag) => <button key={tag.value} type="button" aria-pressed={tag.value === (selected?.value || "")} title={tag.description} onClick={() => onChange(tag.value)}>{tag.value === (selected?.value || "") && <small>評斷結果</small>}{tag.label}</button>)}</div><p aria-live="polite">{selected?.description || "依當時的計畫與條件判斷。"}</p></fieldset>;
+}

@@ -55,7 +55,7 @@ test("position disclosure toggles once, survives quote rerenders and retains gro
   let tree=h.render(Panel,props);
   const toggle=find(tree,node=>node.props?.className === "position-ledger-toggle");
   assert.equal(toggle.props["aria-expanded"],false);
-  assert.match(renderToStaticMarkup(tree),/colSpan="14"|colspan="14"/);
+  assert.match(renderToStaticMarkup(tree),/colSpan="13"|colspan="13"/);
   toggle.props.onClick();
   tree=h.render(Panel,{...props,quotes:{ORCL:{price:105}}});
   assert.equal(find(tree,node=>node.props?.className === "position-ledger-toggle").props["aria-expanded"],true);
@@ -197,16 +197,12 @@ test("overview disclosures mount lazily and preserve their children after collap
  assert.match(renderToStaticMarkup(tree),/aria-controls="plans"/);
 });
 
-test("inline holdings editor retains stop, target, note, commit and K-line handlers",()=>{
+test("holdings prices are read-only and retain the K-line entry",()=>{
  const h=harness(),Component=h.load("trade-workspace").PositionsPanel,p=position(),calls=[];
- const props={...propsFor(p),onPlanChange:(...args)=>calls.push(["change",...args]),onPlanCommit:(...args)=>calls.push(["commit",...args]),onOpenChart:(...args)=>calls.push(["chart",...args])};
+ const props={...propsFor(p),onOpenChart:(...args)=>calls.push(args)};
  const tree=h.render(Component,props);
- for(const [label,field,value] of [["ORCL 停利價","takeProfit","150"],["ORCL 停損價","stopLoss","90"],["ORCL 計畫備註","note","新計畫"]]){
-  const input=find(tree,n=>n.props?.["aria-label"]===label);
-  input.props.onChange({target:{value}});input.props.onBlur();
-  assert.deepEqual(calls.splice(0),[["change",p,field,value],["commit",p,field]]);
- }
- find(tree,n=>n.type==="button"&&n.props.children==="看進場與停損K線").props.onClick();assert.deepEqual(calls,[["chart",p]]);
+ assert.equal(find(tree,n=>n.type==="input"),undefined);
+ find(tree,n=>n.type==="button"&&n.props.children==="看進場與停損K線").props.onClick();assert.deepEqual(calls,[[p]]);
  const updated=h.render(Component,{...props,plans:{[p.id]:{stopLoss:90,takeProfit:150,note:"新計畫"}}});
- assert.equal(find(updated,n=>n.props?.["aria-label"]==="ORCL 停損價").props.value,90);
+ assert.match(renderToStaticMarkup(updated),/90.0/);assert.match(renderToStaticMarkup(updated),/150.0/);
 });

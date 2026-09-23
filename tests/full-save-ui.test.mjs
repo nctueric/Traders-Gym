@@ -84,7 +84,8 @@ test("price-only updates and plan edits autosave complete snapshots through the 
   assert.equal(h.stored.marketSnapshot.quotes["USDTWD=X"].price,32,"failed refresh must not remove FX");
   find(h.tree,n=>n.type==="button"&&n.props.children==="持倉").props.onClick();await h.settle();
   const panel=find(h.tree,n=>n.type?.name==="PositionsPanel");
-  panel.props.onPlanChange(panel.props.positions[0],"note","新的持倉計畫");
+  panel.props.onOpenChart(panel.props.positions[0]);await h.settle();
+  find(h.tree,n=>n.type?.name==="OpenPositionDetail").props.onPlanChange(panel.props.positions[0],"note","新的持倉計畫");
   await h.settle();h.runTimers(900);await h.settle();
   assert.ok(Object.values(h.stored.positionPlans).some(p=>p.note==="新的持倉計畫"));
   assert.deepEqual(h.stored.marketBars,source().marketBars);

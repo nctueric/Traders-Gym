@@ -86,7 +86,7 @@ const render = e => renderToStaticMarkup(React.createElement(componentModule.exp
 test("overview breakdown renders separate USD balances and exposure formula", () => {
   const html=render(equity([fill("AAA","BUY",2,100)]));
   assert.match(html,/現金水位/); assert.match(html,/持倉水位/);
-  assert.match(html,/USD(?:\s|&#xA0;|&nbsp;)800.00/);
+  assert.match(html,/USD(?:\s|&#xA0;|&nbsp;)800\.0/);
   assert.match(html,/持倉／總資產/); assert.match(html,/20.0%/);
   assert.doesNotMatch(html,/個持倉使用即時報價|現金＋即時持倉/);
   const workspace=readFileSync(new URL("../app/trade-workspace.tsx",import.meta.url),"utf8");

@@ -15,7 +15,7 @@ const result = await build({
 const output = result.output || result[0].output;
 const assets = new Map(output.map(item => ["/" + item.fileName, item.type === "chunk" ? item.code : item.source]));
 const script = output.find(item => item.type === "chunk").fileName;
-const css = output.filter(item => item.fileName.endsWith(".css")).map(item => `<link rel="stylesheet" href="/${item.fileName}">`).join("");
+const css = (scenario) => output.filter(item => item.fileName.endsWith(".css")).map(item => `<link rel="stylesheet" href="/${item.fileName}?scenario=${encodeURIComponent(scenario)}">`).join("");
 const states = new Map();
 function stateFor(scenario) {
   if (!states.has(scenario)) states.set(scenario, {
@@ -47,13 +47,13 @@ const server = createServer(async (request, response) => {
     if (scenario === "missing") return json({ quotes: [], errors: ["隔離測試：缺少行情與匯率"] });
     return json({ quotes: symbols.map(symbol => ({ symbol, price: symbol === "USDTWD=X" ? 32 : 110, previousClose: symbol === "USDTWD=X" ? 32 : 108, changePct: 0.02, currency: symbol === "USDTWD=X" ? "TWD" : "USD", marketState: "CLOSED", updatedAt: scenario === "stale" ? "2025-01-01T00:00:00Z" : new Date().toISOString(), source: "QA synthetic" })), errors: [] });
   }
-  if (url.pathname === "/api/history") return json({ bars: scenario === "missing" ? [] : fixtureBars(url.searchParams.get("datasetSymbol") || url.searchParams.get("symbol") || "SPY"), source: "QA synthetic" });
+  if (url.pathname === "/api/history") return json({ ...(url.searchParams.get("live")==="true" ? {live:{quoteTime:new Date().toISOString(),tradingDate:new Date().toISOString().slice(0,10),sessionComplete:false}} : {}), ...(url.searchParams.has("priceBasis") ? {priceBasis:url.searchParams.get("priceBasis")} : {}), bars: scenario === "missing" ? [] : fixtureBars(url.searchParams.get("datasetSymbol") || url.searchParams.get("symbol") || "SPY"), source: "QA synthetic" });
   if (url.pathname === "/__qa/state") return json(state);
   if (url.pathname === "/fixture.json") return json(fixtureDataset("rich"));
   if (url.pathname === "/record-serializer.worker.js") { response.writeHead(200, { "Content-Type": "text/javascript" }); return response.end(readFileSync(root + "public/record-serializer.worker.js")); }
-  if (assets.has(url.pathname)) { response.writeHead(200, { "Content-Type": url.pathname.endsWith(".css") ? "text/css" : "text/javascript" }); return response.end(assets.get(url.pathname)); }
+  if (assets.has(url.pathname)) { response.writeHead(200, { "Content-Type": url.pathname.endsWith(".css") ? "text/css" : "text/javascript" }); return response.end(url.pathname.endsWith(".css") && scenario.endsWith("-dark") ? String(assets.get(url.pathname)).replace(/@media\s*\(prefers-color-scheme:\s*dark\)/g,"@media (min-width:0px)") : assets.get(url.pathname)); }
   if (url.pathname.startsWith("/api/")) return json({ error: "Unknown QA endpoint" }, 404);
   response.writeHead(200, { "Content-Type": "text/html" });
-  response.end(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>隔離測試｜交易復盤顧問</title>${css}</head><body><div id="root"></div><script type="module" src="/${script}"></script></body></html>`);
+  response.end(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>隔離測試｜交易復盤顧問</title>${css(scenario)}</head><body><div id="root"></div><script type="module" src="/${script}"></script></body></html>`);
 });
 server.listen(0, "127.0.0.1", () => console.log(`QA fixture: http://127.0.0.1:${server.address().port} (memory only)`));
