@@ -29,10 +29,11 @@ test('long and short entry/add/reduce/exit/reversal use canonical FIFO engine',(
   p=previewEntry(data,draft(data,{side:opposite,quantity:'20'}),now);assert.equal(p.action,'REVERSAL');assert.equal(p.after.quantity,5);assert.equal(p.cycleId,'cycle-new-open');
  }
 });
-test('reversal evidence only attaches the split new opening and preserves old annotation',()=>{
+test('reversal evidence records old exit and new entry without rewriting old annotation',()=>{
  const data=fixture();data.fills=[fill('first','SELL',10,100)];data.cycleReviews={'cycle-first':{entryQualityTag:'IDEAL'}};data.positionPlans={'cycle-first':{stopLoss:105}};
  const next=submit(data,draft(data,{side:'BUY',quantity:'15',fee:'3'}));
- assert.equal(next.entryContexts.new.cycleId,'cycle-new-open');assert.equal(contextsForCycle(next.entryContexts,'cycle-first').length,0);
+ assert.equal(next.entryContexts.new.cycleId,'cycle-new-open');assert.equal(contextsForCycle(next.entryContexts,'cycle-first').length,1);
+ assert.deepEqual(next.entryContexts.new.strategyStages.map(stage=>[stage.cycleId,stage.phase]),[['cycle-first','EXIT'],['cycle-new-open','ENTRY']]);
  assert.deepEqual(next.cycleReviews,data.cycleReviews);assert.equal(next.entryContexts.new.planSnapshot.stopLoss,null,'new cycle must not inherit closed cycle plan');
  const result=buildCycles(next);assert.equal(result.cycles[0].fills.at(-1).fee,2);assert.equal(result.positions[0].fills[0].fee,1);
 });

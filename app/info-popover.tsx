@@ -8,6 +8,7 @@ export function InfoPopoverGroup({children}:{children:ReactNode}) {
 }
 export function InfoPopover({label,children}:{label:string;children:ReactNode}) {
  const id=useId(),ctx=useContext(Context),button=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null);
+ const [portalTarget,setPortalTarget]=useState<Element|null>(null);
  const open=ctx?.active===id;
  useLayoutEffect(()=>{
   if(!open)return;
@@ -25,5 +26,5 @@ export function InfoPopover({label,children}:{label:string;children:ReactNode}) 
   window.addEventListener('resize',position);window.addEventListener('scroll',position,true);document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape,true);
   return()=>{observer.disconnect();window.removeEventListener('resize',position);window.removeEventListener('scroll',position,true);document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape,true);};
  },[open,ctx]);
- return <><button ref={button} type="button" className="asset-info-trigger" aria-label={`${label}說明`} aria-expanded={open} aria-controls={open?id:undefined} onClick={()=>ctx?.setActive(open?null:id)}><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5 3 L12 8 L5 13 Z" fill="currentColor"/></svg></button>{open&&createPortal(<div ref={panel} id={id} className="asset-info-panel" role="region" aria-label={`${label}說明`}><strong>{label}</strong>{children}</div>,document.body)}</>;
+ return <><button ref={button} type="button" className="asset-info-trigger" aria-label={`${label}說明`} aria-expanded={open} aria-controls={open?id:undefined} onClick={event=>{setPortalTarget(event.currentTarget.closest("dialog") || document.body);ctx?.setActive(open?null:id);}}><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5 3 L12 8 L5 13 Z" fill="currentColor"/></svg></button>{open&&createPortal(<div ref={panel} id={id} className="asset-info-panel" role="region" aria-label={`${label}說明`}><strong>{label}</strong>{children}</div>,portalTarget || document.body)}</>;
 }

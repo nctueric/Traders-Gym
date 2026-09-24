@@ -1,3 +1,4 @@
+import {decodeSnapshotRequest} from "../lib/snapshot-transport.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
@@ -90,7 +91,7 @@ test("cache-only cross-tab changes merge newer quotes without overwriting indepe
   const saved = await saveTradeRecord({ accountId: "test", accountName: "測試", baseVersion: 1, baselineJson: completeTradeJson(baseline), serialized: completeTradeJson(local), fetcher: async (url, options) => {
     if (options.method === "GET") return { ok: true, json: async () => ({ dataset: server, account: { version: 2 } }) };
     if (++writes === 1) return { ok: false, status: 409, json: async () => ({}) };
-    assert.deepEqual(JSON.parse(options.body).dataset, merged);
+    assert.deepEqual((await decodeSnapshotRequest(new Request("https://example.test",options))).dataset, merged);
     return { ok: true, json: async () => ({ account: { version: 3 } }) };
   } });
   assert.equal(saved.account.version, 3);

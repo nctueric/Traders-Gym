@@ -97,12 +97,12 @@ test('personal standard ledger import and restore never overwrite the test ledge
   const edited={...baseline,evidence:'edited history'};
   response=await h.api.handle(h.request('/api/trade-records','PUT',{accountId:imported.account.id,accountName:'標準歷史帳本',dataset:edited,baseVersion:1},s));
   assert.equal(response.status,200);
-  const testLedger=await(await h.api.handle(h.request('/api/trade-records','GET',undefined,s))).json();
+  const testLedger=await(await h.api.handle(h.request(`/api/trade-records?accountId=${initial.account.id}`,'GET',undefined,s))).json();
   assert.deepEqual(testLedger.dataset,initial.dataset);assert.equal(testLedger.account.version,1);
   const list=await(await h.api.handle(h.request('/api/admin/history','GET',undefined,s))).json();
   const pinned=list.items.find(row=>row.accountId===imported.account.id&&row.version===1);assert.equal(pinned.pinned,1);
   response=await h.api.handle(h.request('/api/admin/history?action=restore','POST',{id:pinned.id,baseVersion:2},s));assert.equal(response.status,200);
   read=await(await h.api.handle(h.request(`/api/trade-records?accountId=${imported.account.id}`,'GET',undefined,s))).json();
   assert.deepEqual(read.dataset,baseline);assert.equal(read.account.version,3);
-  const unchanged=await(await h.api.handle(h.request('/api/trade-records','GET',undefined,s))).json();assert.deepEqual(unchanged.dataset, testLedger.dataset);assert.deepEqual(unchanged.account,testLedger.account);
+  const unchanged=await(await h.api.handle(h.request(`/api/trade-records?accountId=${initial.account.id}`,'GET',undefined,s))).json();assert.deepEqual(unchanged.dataset, testLedger.dataset);assert.deepEqual(unchanged.account,testLedger.account);
 });

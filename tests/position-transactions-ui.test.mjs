@@ -25,7 +25,7 @@ function harness() {
     if (cache.has(name)) return cache.get(name);
     const file = new URL("../app/" + name + ".tsx", import.meta.url);
     let source = readFileSync(file, "utf8");
-    if (name === "trade-workspace") source += "\nexport { PositionsPanel, TradeMetrics };";
+    if (name === "trade-workspace") source += "\nexport { PositionsPanel, TradeMetrics, CycleTable };";
     const compiled = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
     const componentModule = {exports:{}};
     new Function("require","module","exports",compiled)(id => {
@@ -182,8 +182,8 @@ test("metric evidence opens the same original cycle for replay and review",()=>{
  const h=harness(),Component=h.load("trade-workspace").TradeMetrics,props=metricProps(),selected=[];
  const tree=h.render(Component,{...props,onSelect:cycle=>selected.push(cycle)});
  const table=cycleNode(tree),rendered=table.type(table.props);
- find(rendered,n=>n.type==="button").props.onClick();
- assert.equal(selected[0],props.cycles[1]);
+ find(rendered,n=>n.type==="button"&&n.props.children==="詳情").props.onClick();
+ assert.equal(selected[0],props.cycles[2]);
 });
 
 test("overview disclosures mount lazily and preserve their children after collapsing",()=>{
@@ -205,4 +205,19 @@ test("holdings prices are read-only and retain the K-line entry",()=>{
  find(tree,n=>n.type==="button"&&n.props.children==="看進場與停損K線").props.onClick();assert.deepEqual(calls,[[p]]);
  const updated=h.render(Component,{...props,plans:{[p.id]:{stopLoss:90,takeProfit:150,note:"新計畫"}}});
  assert.match(renderToStaticMarkup(updated),/90.0/);assert.match(renderToStaticMarkup(updated),/150.0/);
+});
+
+
+test("cycle table defaults to latest exit and all data headers toggle sorting",()=>{
+ const h=harness(),Table=h.load('trade-workspace').CycleTable,props={cycles:metricProps().cycles,title:'全部交易閉環'};
+ const symbols=tree=>nodes(tree).filter(n=>n.type==='tbody').flatMap(n=>n.props.children.map(row=>row.props.children[0].props.children.props.children));
+ let tree=h.render(Table,props);assert.deepEqual(symbols(tree),['LOSS','AUG','JUL']);
+ const headers=nodes(tree).filter(n=>n.type==='th'&&n.props['aria-sort']);assert.equal(headers.length,11);
+ for(const header of headers){
+  header.props.children.props.onClick();tree=h.render(Table,props);
+  const active=nodes(tree).find(n=>n.type==='th'&&n.props['aria-sort']==='ascending');assert.ok(active);
+  active.props.children.props.onClick();tree=h.render(Table,props);assert.ok(nodes(tree).some(n=>n.type==='th'&&n.props['aria-sort']==='descending'));
+ }
+ const profit=nodes(tree).find(n=>n.type==='button'&&n.props['aria-label']?.startsWith('損益，'));profit.props.onClick();tree=h.render(Table,props);assert.deepEqual(symbols(tree),['LOSS','AUG','JUL']);
+ assert.deepEqual(props.cycles.map(c=>c.symbol),['JUL','AUG','LOSS']);
 });
