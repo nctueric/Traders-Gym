@@ -254,3 +254,20 @@ test('Sites trial binds separately and cannot claim primary, bypass identity, or
   const google=await h.login(OWNER_EMAIL,'real-google-owner');
   const legacy=await h.call(google,'/api/trade-records');assert.equal(legacy.body.account.id,'primary');assert.deepEqual(legacy.body.dataset,h.original);
 });
+
+
+test("fresh login loads latest saved owned ledger, explicit selection stays scoped", async t => {
+  const h=setup(t), owner=await h.login(OWNER_EMAIL);
+  await h.call(owner,"/api/trade-records");
+  const latest={...h.original,note:"latest saved evidence"};
+  h.sqlite.prepare("INSERT INTO trade_account_snapshots(account_id,account_name,dataset_json,version,updated_at,owner_user_id) VALUES(?,?,?,?,?,?)").run("recent-ledger","最近保存",JSON.stringify(latest),8,"2099-01-01T00:00:00Z",owner.userId);
+  const fresh=await h.login(OWNER_EMAIL);
+  const restored=await h.call(fresh,"/api/trade-records");
+  assert.equal(restored.body.account.id,"recent-ledger");
+  assert.deepEqual(restored.body.dataset,latest);
+  assert.equal((await h.call(fresh,"/api/trade-records?accountId=primary")).body.account.id,"primary");
+  await h.call(owner,"/api/admin/accounts",{action:"invite",email:"isolated@gmail.com"});
+  const other=await h.login("isolated@gmail.com");
+  assert.equal((await h.call(other,"/api/trade-records?accountId=recent-ledger")).status,403);
+  assert.notEqual((await h.call(other,"/api/trade-records")).body.account.id,"recent-ledger");
+});

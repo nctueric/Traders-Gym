@@ -54,7 +54,7 @@ test("mobile navigation opens explicitly and tables scroll without shrinking tex
   assert.equal(stylesAt(".metrics", 390)["grid-template-columns"], "1fr");
 });
 
-test("overview has three categories with asset history and plan editing inside disclosures", () => {
+test("overview keeps asset history and holdings in accessible disclosures", () => {
   const source = ts.createSourceFile("trade-workspace.tsx", readFileSync(new URL("../app/trade-workspace.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const elements = [];
   const visit = node => { if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) elements.push(node); ts.forEachChild(node, visit); };

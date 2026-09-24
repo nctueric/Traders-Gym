@@ -78,7 +78,7 @@ test("legacy cache is preserved separately, not guessed to be newer", () => {
 
 test("manual and auto saving share complete snapshots, and unload is guarded", () => {
   const source = readFileSync(new URL("../app/trade-workspace.tsx", import.meta.url), "utf8");
-  assert.ok(source.includes("cloudReady, completeSnapshot, saveRetry, storageConflict, storageReady"));
+  assert.ok(source.includes("window.setInterval(() => backgroundSaveRef.current(), 600_000)"));
   assert.ok(source.includes('persistCompleteSnapshot(true, "手動")'));
   assert.ok(source.includes("serializeInBackground(captured.dataset)"));
   assert.ok(source.includes("立即儲存"));
@@ -93,4 +93,18 @@ test("HTML gateway errors retain HTTP status and keep pending saves retryable", 
 });
 test("malformed successful response never reports a confirmed save", async()=>{
   for(const body of [null,[],{}, {account:{version:"2"}}]) await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"帳號",baseVersion:1,serialized:durableTradeJson(data()),fetcher:async()=>response(200,body)}),e=>e.status===502 && e.retryable);
+});
+
+
+test("aborted upload confirms a committed snapshot without a duplicate write", async () => {
+ const dataset=data(), serialized=JSON.stringify(dataset); let puts=0;
+ const saved=await saveTradeRecord({accountId:"primary",accountName:"test",serialized,baseVersion:1,fetcher:async(url,options)=>{
+  if(options.method==="PUT"){puts++;throw new DOMException("Fetch is aborted","AbortError");}
+  return response(200,{account:account(2),dataset});
+ }});
+ assert.equal(puts,1);assert.equal(saved.account.version,2);
+});
+test("unconfirmed abort retains retryable Chinese error; session errors remain terminal",async()=>{
+ await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"test",serialized:JSON.stringify(data()),baseVersion:1,fetcher:async()=>{throw new DOMException("Fetch is aborted","AbortError");}}),e=>e.status===504&&e.retryable&&e.message.includes("尚未確認"));
+ await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"test",serialized:JSON.stringify(data()),baseVersion:1,fetcher:async()=>{throw Object.assign(new Error("session ended"),{status:401,retryable:false});}}),e=>e.status===401&&!e.retryable);
 });

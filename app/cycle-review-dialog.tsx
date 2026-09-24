@@ -12,7 +12,7 @@ function pct(value: number | null) { return value == null ? "—" : `${value >= 
 function money(value: number, currency = "USD") { return new Intl.NumberFormat("zh-TW", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 2 }).format(value); }
 function localDateTime(value?: string) { return value ? new Date(value).toLocaleString("zh-TW", { hour12: false }) : "尚未設定"; }
 
-export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, planHistory, rapidPairs, decisionLinks, strategies, strategyAssignments, onAssignStrategy, onStrategyCheck, onAddPlanVersion, onReviewChange, onClose }: any) {
+export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, planHistory, rapidPairs, decisionLinks, strategies, strategyAssignments, onAssignStrategy, onStrategyCheck, onStageReview, onAddPlanVersion, onReviewChange, onClose }: any) {
   const analysis = analyzeCycle(cycle, marketBars, review);
   const progress = cycleReviewProgress(review);
   const change = (field: string, value: string) => onReviewChange(cycle.id, field, value);
@@ -35,7 +35,7 @@ export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, pl
         </div>
         <p className="review-save-note">選擇後自動儲存・最後評分：{localDateTime(review.qualityRatedAt)}</p>
       </section>
-      <StrategyChecklist cycle={cycle} strategies={strategies} assignment={strategyAssignments[cycle.id]} phase="post" compact onAssign={onAssignStrategy} onCheck={onStrategyCheck}/>
+      <StrategyChecklist cycle={cycle} strategies={strategies} assignment={strategyAssignments[cycle.id]} phase="post" compact entryContexts={entryContexts} onStageReview={onStageReview} onAssign={onAssignStrategy} onCheck={onStrategyCheck}/>
       <label className="review-comment">評論<input type="text" value={review.reflection || ""} placeholder="記下這筆交易的觀察與評論…" onChange={(event) => change("reflection", event.target.value)}/></label>
       <div className="review-reference">
           <details className="review-glossary"><summary>MAE、MFE、R 與點位分數怎麼看？</summary><dl><div><dt>MAE</dt><dd>持有期間最不利的價格波動；越負代表曾承受越深回撤。</dd></div><div><dt>MFE</dt><dd>持有期間最有利的價格波動；用來觀察曾經出現、但未必實現的機會。</dd></div><div><dt>R</dt><dd>實際損益相對事前風險的倍數；沒有事前停損時不計算。</dd></div><div><dt>點位分數</dt><dd>進出場價在可驗證價格區間的相對位置，不代表未來勝率。</dd></div></dl></details>

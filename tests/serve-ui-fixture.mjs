@@ -1,4 +1,5 @@
 // Local-only, in-memory QA harness. No credentials, production DB, or upstream API.
+import { gunzipSync } from "node:zlib";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -34,8 +35,9 @@ const server = createServer(async (request, response) => {
     if (scenario === "load-error") return json({ error: "隔離測試：帳號載入失敗" }, 503);
     if (request.method === "PUT") {
       if (scenario === "save-error") return json({ error: "隔離測試：儲存失敗，請重試" }, 503);
-      let raw = ""; for await (const chunk of request) raw += chunk;
-      const body = JSON.parse(raw);
+      const chunks=[]; for await (const chunk of request) chunks.push(chunk);
+      const raw=Buffer.concat(chunks);
+      const body = JSON.parse((request.headers["content-encoding"]==="gzip"?gunzipSync(raw):raw).toString());
       if (body.baseVersion != null && body.baseVersion !== state.account.version) return json({ error: "Conflict" }, 409);
       state.dataset = body.dataset; state.account = { ...state.account, name: body.accountName, version: state.account.version + 1, updatedAt: new Date().toISOString() }; state.writes++;
       return json({ account: state.account });

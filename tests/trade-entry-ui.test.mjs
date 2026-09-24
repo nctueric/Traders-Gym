@@ -27,16 +27,17 @@ function harness(input){
 }
 test('compact ticket removes duplicate judgments, keeps core fields and confirms exactly one submission',()=>{
  const component=load().TradeEntryWorkspace,p=props(),html=renderToStaticMarkup(React.createElement(component,p));
- for(const text of ['entry-ticket-grid','成交與計畫登錄','策略進場','整筆持倉計畫','套用標準','持倉占比','停損資產影響','不會送出券商訂單'])assert.ok(html.includes(text),text);
+ for(const text of ['entry-ticket-grid','成交與計畫登錄','策略確認','整筆持倉計畫','套用標準','持倉占比','停損資產影響','不會送出券商訂單'])assert.ok(html.includes(text),text);
  assert.doesNotMatch(html,/本次進場|name="entry-setup"|name="entry-volume"|加碼理由|<dialog/);
  const h=harness(p);let tree=h.render();assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);
- find(tree,n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});tree=h.render();assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,false);
+ find(tree,n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});tree=h.render();assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);
+ find(find(tree,n=>n.type==='label'&&n.props.className==='entry-confirm'),n=>n.type==='input').props.onChange({target:{checked:true}});tree=h.render();assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,false);
  const form=find(tree,n=>n.type==='form');form.props.onSubmit({preventDefault(){}});form.props.onSubmit({preventDefault(){}});assert.equal(h.submitted,1);h.close();
 });
 test('manual stop persists and invalid stop remains editable',()=>{
  const h=harness(props());let tree=h.render();
- find(tree,n=>n.type==='input'&&n.props['aria-label']==='停損價').props.onChange({target:{value:'0'}});tree=h.render();
- assert.equal(h.current.draft.planModes.stopLoss,'MANUAL');assert.ok(find(tree,n=>n.type==='input'&&n.props.value==='0'));assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);h.close();
+ find(tree,n=>n.type?.name==='PlanPriceFields').props.onChange('stopLoss','0');tree=h.render();
+ assert.equal(h.current.draft.planModes.stopLoss,'MANUAL');assert.equal(find(tree,n=>n.type?.name==='PlanPriceFields').props.value.stopLoss,'0');assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);h.close();
 });
 test('add inherits strategy and separate checks; exit hides entry checks and plan',()=>{
  const data=initial();data.fills=[{id:'a',accountId:'usd',symbol:'AAA',market:'NASDAQ',currency:'USD',side:'BUY',quantity:10,price:90,fee:0,timestamp:'2026-08-01T00:00:00Z'}];
@@ -68,4 +69,12 @@ test('canvas renders ten candles, volume, trade marker and stop/target lines at 
 });
 test('draft does not affect engine preview until explicitly submitted',()=>{
  const data=initial(),p=props(data);data.entryDraft=p.draft;assert.equal(data.fills.length,0);assert.equal(previewEntry(data,p.draft).after.quantity,10);assert.equal(data.fills.length,0);
+});
+
+test('saved evidence stays read-only, uses its original plan and exposes legacy details without a second chart',()=>{
+ const row={fillId:'saved',cycleId:'cycle-saved',formatVersion:1,action:'ENTRY',fillTimestamp:'2026-08-01T12:00:00Z',recordedAt:'2026-08-01T13:00:00Z',fillPrice:100,fillQuantity:5,fillSide:'BUY',fillFee:1,currency:'USD',strategyName:'原始策略',strategyVersionId:'v1',ruleChecks:{r:{status:'CONFIRMED',name:'原始確認',checkedAt:'2026-08-01T13:00:00Z'}},planSnapshot:{stopLoss:90,takeProfit:120},after:{averageCost:100,direction:'LONG'},entrySetup:'PULLBACK',evidence:{candles:[]}};
+ const before=structuredClone(row);Object.freeze(row);
+ const html=renderToStaticMarkup(React.createElement(load().EntryContextEvidence,{contexts:{saved:row},cycleId:'cycle-saved',fills:[{id:'saved',price:999,fee:9}]}));
+ for(const text of ['成交資料','策略確認','整筆持倉計畫','原始策略','舊版補充資訊','20.0%','-10.0%'])assert.ok(html.includes(text),text);
+ assert.doesNotMatch(html,/<input|<canvas|999/);assert.deepEqual(row,before);
 });

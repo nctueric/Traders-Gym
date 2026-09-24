@@ -48,6 +48,10 @@ export function fixtureDataset(scenario = "rich") {
     if (index % 4 !== 0) dataset.cycleReviews[cycle.id] = { entryQualityTag: ["EARLY", "LATE", "IDEAL", "WRONG_ENTRY"][index % 4], exitQualityTag: ["EARLY", "LATE", "IDEAL"][index % 3], qualityRatedAt: "2026-08-27T00:00:00Z", reflection: "合成復盤文字" };
     if (index % 3 !== 0) dataset.strategyAssignments[cycle.id] = createStrategyAssignment(cycle, active, "HISTORICAL_BATCH", "2026-08-27T00:00:00Z");
   });
+  if (scenario === "plan-ui") {
+    dataset.positionPlans['cycle-qa-open']={stopLoss:90,takeProfit:140,updatedAt:'2026-08-25T10:00:00Z'};
+    dataset.entryContexts={'qa-open':{formatVersion:1,fillId:'qa-open',cycleId:'cycle-qa-open',action:'ENTRY',symbol:'QAHOLD',fillTimestamp:'2026-08-25T09:30:00Z',recordedAt:'2026-08-25T10:00:00Z',fillSide:'BUY',fillQuantity:25,fillPrice:100,fillFee:1,currency:'USD',strategyName:'保存時策略',strategyVersionId:'v1',ruleChecks:{entry:{name:'突破確認',criterion:'保存時的條件',status:'CONFIRMED',checkedAt:'2026-08-25T10:00:00Z'}},planSnapshot:{stopLoss:90,takeProfit:140},after:{quantity:25,averageCost:100,direction:'LONG'},note:'原始唯讀證據',entrySetup:'PULLBACK',volumeTags:[],addReason:null,evidence:{fetchedAt:'2026-08-25T10:00:00Z',candles:fixtureBars('QAHOLD').slice(250,260)}}};
+  }
   if (scenario === "missing") {
     dataset.marketBars = [];
     dataset.cashActivities.push({ id: "qa-unconfirmed", type: "DEPOSIT", amount: 3000, timestamp: "2026-08-01T00:00:00Z", accountId: null, currency: null, requiresReview: true });
