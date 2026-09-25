@@ -108,3 +108,16 @@ test("unconfirmed abort retains retryable Chinese error; session errors remain t
  await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"test",serialized:JSON.stringify(data()),baseVersion:1,fetcher:async()=>{throw new DOMException("Fetch is aborted","AbortError");}}),e=>e.status===504&&e.retryable&&e.message.includes("尚未確認"));
  await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"test",serialized:JSON.stringify(data()),baseVersion:1,fetcher:async()=>{throw Object.assign(new Error("session ended"),{status:401,retryable:false});}}),e=>e.status===401&&!e.retryable);
 });
+
+test('empty pending journal cannot replace a populated cloud ledger and is quarantined intact', () => {
+  const local=storage(), base={...data(),fills:[{id:'original'}],cashActivities:[{id:'cash'}]};
+  const empty={...data(),fills:[],cashActivities:[]};
+  writeLocalRecord(local,'records','primary',JSON.stringify(empty),JSON.stringify(base),394);
+  const original=local.getItem('records.primary.pending');
+  const result=readPendingRecord(local,'records','primary',base);
+  assert.deepEqual(result.dataset,base);assert.equal(result.blockedEmptyRecovery,true);
+  assert.equal(result.recovered,undefined);assert.equal(local.getItem(result.recoveryKey),original);
+  const blocked=readPendingRecord({getItem:k=>local.getItem(k),setItem(){throw Error('quota');}},'records','primary',base);
+  assert.deepEqual(blocked.dataset,base);assert.equal(blocked.conflict,true);
+  assert.equal(local.getItem('records.primary.pending'),original);
+});

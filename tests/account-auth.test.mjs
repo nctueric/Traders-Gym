@@ -271,3 +271,14 @@ test("fresh login loads latest saved owned ledger, explicit selection stays scop
   assert.equal((await h.call(other,"/api/trade-records?accountId=recent-ledger")).status,403);
   assert.notEqual((await h.call(other,"/api/trade-records")).body.account.id,"recent-ledger");
 });
+
+test('old clients cannot empty a populated ledger via background saves',async t=>{
+ const h=setup(t),owner=await h.login(OWNER_EMAIL);
+ await h.call(owner,'/api/trade-records');
+ const populated={...h.original,fills:[{id:'preserved'}],cashActivities:[{id:'deposit'}]};
+ h.sqlite.prepare('UPDATE trade_account_snapshots SET dataset_json=? WHERE account_id=?').run(JSON.stringify(populated),'primary');
+ const result=await h.call(owner,'/api/trade-records',{accountId:'primary',accountName:'Trader',dataset:h.original,baseVersion:37,saveMode:'auto'},'PUT');
+ assert.equal(result.status,409);
+ const after=await h.call(owner,'/api/trade-records');
+ assert.equal(after.body.account.version,37);assert.deepEqual(after.body.dataset,populated);
+});
