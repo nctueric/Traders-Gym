@@ -111,6 +111,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   const sessionScope = useMemo(() => createSessionScope(user.sessionId, fetch), [user.sessionId]);
   const storageKey = `${STORAGE_KEY}.user.${user.id}`;
   const [sessionEnded, setSessionEnded] = useState(false);
+  const sessionInvalidatedRef = useRef(false);
   const [data, setData] = useState<Dataset>(emptyData);
   const [storageReady, setStorageReady] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
@@ -185,7 +186,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
         setActiveRecordAccountId(payload.account.id);
         recordVersionRef.current = payload.account.version;
         lastSavedJsonRef.current = recovery.conflict ? recovery.baselineJson : completeTradeJson(payload.dataset);
-        setSaveState(recovery.conflict ? "本機與雲端都有修改，請先匯出備份再確認版本" : recovery.recovered ? "已恢復未完成的儲存，正在重新同步…" : `已載入最新紀錄・${localDateTime(payload.account.updatedAt)}`);
+        setSaveState(recovery.blockedEmptyRecovery ? (recovery.conflict ? "已載入完整帳本；空白快取無法另存，已暫停同步，請匯出備份" : "已載入完整帳本；已隔離空白快取並保留備份") : recovery.conflict ? "本機與雲端都有修改，請先匯出備份再確認版本" : recovery.recovered ? "已恢復未完成的儲存，正在重新同步…" : `已載入最新紀錄・${localDateTime(payload.account.updatedAt)}`);
         setMessage("已載入你的交易帳本。");
         setCloudReady(true);
         setStorageReady(true);
@@ -241,7 +242,9 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   }), [activeRecordAccountId, activeRecordAccountName, loadDataset, storageConflict, sessionScope, storageKey, storageTarget]);
 
   const handleSaveError = useCallback((error: any) => {
+    if (sessionInvalidatedRef.current) return;
     if ([401, 403].includes(error?.status)) {
+      sessionInvalidatedRef.current = true;
       const latest = latestSaveRef.current;
       if (recordVersionRef.current != null) writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
       sessionScope.stop(); setSessionEnded(true); setCloudReady(false); setStorageReady(false); setData(emptyData); setQuotes({}); setBenchmarkBars([]); setPendingImport(null); clearTimeout(retryTimerRef.current); return;
@@ -293,10 +296,10 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     backgroundSaveRef.current();
   }, [saveRetry, storageReady, cloudReady, storageConflict]);
   useEffect(() => {
-    if (!storageReady || recordVersionRef.current == null) return;
+    if (!storageReady || storageConflict || sessionInvalidatedRef.current || recordVersionRef.current == null) return;
     const latest = latestSaveRef.current;
     writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
-  }, [storageReady, storageKey, activeRecordAccountId, durableJson]);
+  }, [storageReady, storageConflict, storageKey, activeRecordAccountId, durableJson]);
   useEffect(() => {
     if (!storageReady) return;
     try { setOnboardingOpen(localStorage.getItem(`${ONBOARDING_KEY}.${user.id}`) !== "done"); } catch { /* The guide remains replayable even when preferences cannot persist. */ }
@@ -306,7 +309,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   useEffect(() => {
     const retry = () => setSaveRetry(current => current + 1);
     const preserve = () => {
-      if (!storageReady) return;
+      if (!storageReady || storageConflict || sessionInvalidatedRef.current) return;
       const latest = latestSaveRef.current;
       writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
     };
@@ -318,7 +321,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     window.addEventListener("pagehide", preserve);
     window.addEventListener("beforeunload", beforeUnload);
     return () => { window.removeEventListener("online", retry); window.removeEventListener("pagehide", preserve); window.removeEventListener("beforeunload", beforeUnload); };
-  }, [storageReady, storageKey]);
+  }, [storageReady, storageConflict, storageKey]);
   useEffect(() => {
     let active = true;
     const verify = async () => {

@@ -156,3 +156,16 @@ test('holdings palette defaults green-up, updates both displays and restores fro
  find(fresh.tree,n=>n.type==='button'&&n.props.children==='持倉').props.onClick();await fresh.settle();
  assert.equal(choose(fresh,'紅漲綠跌').props['aria-pressed'],true);
 });
+
+test('repeated authentication failures and unload cannot overwrite the preserved ledger with cleared UI state', async t => {
+ const h=harness();t.after(()=>h.close());await h.settle();
+ const oldUnload=h.events.get('pagehide');
+ const changed=h.events.get('storage');
+ changed({key:'tg.auth.changed',newValue:'another-session'});await h.settle();
+ const backups=[...h.values].filter(([key])=>key.endsWith('.pending'));
+ assert.ok(backups.length>0);
+ for(const [,value] of backups)assert.equal(JSON.parse(JSON.parse(value).serialized).fills.length,1);
+ changed({key:'tg.auth.changed',newValue:'another-session'});oldUnload();await h.settle();
+ for(const [key,value] of backups)assert.equal(h.values.get(key),value);
+ h.runTimers(600_000);await h.settle();assert.equal(h.writes.length,0);
+});
