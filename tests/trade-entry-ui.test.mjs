@@ -16,7 +16,7 @@ const load=(react=React,extras={})=>{
 const nodes=tree=>Array.isArray(tree)?tree.flatMap(nodes):!tree||typeof tree!=='object'?[]:[tree,...nodes(tree.props?.children)];
 const find=(tree,predicate)=>nodes(tree).find(predicate);
 const initial=()=>({version:'1',profile:{name:'test'},settings:{},accounts:[{id:'usd',currency:'USD',name:'美股'}],fills:[],marketBars:[],cashActivities:[],strategies:[]});
-function props(data=initial(),patch={}){return {data,draft:{...createEntryDraft(data.accounts),symbol:'AAA',quantity:'10',price:'100',timestamp:new Date(Date.now()-60000).toISOString(),...patch},quotes:{},onChange(){},onSubmit(){},onBack(){}};}
+function props(data=initial(),patch={}){return {data,draft:{...createEntryDraft(data.accounts),symbol:'AAA',marketConfirmed:true,quantity:'10',price:'100',timestamp:new Date(Date.now()-60000).toISOString(),...patch},quotes:{},onChange(){},onSubmit(){},onBack(){}};}
 function harness(input){
  let index=0,current=input,tree;const hooks=[],effects=[],timers=new Map(),requests=[];let serial=0,submitted=0;
  const react={...React,useContext:()=>null,useState(initial){const i=index++;if(!(i in hooks))hooks[i]=typeof initial==='function'?initial():initial;return[hooks[i],value=>{hooks[i]=typeof value==='function'?value(hooks[i]):value;}];},useRef(initial){const i=index++;return hooks[i]||=( {current:initial});},useMemo(fn,deps){const i=index++;if(!hooks[i]||deps.some((d,j)=>!Object.is(d,hooks[i].deps[j])))hooks[i]={value:fn(),deps};return hooks[i].value;},useEffect(fn,deps){const i=index++;if(!hooks[i]||deps.some((d,j)=>!Object.is(d,hooks[i].deps[j]))){const old=hooks[i];hooks[i]={deps};effects.push(()=>{old?.cleanup?.();hooks[i].cleanup=fn();});}}};
@@ -27,7 +27,7 @@ function harness(input){
 }
 test('compact ticket removes duplicate judgments, keeps core fields and confirms exactly one submission',()=>{
  const component=load().TradeEntryWorkspace,p=props(),html=renderToStaticMarkup(React.createElement(component,p));
- for(const text of ['entry-ticket-grid','成交與計畫登錄','策略確認','整筆持倉計畫','套用標準','持倉占比','停損資產影響','不會送出券商訂單'])assert.ok(html.includes(text),text);
+ for(const text of ['entry-ticket-grid','策略確認','整筆持倉計畫','套用標準','持倉占比','停損資產影響','不會送出券商訂單'])assert.ok(html.includes(text),text);
  assert.doesNotMatch(html,/本次進場|name="entry-setup"|name="entry-volume"|加碼理由|<dialog/);
  const h=harness(p);let tree=h.render();assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);
  find(tree,n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});tree=h.render();assert.equal(find(tree,n=>n.type==='button'&&n.props.type==='submit').props.disabled,true);

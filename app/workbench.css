@@ -130,3 +130,32 @@
  .trading-workbench .profit-loss-group dl>div:nth-child(2n){border-right:0}
  .trading-workbench .profit-loss-group dl>div:nth-last-child(2){border-bottom:1px solid var(--line)}
 }
+
+/* Batch registration: a compact row on desktop, touch-sized fields on mobile. */
+.registration-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.registration-toolbar [role=group]{display:flex;gap:6px}.registration-toolbar button[aria-pressed=true]{border-color:var(--green);color:var(--green);background:var(--surface-muted);font-weight:600}.registration-back{margin-left:auto}
+.simple-entry{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+.simple-entry-context{display:flex;align-items:end;gap:16px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.simple-entry label{display:grid;gap:6px;font-size:14px;color:var(--muted);min-width:0}.simple-entry-context label{min-width:170px}
+.simple-entry :is(input,select){width:100%;min-width:0;font-size:16px;min-height:44px;font-variant-numeric:tabular-nums}.simple-entry input[type=number]{text-align:right}
+.simple-entry-row{display:grid;grid-template-columns:minmax(100px,1.1fr) minmax(120px,1fr) repeat(3,minmax(90px,1fr)) 44px;gap:12px;align-items:end;border:0;border-bottom:1px solid var(--line);padding:14px 0;margin:0;min-width:0}
+.simple-entry-row .simple-market{grid-column:1/-1;font-size:14px}.simple-market label{max-width:220px}.simple-market summary{color:var(--muted)}.simple-row-error{grid-column:1/-1;margin:0}
+.simple-row-delete{display:grid;place-items:center;min-width:44px;min-height:44px;padding:8px!important}
+.simple-entry-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding-top:16px}.simple-entry-actions small{margin-left:auto;color:var(--muted)}
+.simple-confirmation{padding:16px 0;border-bottom:1px solid var(--line)}.simple-confirmation ol{padding-left:22px}.simple-confirmation li{padding:8px 0}.simple-confirmation li span,.simple-confirmation li strong{display:block}.simple-entry .entry-confirm{display:flex;align-items:center}.simple-entry .entry-confirm input{width:20px;min-height:20px}
+.entry-market-setting{align-self:center}.entry-chart-status{display:flex;align-items:center;gap:8px}
+@media(max-width:639px){
+ .simple-entry{padding:12px}.registration-toolbar{gap:4px}.registration-back{margin-left:0}
+ .simple-entry-context{gap:12px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.simple-entry-context label{min-width:0}
+ .simple-entry-row{grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:16px 0}
+ .simple-entry-row>label{grid-column:span 2}.simple-entry-row>label:nth-of-type(-n+2){grid-column:span 3}.simple-row-delete{grid-column:6;grid-row:auto}
+ .simple-entry-row .simple-market{grid-column:1/6;grid-row:3}.simple-entry-actions .primary{flex:1}
+}
+.simple-entry-row{position:relative}
+.simple-entry-row .simple-market.resolved{grid-area:auto;position:absolute;left:44px;top:14px;font-size:12px;z-index:1}
+.simple-market.resolved details[open]{background:var(--card);padding:0 8px 8px;border:1px solid var(--line);border-radius:6px;max-width:180px}
+.simple-market.resolved select{margin-top:4px}
+.simple-confirmation h3{margin:0}.simple-confirmation ol{margin:8px 0}.simple-confirmation .entry-confirm{margin-top:8px}
+@media(max-width:639px){.simple-entry-row .simple-market.resolved{top:16px}.simple-entry-context>label:nth-child(2){grid-column:1/-1;grid-row:2}.simple-entry-context>.simple-entry-timezone{grid-column:2;grid-row:1;font-size:14px}.simple-row-delete{grid-row:3}}
+
+.simple-entry-timezone{display:flex;align-items:center;gap:4px;min-height:44px}

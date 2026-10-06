@@ -23,7 +23,8 @@ import { buildYtdReturn, buildMonthReturn, buildWeekReturn, monthlyReturnSignal 
 import { positionDayChange } from "@/lib/position-day-change.mjs";
 import { missingHistoryRanges, mergeHistoryCoverage } from "@/lib/history-coverage.mjs";
 import { emaWarmupStart } from "@/lib/chart-indicators.mjs";
-import { TradeEntryWorkspace } from "./trade-entry-workspace";
+import { TradeRegistration, CycleRebuildHistory } from "./simple-entry-workspace";
+import {createSimpleDraft,commitSimpleBatch,simpleTimeLabel} from "@/lib/simple-entry.mjs";
 import { createEntryDraft, commitEntry } from "@/lib/trade-entry.mjs";
 import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runSelfTests, STORAGE_KEY, summarize } from "@/lib/trade-engine.mjs";
@@ -33,7 +34,7 @@ import { buildCurrentEquity, buildPositionMetrics, cycleRangeScore, positionPort
 import { findRapidRepurchases, weeklyCycleStats } from "@/lib/review-engine.mjs";
 import { completeTradeJson, DEFAULT_RECORD_ACCOUNT_ID, durableTradeJson } from "@/lib/trade-record-store.mjs";
 import { buildTradeSnapshot, mergeSnapshotEvidence, restoreMarketSnapshot } from "@/lib/trade-snapshot.mjs";
-import { browserRecordStorage, createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "@/lib/trade-record-client.mjs";
+import { browserRecordStorage, canRefreshCloudRecord, createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "@/lib/trade-record-client.mjs";
 import { serializeInBackground } from "@/lib/background-serializer.mjs";
 import { buildCoachFindings, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, openPositionWindowDates, replayWindowDates } from "@/lib/coach-engine.mjs";
 import { buildCoachBrief } from "@/lib/coach-brief.mjs";
@@ -59,7 +60,7 @@ type DecisionLink = { linked: boolean; updatedAt: string };
 type DecisionLinkEvent = { pairKey: string; linked: boolean; updatedAt: string };
 type PlanVersion = { id: string; cycleId?: string; accountId: string; symbol: string; field: "stopLoss" | "takeProfit" | "invalidation"; value: number | string | null; reason?: string; effectiveAt?: string | null; createdAt: string; source?: string };
 type ImprovementExperiment = { id: string; findingType: string; title: string; trigger: string; action: string; metric: string; target: string; startDate: string; endDate: string; status: "ACTIVE" | "COMPLETED"; baseline?: { sampleCount: number; violationCount: number; impactUsd: number }; evidenceCycleIds?: string[]; createdAt: string; updatedAt?: string; resultNote?: string };
-type Dataset = { entryDraft?: any; entryContexts?: Record<string, any>; marketSnapshot?: any; version: string; profile: { name: string; baseCurrency: string; costMethod: string }; accounts: { id: string; name: string; currency: string }[]; fills: Fill[]; cashActivities?: CashActivity[]; marketBars: Record<string, unknown>[]; settings: { quoteProvider: string; benchmarkSymbol?: string; holdingsColorScheme?: "green-up" | "red-up" }; positionPlans?: Record<string, PositionPlan>; cycleReviews?: Record<string, CycleReview>; decisionLinks?: Record<string, DecisionLink>; decisionLinkHistory?: DecisionLinkEvent[]; planHistory?: PlanVersion[]; improvementExperiments?: ImprovementExperiment[]; strategies?: any[]; strategyAssignments?: Record<string, any>; source?: { fileName?: string; format?: string } };
+type Dataset = { simpleEntryDraft?: any; entryDraft?: any; entryContexts?: Record<string, any>; marketSnapshot?: any; version: string; profile: { name: string; baseCurrency: string; costMethod: string }; accounts: { id: string; name: string; currency: string }[]; fills: Fill[]; cashActivities?: CashActivity[]; marketBars: Record<string, unknown>[]; settings: { quoteProvider: string; benchmarkSymbol?: string; holdingsColorScheme?: "green-up" | "red-up" }; positionPlans?: Record<string, PositionPlan>; cycleReviews?: Record<string, CycleReview>; decisionLinks?: Record<string, DecisionLink>; decisionLinkHistory?: DecisionLinkEvent[]; planHistory?: PlanVersion[]; improvementExperiments?: ImprovementExperiment[]; strategies?: any[]; strategyAssignments?: Record<string, any>; source?: { fileName?: string; format?: string } };
 type Quote = { symbol: string; price: number; previousClose: number | null; changePct: number | null; currency: string; marketState: string; updatedAt: string; source: string };
 type HistoryBar = { symbol: string; date: string; close: number; open?: number; high?: number; low?: number; volume?: number | null };
 type PendingImport = { dataset: Dataset; fileName: string; kind: "JSON" | "TradingView CSV"; duplicateCount: number; warnings: string[] };
@@ -205,8 +206,8 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
         setRecordAccounts(payload.accounts || [payload.account]);
         setActiveRecordAccountId(payload.account.id);
         recordVersionRef.current = payload.account.version;
-        lastSavedJsonRef.current = recovery.conflict ? recovery.baselineJson : completeTradeJson(payload.dataset);
-        setSaveState(recovery.blockedEmptyRecovery ? (recovery.conflict ? "已載入完整帳本；空白快取無法另存，已暫停同步，請匯出備份" : "已載入完整帳本；已隔離空白快取並保留備份") : recovery.conflict ? "本機與雲端都有修改，請先匯出備份再確認版本" : recovery.recovered ? "已恢復未完成的儲存，正在重新同步…" : `已載入最新紀錄・${localDateTime(payload.account.updatedAt)}`);
+        lastSavedJsonRef.current = completeTradeJson(normalizeStrategyDataset(payload.dataset));
+        setSaveState(recovery.recoveryWarning ? "已載入雲端最新版；本機備份無法另存，已保留原快取並暫停同步" : recovery.archivedPending ? "已載入雲端最新版；本機未同步內容已另存恢復備份，未套用" : `已載入最新紀錄・${localDateTime(payload.account.updatedAt)}・v${payload.account.version}`);
         setMessage("已載入你的交易帳本。");
         setCloudReady(true);
         setStorageReady(true);
@@ -365,6 +366,57 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     try { localStorage.setItem("tg.auth.changed", user.sessionId); } catch { /* Periodic server checks still enforce expiry. */ }
     return () => { active = false; window.clearInterval(timer); window.clearTimeout(expiry); window.removeEventListener("focus", focus); window.removeEventListener("pageshow", focus); window.removeEventListener("storage", changed); };
   }, [sessionScope, handleSaveError, user.sessionId, user.expiresAt,demo]);
+  // Returning mobile tabs may retain the whole page for days. Revalidate the
+  // ledger as well as the session, without replacing unsynced work.
+  useEffect(() => {
+    if (demo || noLedger || !storageReady || !cloudReady || storageConflict) return;
+    let active = true, checking = false;
+    const editing = () => strategyDirtyRef.current || Boolean(document.activeElement?.matches('input,textarea,select,[contenteditable="true"]'));
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || checking || editing()) return;
+      checking = true;
+      void saveQueueRef.current(async () => {
+        if (!active || editing()) return;
+        const captured = latestSaveRef.current;
+        const indexResponse = await sessionScope.fetch("/api/ledgers", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+        if (!indexResponse.ok) throw Object.assign(new Error("無法確認雲端最新版本"), { status: indexResponse.status });
+        const index = await indexResponse.json();
+        if (!active) return;
+        const remote = index.accounts?.find((account: any) => account.id === captured.accountId);
+        if (!remote || remote.deletedAt) throw Object.assign(new Error("帳本已移除或無法存取"), { status: 410 });
+        if (remote.version <= (recordVersionRef.current ?? 0)) return;
+        const response = await sessionScope.fetch(`/api/trade-records?accountId=${encodeURIComponent(captured.accountId)}`, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+        if (!response.ok) throw Object.assign(new Error("無法確認雲端最新版本"), { status: response.status });
+        const payload = await response.json();
+        if (!active || sessionInvalidatedRef.current || captured.accountId !== latestSaveRef.current.accountId || editing()) return;
+        if (payload.account?.id !== captured.accountId || !Number.isInteger(payload.account.version) || !payload.dataset) throw new Error("雲端帳本回應無效");
+        if (payload.account.version <= (recordVersionRef.current ?? 0)) return;
+        if (!canRefreshCloudRecord(latestSaveRef.current.serialized, lastSavedJsonRef.current)) {
+          setSaveState("雲端有較新版本；本機尚有未同步修改，已保留，請先匯出備份再確認版本");
+          return;
+        }
+        const incoming = normalizeStrategyDataset(payload.dataset) as Dataset;
+        const serialized = durableDatasetJson(incoming);
+        recordVersionRef.current = payload.account.version;
+        lastSavedJsonRef.current = completeTradeJson(incoming);
+        lastSavedSnapshotRef.current = incoming;
+        latestSaveRef.current = { accountId: captured.accountId, serialized, dataset: incoming };
+        writeLocalRecord(recordStorage(), storageKey, captured.accountId, serialized, lastSavedJsonRef.current, payload.account.version);
+        loadDataset(incoming);
+        setRecordAccounts(payload.accounts || [payload.account]);
+        setSaveState(`已更新至雲端最新版本・v${payload.account.version}`);
+      }).catch(error => {
+        if (!active) return;
+        if ([401,403,410].includes(error?.status)) handleSaveError(error);
+        else setSaveState("無法確認雲端最新版本；目前內容已保留，請確認網路後重新整理");
+      }).finally(() => { checking = false; });
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    window.addEventListener("visibilitychange", refresh, true);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("pageshow", refresh); window.removeEventListener("visibilitychange", refresh, true); };
+  }, [demo, noLedger, storageReady, cloudReady, storageConflict, activeRecordAccountId, sessionScope, recordStorage, storageKey, loadDataset, handleSaveError]);
   const calculationData = useMemo(() => ({ fills: data.fills, marketBars: data.marketBars }), [data.fills, data.marketBars]);
   const report = useMemo(() => summarize(calculationData), [calculationData]);
   const tests = useMemo(() => runSelfTests(), []);
@@ -550,8 +602,24 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     } catch (error) { handleSaveError(error); }
   }
   function openEntry() {
-    setData((current) => current.entryDraft ? current : { ...current, entryDraft: { ...createEntryDraft(current.accounts,demo?.now), quoteSnapshot: { quotes, capturedAt: new Date().toISOString() } } });
+    setData((current) => ({ ...current, simpleEntryDraft:current.simpleEntryDraft||createSimpleDraft(current.accounts,demo?.now), entryDraft:current.entryDraft||{ ...createEntryDraft(current.accounts,demo?.now), quoteSnapshot: { quotes, capturedAt: new Date().toISOString() } } }));
     changePage("entry");
+  }
+  function submitSimpleEntry(batch:any,key:string,expectedVersion:number|null) {
+    if(expectedVersion!==recordVersionRef.current)throw new Error('帳本版本已更新，請重新查看整批確認');
+    if(!storageReady||!cloudReady||storageConflict||noLedger)throw new Error('帳本尚未就緒，請先處理同步狀態');
+    const current=latestSaveRef.current.dataset;
+    if(current.simpleEntryDraft?.id!==batch.id)throw new Error('草稿已變更，請重新確認');
+    const next=commitSimpleBatch(current,batch,key,demo?.now) as Dataset;
+    const serialized=durableDatasetJson(next);
+    if(!demo&&!writeLocalRecord(recordStorage(),storageKey,activeRecordAccountId,serialized,lastSavedJsonRef.current,recordVersionRef.current))throw new Error('本機備援無法保存；輸入已保留，請先匯出備份');
+    latestSaveRef.current={accountId:activeRecordAccountId,serialized,dataset:next};
+    setData(next);
+    if(demo)demo.update(next);
+    const count=next.fills.length-current.fills.length;
+    setSaveState(demo?`已登錄 ${count} 筆・當次訪客練習`:`已登錄 ${count} 筆・本機已保存，等待雲端同步`);
+    setMessage(`已登錄 ${count} 筆成交；策略與計畫可稍後補充。`);
+    changePage('overview');
   }
   function submitEntry(submittedEntry?: any) {
     if (!data.entryDraft) throw new Error("登錄草稿不存在，請重新開啟");
@@ -732,13 +800,13 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
         </section>
         <TradeMetrics key={activeRecordAccountId} cycles={report.cycles} monthKey={monthKey} fxRate={fxRate} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/>
       </>}
-      {tab === "entry" && (data.entryDraft ? <TradeEntryWorkspace key={activeRecordAccountId} data={data} draft={data.entryDraft} quotes={quotes} onChange={(patch) => setData((current) => current.entryDraft?.id === data.entryDraft?.id ? ({ ...current, entryDraft: { ...current.entryDraft, ...patch } }) : current)} onSubmit={submitEntry} onBack={() => changePage("overview")}/> : <div className="panel"><p>這個帳號沒有待填草稿。</p><button className="primary" onClick={openEntry}>開始登錄成交</button></div>)}
+      {tab === "entry" && (data.entryDraft ? <TradeRegistration key={activeRecordAccountId} userId={user.id} ledgerVersion={recordVersionRef.current} demo={!!demo} now={demo?.now} data={data} quotes={quotes} fetcher={sessionScope.fetch} onSimpleChange={(draft:any)=>setData(current=>({...current,simpleEntryDraft:draft}))} onSimpleSubmit={submitSimpleEntry} onFullChange={(patch:any) => setData((current) => current.entryDraft?.id === data.entryDraft?.id ? ({ ...current, entryDraft: { ...current.entryDraft, ...patch } }) : current)} onFullSubmit={submitEntry} onBack={() => changePage("overview")}/> : <div className="panel"><p>這個帳號沒有待填草稿。</p><button className="primary" onClick={openEntry}>開始登錄成交</button></div>)}
       {tab === "performance" && <PerformanceWorkspace key={activeRecordAccountId} data={{fills:data.fills,cashActivities:data.cashActivities}} resource={performanceResource}/>}
-      {tab === "trades" && <><div className="ledger-switch" role="group" aria-label="帳本內容"><button type="button" aria-pressed={ledgerTab === "fills"} onClick={() => setLedgerTab("fills")}>成交紀錄 <span>{data.fills.length}</span></button><button type="button" aria-pressed={ledgerTab === "cash"} onClick={() => setLedgerTab("cash")}>資金活動 <span>{(data.cashActivities || []).length}</span></button></div>{ledgerTab === "fills" ? <section className="panel"><div className="panel-head"><div><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><ul className="mobile-only mobile-record-list" aria-label="成交紀錄">{[...data.fills].sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).map(fill=><li key={fill.id}><header><b>{fill.symbol}・{fill.side==='BUY'?'買進':'賣出'}</b><b>{fill.quantity} 股</b></header><small>{fill.timestamp.slice(0,10)}</small><p>成交價 {money(fill.price,fill.currency)}</p><details><summary>明細與操作</summary><dl><dt>市場／帳戶</dt><dd>{fill.market}・{data.accounts.find(a=>a.id===fill.accountId)?.name||fill.accountId}</dd><dt>成交時間</dt><dd>{fill.timestamp}</dd><dt>費用</dt><dd>{money(fill.fee,fill.currency)}</dd></dl><button className="ghost danger" onClick={()=>{if(confirm(`刪除 ${fill.symbol} ${fill.quantity} 股成交紀錄？`))deleteFill(fill.id);}}>刪除</button></details></li>)}</ul><div className="table-wrap desktop-only" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="fills-table"><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th>操作</th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{fill.timestamp.slice(0, 10)}</td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section> : <CashLedger activities={data.cashActivities || []} accounts={data.accounts} onAdd={()=>setCashEditor(null)} onEdit={setCashEditor} onDelete={row=>saveCashRows({...latestSaveRef.current.dataset,cashActivities:(latestSaveRef.current.dataset.cashActivities||[]).filter(a=>a.id!==row.id)})} onRestore={row=>saveCashRows(updateCashActivity(latestSaveRef.current.dataset,row) as Dataset)}/>}</>}
+      {tab === "trades" && <><div className="ledger-switch" role="group" aria-label="帳本內容"><button type="button" aria-pressed={ledgerTab === "fills"} onClick={() => setLedgerTab("fills")}>成交紀錄 <span>{data.fills.length}</span></button><button type="button" aria-pressed={ledgerTab === "cash"} onClick={() => setLedgerTab("cash")}>資金活動 <span>{(data.cashActivities || []).length}</span></button></div>{ledgerTab === "fills" ? <section className="panel"><div className="panel-head"><div><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><ul className="mobile-only mobile-record-list" aria-label="成交紀錄">{[...data.fills].sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).map(fill=><li key={fill.id}><header><b>{fill.symbol}・{fill.side==='BUY'?'買進':'賣出'}</b><b>{fill.quantity} 股</b></header><small>{fill.timestamp.slice(0,10)}</small><p>成交價 {money(fill.price,fill.currency)}</p><details><summary>明細與操作</summary><dl><dt>市場／帳戶</dt><dd>{fill.market}・{data.accounts.find(a=>a.id===fill.accountId)?.name||fill.accountId}</dd><dt>成交時間</dt><dd>{fill.timestamp}<small>{simpleTimeLabel((fill as any).timeSource)}</small></dd><dt>費用</dt><dd>{money(fill.fee,fill.currency)}</dd></dl><button className="ghost danger" onClick={()=>{if(confirm(`刪除 ${fill.symbol} ${fill.quantity} 股成交紀錄？`))deleteFill(fill.id);}}>刪除</button></details></li>)}</ul><div className="table-wrap desktop-only" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="fills-table"><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th>操作</th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{(fill as any).tradeDate||fill.timestamp.slice(0, 10)}<small className="block">{simpleTimeLabel((fill as any).timeSource)}</small></td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section> : <CashLedger activities={data.cashActivities || []} accounts={data.accounts} onAdd={()=>setCashEditor(null)} onEdit={setCashEditor} onDelete={row=>saveCashRows({...latestSaveRef.current.dataset,cashActivities:(latestSaveRef.current.dataset.cashActivities||[]).filter(a=>a.id!==row.id)})} onRestore={row=>saveCashRows(updateCashActivity(latestSaveRef.current.dataset,row) as Dataset)}/>}</>}
       {tab === "cycles" && <><WeeklyCyclePanel stats={weeklyCycleSummaries}/><CycleTable cycles={report.cycles} title="全部交易閉環" historyState={cycleHistoryState} onRefresh={() => setCycleHistoryRefresh((value) => value + 1)} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/></>}
       {tab === "strategies" && <StrategyWorkspace strategies={data.strategies || []} assignments={data.strategyAssignments || {}} cycles={report.cycles} fxRate={fxRate} entryContexts={data.entryContexts||{}} onStrategiesChange={saveStrategies} onDirtyChange={dirty=>{strategyDirtyRef.current=dirty;}} onSelectCycle={setSelectedCycleId}/>}
       {tab === "training" && <TrainingWorkspace key={activeRecordAccountId} accountId={activeRecordAccountId} dataset={data} fetchHistory={sessionScope.fetch} cycles={report.cycles} marketBars={data.marketBars} reviews={cycleReviews} fxRate={fxRate} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} entryContexts={data.entryContexts || {}} onSelectCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
-      {tab === "tests" && <section className="split tests"><article className="panel"><h2>目前資料檢查</h2>{report.issues.length ? <div className="test-list">{report.issues.map((issue: any, index: number) => <div key={`${issue.code}-${index}`}><span className={`test-result ${issue.level === "error" ? "fail" : "warn-dot"}`}>{issue.level === "error" ? "失敗" : "警告"}</span><b>{issue.code}</b><small>{issue.message}</small></div>)}</div> : <Empty text="沒有發現資料問題"/>}</article><article className="panel"><h2>核心計算測試</h2>{tests.some((test:any)=>!test.passed)&&<div className="test-list" role="alert">{tests.filter((test:any)=>!test.passed).map((test:any)=><div key={test.name}><span className="test-result fail">失敗</span><b>{test.name}</b><small>{test.detail}</small></div>)}</div>}<details><summary>已通過 {tests.filter((test:any)=>test.passed).length}／{tests.length} 項</summary><div className="test-list">{tests.filter((test:any)=>test.passed).map((test: any) => <div key={test.name}><span className="test-result pass">通過</span><b>{test.name}</b><small>{test.detail || "通過"}</small></div>)}</div></details></article></section>}
+      {tab === "tests" && <section className="split tests"><CycleRebuildHistory records={(data as any).cycleRebuildHistory||[]}/><article className="panel"><h2>目前資料檢查</h2>{report.issues.length ? <div className="test-list">{report.issues.map((issue: any, index: number) => <div key={`${issue.code}-${index}`}><span className={`test-result ${issue.level === "error" ? "fail" : "warn-dot"}`}>{issue.level === "error" ? "失敗" : "警告"}</span><b>{issue.code}</b><small>{issue.message}</small></div>)}</div> : <Empty text="沒有發現資料問題"/>}</article><article className="panel"><h2>核心計算測試</h2>{tests.some((test:any)=>!test.passed)&&<div className="test-list" role="alert">{tests.filter((test:any)=>!test.passed).map((test:any)=><div key={test.name}><span className="test-result fail">失敗</span><b>{test.name}</b><small>{test.detail}</small></div>)}</div>}<details><summary>已通過 {tests.filter((test:any)=>test.passed).length}／{tests.length} 項</summary><div className="test-list">{tests.filter((test:any)=>test.passed).map((test: any) => <div key={test.name}><span className="test-result pass">通過</span><b>{test.name}</b><small>{test.detail || "通過"}</small></div>)}</div></details></article></section>}
       </>}
       </div>
     </main>
