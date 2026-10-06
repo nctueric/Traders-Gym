@@ -23,7 +23,13 @@ test("performance, returns, then review follow the task hierarchy", () => {
   const markers=['id="performance-structure"','id="return-analysis"','id="quality-rating"','id="quick-rating"'];
   let previous=-1;
   for(const marker of markers) { const current=html.indexOf(marker); assert.ok(current>previous,marker); previous=current; }
-  for(const marker of markers.filter(x=>!x.includes("quick-rating"))) assert.ok(html.includes('href="#'+marker.slice(4,-1)+'"'));
+  for(const id of ['performance-structure','return-analysis','quality-rating']) {
+    assert.ok(html.includes(`aria-controls="${id}"`));
+    assert.ok(html.includes(`aria-labelledby="${id}-tab"`));
+  }
+  assert.equal((html.match(/role="tabpanel"/g)||[]).length,3);
+  assert.equal((html.match(/aria-selected="true"/g)||[]).length,1);
+  assert.doesNotMatch(html,/href="#(?:performance-structure|return-analysis|quality-rating)"/);
   assert.doesNotMatch(html,/成交登錄證據篩選|全時段交易優勢曲線|策略遵守與違規比較|客觀價格旁證|href="#strategy-audit"|href="#price-evidence"/);
   assert.match(html,/aria-label="期望值圖表，可橫向捲動"/);
 });

@@ -25,7 +25,7 @@ function harness() {
     if (cache.has(name)) return cache.get(name);
     const file = new URL("../app/" + name + ".tsx", import.meta.url);
     let source = readFileSync(file, "utf8");
-    if (name === "trade-workspace") source += "\nexport { PositionsPanel, TradeMetrics, CycleTable };";
+    if (name === "trade-workspace") source += "\nexport { PositionsPanel, TradeMetrics, CycleTable, MobilePositionList, positionRows };";
     const compiled = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
     const componentModule = {exports:{}};
     new Function("require","module","exports",compiled)(id => {
@@ -114,16 +114,18 @@ const metricProps=()=>({cycles:[metricCycle("JUL","2026-07-31T23:00:00Z",20),met
 const scoreNode=tree=>find(tree,n=>n.type?.name==="MonthScorecard");
 const cycleNode=tree=>find(tree,n=>n.type?.name==="CycleTable");
 
-test("overview metrics offer only cumulative, year and month with current month selected by default",()=>{
+test("overview metrics offer only cumulative, year and month with current year selected by default",()=>{
  const h=harness(),Component=h.load("trade-workspace").TradeMetrics,props=metricProps();
  props.cycles.push(metricCycle("OLD","2025-12-31T23:59:59Z",50));
  let tree=h.render(Component,props);
- const selector=find(tree,n=>n.props?.["aria-label"]==="交易計量資料區間");
- assert.equal(selector.props.value,"month");
+ const selector=find(tree,n=>n.props?.["aria-label"]==="交易量化資料區間");
+ assert.equal(selector.props.value,"year");
+ assert.equal(cycleNode(tree).props.visibleRows,10);
+ assert.ok(find(tree,n=>n.type?.name==="OverviewDisclosure"&&n.props.id==="overview-quant-cycles"));
  assert.deepEqual(selector.props.children.map(option=>[option.props.value,option.props.children]),[["all","總累積"],["year","年"],["month","月"]]);
- assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易計量月份").props.value,"2026-08");
+ assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易量化年份").props.value,"2026");
  assert.doesNotMatch(renderToStaticMarkup(tree),/自訂日期|開始日期|結束日期|上月/);
- assert.equal(scoreNode(tree).props.score.totalPnlUsd,5);
+ assert.equal(scoreNode(tree).props.score.totalPnlUsd,25);
  assert.equal(cycleNode(tree).props.cycles,scoreNode(tree).props.score.cycles);
  for(const [preset,count,total] of [["year",3,25],["all",4,75],["month",2,5]]){
   find(tree,n=>n.type==="select").props.onChange({target:{value:preset}});
@@ -136,12 +138,13 @@ test("overview metrics offer only cumulative, year and month with current month 
 
 test("selected month remains stable on refresh and invalid months hide misleading results",()=>{
  const h=harness(),Component=h.load("trade-workspace").TradeMetrics,props=metricProps();let tree=h.render(Component,props);
- find(tree,n=>n.props?.["aria-label"]==="交易計量月份").props.onChange({target:{value:"2026-07"}});
+ find(tree,n=>n.props?.["aria-label"]==="交易量化資料區間").props.onChange({target:{value:"month"}});tree=h.render(Component,props);
+ find(tree,n=>n.props?.["aria-label"]==="交易量化月份").props.onChange({target:{value:"2026-07"}});
  tree=h.render(Component,{...props,fxRate:null});assert.equal(scoreNode(tree).props.score.cycles.length,1);
  tree=h.render(Component,{...props,monthKey:"2026-09"});assert.equal(scoreNode(tree).props.score.totalPnlUsd,20);
  assert.equal(cycleNode(tree).props.cycles,scoreNode(tree).props.score.cycles);
  for(const invalid of ["","2026-13"]){
-  find(tree,n=>n.props?.["aria-label"]==="交易計量月份").props.onChange({target:{value:invalid}});
+  find(tree,n=>n.props?.["aria-label"]==="交易量化月份").props.onChange({target:{value:invalid}});
   tree=h.render(Component,props);assert.match(renderToStaticMarkup(tree),/請選擇有效的月份/);assert.equal(scoreNode(tree),undefined);assert.equal(cycleNode(tree),undefined);
  }
 });
@@ -150,31 +153,32 @@ test("historical year selection filters both score and cycles and survives scope
  const h=harness(),Component=h.load("trade-workspace").TradeMetrics,props=metricProps();
  props.cycles.push(metricCycle("OLD","2025-12-31T23:59:59Z",50));
  let tree=h.render(Component,props);
- find(tree,n=>n.props?.["aria-label"]==="交易計量資料區間").props.onChange({target:{value:"year"}});
+ find(tree,n=>n.props?.["aria-label"]==="交易量化資料區間").props.onChange({target:{value:"year"}});
  tree=h.render(Component,props);
- const years=find(tree,n=>n.props?.["aria-label"]==="交易計量年份");
+ const years=find(tree,n=>n.props?.["aria-label"]==="交易量化年份");
  assert.deepEqual(years.props.children.map(option=>option.props.value),["2026","2025"]);
  years.props.onChange({target:{value:"2025"}});
  tree=h.render(Component,{...props,monthKey:"2027-01"});
  assert.equal(scoreNode(tree).props.score.totalPnlUsd,50);
  assert.deepEqual(cycleNode(tree).props.cycles.map(c=>c.id),["OLD"]);
- find(tree,n=>n.props?.["aria-label"]==="交易計量資料區間").props.onChange({target:{value:"all"}});
- tree=h.render(Component,props);assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易計量年份"),undefined);assert.equal(find(tree,n=>n.type==="input"),undefined);
+ find(tree,n=>n.props?.["aria-label"]==="交易量化資料區間").props.onChange({target:{value:"all"}});
+ tree=h.render(Component,props);assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易量化年份"),undefined);assert.equal(find(tree,n=>n.type==="input"),undefined);
  assert.equal(scoreNode(tree).props.score.totalPnlUsd,75);
- find(tree,n=>n.props?.["aria-label"]==="交易計量資料區間").props.onChange({target:{value:"year"}});
- tree=h.render(Component,props);assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易計量年份").props.value,"2025");
+ find(tree,n=>n.props?.["aria-label"]==="交易量化資料區間").props.onChange({target:{value:"year"}});
+ tree=h.render(Component,props);assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易量化年份").props.value,"2025");
 });
 
 test("current month rolls forward, leap February is valid, and an empty period stays selected",()=>{
  const h=harness(),Component=h.load("trade-workspace").TradeMetrics,props=metricProps();
  props.cycles.push(metricCycle("LEAP","2024-02-29T23:59:59Z",100),metricCycle("MARCH","2024-03-01T00:00:00Z",200));
  let tree=h.render(Component,{...props,monthKey:"2024-02"});
- assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易計量月份").props.value,"2024-02");
+ find(tree,n=>n.props?.["aria-label"]==="交易量化資料區間").props.onChange({target:{value:"month"}});tree=h.render(Component,{...props,monthKey:"2024-02"});
+ assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易量化月份").props.value,"2024-02");
  assert.deepEqual(cycleNode(tree).props.cycles.map(c=>c.id),["LEAP"]);
  tree=h.render(Component,{...props,monthKey:"2026-09"});
- assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易計量月份").props.value,"2026-09");
+ assert.equal(find(tree,n=>n.props?.["aria-label"]==="交易量化月份").props.value,"2026-09");
  assert.equal(scoreNode(tree).props.score.cycles.length,0);
- assert.match(renderToStaticMarkup(tree),/尚未形成完整交易閉環/);
+ assert.equal(find(tree,n=>n.type?.name==="OverviewDisclosure"&&n.props.id==="overview-quant-cycles").props.label,"交易閉環（0 筆）");
  assert.equal(scoreNode(tree).props.score.winRate,null);
 });
 
@@ -189,10 +193,10 @@ test("metric evidence opens the same original cycle for replay and review",()=>{
 test("overview disclosures mount lazily and preserve their children after collapsing",()=>{
  const h=harness(),Component=h.load("workspace-ui").OverviewDisclosure;
  const child=React.createElement("input",{value:"unchanged plan",readOnly:true}),props={id:"plans",label:"全部持倉與計畫編輯",children:child};
- let tree=h.render(Component,props);assert.equal(tree.type,"details");assert.equal(tree.props.open,undefined);assert.doesNotMatch(renderToStaticMarkup(tree),/unchanged plan/);
- tree.props.onToggle({currentTarget:{open:true}});tree=h.render(Component,props);
+ let tree=h.render(Component,props);assert.equal(tree.type,"details");assert.equal(tree.props.open,false);assert.doesNotMatch(renderToStaticMarkup(tree),/unchanged plan/);
+ find(tree,n=>n.type==="summary").props.onClick({preventDefault(){}});tree=h.render(Component,props);assert.equal(tree.props.open,true);
  assert.equal(find(tree,n=>n.props?.id==="plans").props.children,child);
- tree.props.onToggle({currentTarget:{open:false}});tree=h.render(Component,props);
+ find(tree,n=>n.type==="summary").props.onClick({preventDefault(){}});tree=h.render(Component,props);assert.equal(tree.props.open,false);
  assert.equal(find(tree,n=>n.props?.id==="plans").props.children,child);
  assert.match(renderToStaticMarkup(tree),/aria-controls="plans"/);
 });
@@ -220,4 +224,36 @@ test("cycle table defaults to latest exit and all data headers toggle sorting",(
  }
  const profit=nodes(tree).find(n=>n.type==='button'&&n.props['aria-label']?.startsWith('損益，'));profit.props.onClick();tree=h.render(Table,props);assert.deepEqual(symbols(tree),['LOSS','AUG','JUL']);
  assert.deepEqual(props.cycles.map(c=>c.symbol),['JUL','AUG','LOSS']);
+});
+
+
+test("mobile holdings use identical position calculations and preserve chart target", () => {
+  const h=harness(), {MobilePositionList,positionRows}=h.load("trade-workspace"),p=position();
+  const rows=positionRows([p],{ORCL:{price:110,previousClose:108,changePct:2/108}}, {},10000,32);
+  const calls=[], tree=h.render(MobilePositionList,{rows,accountNames:{a:"測試帳戶"},onOpenChart:x=>calls.push(x)});
+  const html=renderToStaticMarkup(tree);
+  for(const value of ["測試帳戶","6 股","660.0","60.0","+10.0%","6.6%","持倉明細"]) assert.ok(html.includes(value),value);
+  find(tree,n=>n.type==='button'&&n.props['aria-label']==='ORCL 交易計畫與 K 線').props.onClick();
+  assert.equal(calls[0],p);
+  const missing=renderToStaticMarkup(h.render(MobilePositionList,{rows:positionRows([p],{}, {},10000,32),accountNames:{},onOpenChart(){}}));
+  assert.match(missing,/缺少報價/); assert.ok(!missing.includes('NaN'));
+});
+
+
+test("analysis tabs switch with keyboard and retain mounted panel content",()=>{
+ const h=harness(),Tabs=h.load("workspace-ui").WorkspaceTabs;
+ const items=["structure","quality","review"].map(id=>({id,label:id,content:React.createElement("input",{defaultValue:id+" draft"})}));
+ const props={label:"行為分析",items};
+ let tree=h.render(Tabs,props);
+ const panels=()=>nodes(tree).filter(n=>n.props?.role==="tabpanel");
+ const tabs=()=>nodes(tree).filter(n=>n.props?.role==="tab");
+ assert.deepEqual(panels().map(n=>n.props.hidden),[false,true,true]);
+ tabs()[0].props.onKeyDown({key:"ArrowRight",preventDefault(){}});tree=h.render(Tabs,props);
+ assert.deepEqual(panels().map(n=>n.props.hidden),[true,false,true]);
+ assert.deepEqual(tabs().map(n=>n.props.tabIndex),[-1,0,-1]);
+ tabs()[1].props.onKeyDown({key:"End",preventDefault(){}});tree=h.render(Tabs,props);
+ assert.deepEqual(panels().map(n=>n.props.hidden),[true,true,false]);
+ tabs()[2].props.onKeyDown({key:"ArrowRight",preventDefault(){}});tree=h.render(Tabs,props);
+ assert.deepEqual(panels().map(n=>n.props.hidden),[false,true,true]);
+ assert.ok(panels().every((n,i)=>n.props.children===items[i].content));
 });

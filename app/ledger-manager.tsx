@@ -1,11 +1,13 @@
 "use client";
 import {useCallback, useEffect, useRef, useState} from 'react';
+import {InfoPopover} from './info-popover';
+import {MobileDetails} from './mobile-ui';
 import {DialogFrame} from './workspace-ui';
 
 type Ledger = {id: string; name: string; version: number; deletedAt?: string | null};
 type Pending = {action: 'rename' | 'trash'; row: Ledger; name: string};
-export function LedgerManager({fetcher, beforeChange, onChanged, onClose}: {
-  fetcher: typeof fetch; beforeChange: () => Promise<unknown>;
+export function LedgerManager({fetcher, beforeChange, onChanged, onClose, embedded=false, currentId}: {
+  embedded?: boolean; currentId?: string; fetcher: typeof fetch; beforeChange: () => Promise<unknown>;
   onChanged: (id?: string) => void; onClose: () => void;
 }) {
   const [rows, setRows] = useState<Ledger[]>([]), [name, setName] = useState('');
@@ -30,7 +32,7 @@ export function LedgerManager({fetcher, beforeChange, onChanged, onClose}: {
         body: JSON.stringify({action, id: row?.id, name: newName ?? name, baseVersion: current?.version})});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      if (action !== 'trash') {
+      if (action !== 'trash' && action !== 'select') {
         const selected = await fetcher('/api/ledgers', {method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({action: 'select', id: data.account.id})});
         if (!selected.ok) {
@@ -43,10 +45,8 @@ export function LedgerManager({fetcher, beforeChange, onChanged, onClose}: {
     finally {working.current = false; setBusy(false);}
   }
 
-  return <DialogFrame label="管理帳本" onClose={() => {if (!busy) onClose();}}>
-    <section className="modal ledger-manager">
-      <header className="panel-head"><h2>管理帳本</h2><button className="ghost" disabled={busy} onClick={onClose}>關閉</button></header>
-      <p>每本帳本獨立保存交易、資金與策略。</p>
+  const content = <section className={embedded ? "ledger-manager ledger-inline" : "modal ledger-manager"}>
+      <header className="panel-head"><div className="section-title-help"><h2>帳本</h2><InfoPopover label="帳本管理"><p>每本帳本獨立保存交易、資金與策略。移入回收筒後停止同步，仍可還原。</p></InfoPopover></div>{!embedded&&<button className="ghost" disabled={busy} onClick={onClose}>關閉</button>}</header>
       <form className="ledger-create" onSubmit={event => {event.preventDefault(); void mutate('create');}}>
         <label>新帳本名稱<input required maxLength={100} value={name} onChange={e => setName(e.target.value)} placeholder="例如：美股波段"/></label>
         <button className="primary" disabled={busy || !name.trim()}>新增帳本</button>
@@ -57,12 +57,13 @@ export function LedgerManager({fetcher, beforeChange, onChanged, onClose}: {
         <div><button type="button" className="ghost" disabled={busy} onClick={() => setPending(null)}>取消</button><button className="primary" disabled={busy || !pending.name.trim()}>{pending.action === 'trash' ? '確認移入回收筒' : '儲存名稱'}</button></div>
       </form>}
       <ul className="ledger-list">{rows.filter(row => !row.deletedAt).map(row => <li key={row.id}>
-        <strong>{row.name}</strong><div>
-          <button className="ghost" disabled={busy} onClick={() => setPending({action: 'rename', row, name: row.name})}>重新命名</button>
-          <button className="ghost" disabled={busy} onClick={() => setPending({action: 'trash', row, name: row.name})}>移入回收筒</button>
+        <strong>{row.name}{row.id===currentId&&<small> · 使用中</small>}</strong><div>
+          {embedded&&<button className="ghost" disabled={busy||row.id===currentId} onClick={()=>void mutate("select",row)}>切換</button>}
+          <MobileDetails label="管理帳本" className="ledger-actions-menu"><div><button className="ghost" disabled={busy} onClick={() => setPending({action: 'rename', row, name: row.name})}>重新命名</button>
+          <button className="ghost" disabled={busy} onClick={() => setPending({action: 'trash', row, name: row.name})}>移入回收筒</button></div></MobileDetails>
         </div>
       </li>)}</ul>
       <details><summary>回收筒（{rows.filter(row => row.deletedAt).length}）</summary><ul className="ledger-list">{rows.filter(row => row.deletedAt).map(row => <li key={row.id}><span>{row.name}</span><button className="ghost" disabled={busy} onClick={() => void mutate('restore', row)}>還原</button></li>)}</ul></details>
-    </section>
-  </DialogFrame>;
+    </section>;
+  return embedded ? content : <DialogFrame label="管理帳本" onClose={() => {if (!busy) onClose();}}>{content}</DialogFrame>;
 }

@@ -1,0 +1,96 @@
+/* One sizing contract for single-line fields and their adjacent actions.
+   Keep native choice semantics; only normalize the closed select's appearance. */
+:root {
+  --field-height: max(44px, 2.75rem);
+  --field-font-size: .875rem;
+  --field-padding-inline: .75rem;
+  --field-gap: .375rem;
+  --field-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2353645c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+:root :is(.trading-workbench, .workspace-dialog, .auth-page, .admin-shell) :is(
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]):not([type=color]),
+  select:not([multiple]):not([size])
+) {
+  box-sizing: border-box;
+  height: var(--field-height);
+  min-height: var(--field-height);
+  max-width: 100%;
+  min-width: 0;
+  margin-block: 0;
+  padding: .5rem var(--field-padding-inline);
+  padding-inline-end: var(--field-padding-end, var(--field-padding-inline));
+  font-family: inherit;
+  font-size: var(--field-font-size);
+  line-height: 1.4;
+  background-color: var(--card);
+  color: var(--ink);
+  border-width: 1px;
+  border-radius: 8px;
+}
+:root :is(.trading-workbench, .workspace-dialog, .auth-page, .admin-shell) select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--field-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--field-padding-inline) center;
+  background-size: 1rem;
+  --field-padding-end: 2.25rem;
+}
+:root input:is([type=date], [type=month], [type=datetime-local])::-webkit-date-and-time-value {
+  text-align: start;
+  min-height: 1.4em;
+}
+/* Do not resize chart toggles, help icons, navigation, or inline text links. */
+:root :is(.admin-toolbar, .account-actions, .account-dialog, .password-login-form,
+  .google-link-form, .application-submit, .ledger-create, .ledger-confirm,
+  .strategy-toolbar, .strategy-save-actions, .strategy-publish, .batch-filters,
+  .form-grid, .entry-submit-controls, .entry-note, .entry-plan-note,
+  .performance-controls, .performance-dates, .performance-periods,
+  .performance-series, .benchmark-form, .cash-editor) :is(button.primary, button.ghost, button.text-button, button[type=submit]),
+:root :is(.admin-toolbar, .account-actions, .password-login-form, .google-link-form,
+  .ledger-create, .ledger-confirm, .strategy-save-actions, .performance-periods,
+  .performance-series) > button {
+  box-sizing: border-box;
+  min-height: var(--field-height);
+  padding: .5rem var(--field-padding-inline);
+  font-size: var(--field-font-size);
+  line-height: 1.4;
+}
+:root :is(.admin-toolbar, .account-dialog, .ledger-create, .ledger-confirm,
+  .performance-dates, .strategy-toolbar, .strategy-analysis-filters, .cash-form-grid) label {
+  gap: var(--field-gap);
+}
+.auth-page { --field-font-size: 1rem; }
+@media (min-width: 640px) {
+  /* Native details creates an anonymous content box; display:contents on the
+     details alone cannot lay out its fields in one row in every browser. */
+  .trading-workbench .strategy-analysis-filters .analysis-advanced {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .trading-workbench .analysis-advanced::details-content { display: contents; }
+  .trading-workbench .analysis-advanced > label { flex: 0 1 auto; }
+  .trading-workbench .analysis-period-controls { align-items: flex-end; }
+  .trading-workbench .analysis-period-controls > strong {
+    display: flex;
+    align-items: center;
+    min-height: var(--field-height);
+    box-sizing: border-box;
+    padding-block: .5rem;
+  }
+}
+@media (max-width: 639px) {
+  :root { --field-font-size: 1rem; }
+}
+@media (prefers-color-scheme: dark) {
+  :root { --field-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23acbdb2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+}
+@media (forced-colors: active) {
+  :root :is(.trading-workbench, .workspace-dialog, .auth-page, .admin-shell) select:not([multiple]):not([size]) {
+    appearance: auto;
+    -webkit-appearance: auto;
+    background-image: none;
+  }
+}

@@ -41,9 +41,9 @@ export async function pageUser(owner = false) {
 }
 export async function accountHandler(request: Request) {
   if (!env.DB) return json({ error: "帳號服務尚未設定" }, 503);
-  if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: "", trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) }).handle(request);
+  if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: "", trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) }).handle(request);
   const password = env.PERSONAL_PASSWORD_LOGIN === "true" ? passwordAuth() : null;
-  return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: String(env.GOOGLE_CLIENT_ID || ""), authenticate: createMixedAuthenticator(env.DB, password),
+  return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: String(env.GOOGLE_CLIENT_ID || ""), authenticate: createMixedAuthenticator(env.DB, password),
     accessOptions: { openGoogleLogin: env.OPEN_GOOGLE_LOGIN === "true", password, sendMail:createResendMailer({apiKey:String(env.RESEND_API_KEY || ''),from:String(env.EMAIL_FROM || 'TraderGym <no-reply@tradergym.app>')}), origin:String(env.APP_ORIGIN || ''), ownerEmail: String(env.PERSONAL_LOGIN_EMAIL || ""), applicationsOpen: env.APPLICATIONS_OPEN === "true" } }).handle(request);
 }
 export async function rejectAnonymous(request: Request) {

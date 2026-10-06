@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./account.css";
+import "./workbench.css";
+import "./mobile.css";
+import "./form-controls.css";
 
 export const metadata: Metadata = {
   title: "TraderGym",

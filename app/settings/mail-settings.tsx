@@ -1,4 +1,5 @@
 "use client";
+import { InfoPopover } from '../info-popover';
 import { useEffect, useState } from 'react';
 import { EmailRequest } from '../login/email-request';
 
@@ -18,8 +19,7 @@ export function MailSettings({ email, sessionId }: { email: string; sessionId: s
     return () => controller.abort();
   }, [attempt]);
   return <section aria-labelledby="mail-settings-title">
-    <h2 id="mail-settings-title">Mail 備用登入</h2>
-    <p>Google 登入後，可選擇為同一帳號設定備用密碼。Mail 帳號使用目前信箱，兩種登入方式共用原有帳本。</p>
+    <div className="section-title-help"><h2 id="mail-settings-title">Mail 備用登入</h2><InfoPopover label="Mail 備用登入"><p>Google 登入後，可選擇為同一帳號設定備用密碼。Mail 帳號使用目前信箱，兩種登入方式共用原有帳本。</p></InfoPopover></div>
     {error ? <><p className="account-alert" role="alert">{error}</p><button className="ghost" onClick={() => setAttempt(value => value + 1)}>重試</button></> : enabled === null ? <p role="status">正在讀取登入設定…</p> : <>
       <p role="status">{enabled ? '已啟用 Mail 備用登入' : '尚未設定；可繼續使用 Google 登入。'}</p>
       <button className="ghost" aria-expanded={expanded} aria-controls="mail-settings-form" onClick={() => setExpanded(value => !value)}>{expanded ? '收起設定' : enabled ? '更新 Mail 密碼' : '設定 Mail 備用登入'}</button>

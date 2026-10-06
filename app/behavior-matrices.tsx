@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoPopover } from "./info-popover";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { MATRIX_LEGENDS, matrixAmplitudeRatio, matrixDifference, matrixEqualitySegment, matrixPercentagePoints, matrixSharedY, matrixReferenceLabels, matrixBoxZoom, matrixCoordinates, matrixDomains, matrixGeometry, matrixPercent, matrixTicks, matrixVisible, nearbyMatrixPoints, zoomMatrix } from "@/lib/behavior-matrix.mjs";
@@ -186,7 +187,12 @@ function MatrixChart({ kind, points, excluded, sharedY, selectedId, onSelect, on
   const horizontalReferences = [{ value: 0, label: "0% 損益分界" }];
 
   return <article className="matrix-chart" data-matrix-kind={kind} ref={article} aria-labelledby={id + "-title"}>
-    <header><h3 id={id + "-title"}>{config.title}</h3><p>{config.question}</p></header>
+    <header className="section-title-help"><h3 id={id + "-title"}>{config.title}</h3><InfoPopover label={config.title + "閱讀與操作"} mobilePresentation="sheet"><p>{config.question}</p><p className="matrix-reference-note">等值線：實際損益率＝{config.xShort}。0% 水平線區分盈虧。{kind === "maeReturn" ? "−10% MAE 為觀察參考。" : ""}參考線不代表策略合格標準。{zoom ? "圖例筆數依完整篩選樣本計算。" : ""}</p>
+      {kind === "mfeReturn" ? <><p>等值線 Y＝X 代表實際損益率與 MFE 相等。線下但仍獲利，表示實現報酬小於順向波動；MFE 大於 0 而最終虧損，屬於浮盈轉虧。線上方的交易需配合加減碼與行情計算方式解讀。</p><p>與 MFE 差距＝MFE − 實際損益率，以百分點表示。例如 MFE 20%、實際損益率 8%，相差 12 個百分點；摘要中的留存率為 8% ÷ 20%＝40%。MFE 為零或負值仍可繪圖，留存率則不計算。</p></> : <><p>等值線 Y＝X 代表實際損益率與 MAE 相等。線上方是最終損益率高於 MAE，線下方則較低；線下方交易須配合費用、加減碼及行情覆蓋解讀，不直接判定為錯誤。</p><p>相對 MAE 差距＝實際損益率 − MAE。例如 MAE −10%、最終 −4%，高出 6 個百分點。MAE −10%、最終 +12%，高出 22 個百分點。</p><p>勾選「獲利＝逆向幅度」可顯示 Y＝−X 的非負報酬部分。MAE −10%、獲利 10% 在此線上；獲利 12% 位於線上方，獲利／逆向幅度為 1.2 倍。這是事後幅度比較，不是事前風險報酬比或 R 倍數。</p></>}
+      <p>兩圖全貌共用縱軸刻度，放大後各自呈現局部範圍。等值線依真實數值座標繪製，不固定為視覺上的 45 度。選取交易的細垂直線表示與等值線的差距；超出視窗的部分只裁切，不把端點移到邊界。</p>
+      <p>實際交易損益率＝扣除已登錄費用的交易損益 ÷ 全部進場金額。MFE／MAE 以持有期間日線高低價相對平均進場成本、依多空方向計算，屬日線近似；加減碼時，留存率不等同帳戶實際最高浮盈的保留比例。原始日線 MAE 若為正值，也不強制改為零。</p>
+      <p>圖表聚焦後：方向鍵選樣本、Enter 查看摘要、+／− 放大或縮小、Home 還原全貌、Escape 取消框選或關閉摘要。手機一般模式可垂直捲頁。</p>
+    </InfoPopover></header>
     <div className="matrix-toolbar">
       <span className="matrix-count">有效 {points.length} 筆・無法繪製 {excluded.length} 筆</span>
       <div><button type="button" className="ghost" aria-pressed={zoomMode} disabled={!points.length} onClick={() => { setZoomMode(!zoomMode); setHoverId(null); setCandidates([]); cancelBox(); }}>{zoomMode ? "取消框選" : "框選放大"}</button><button type="button" className="ghost" disabled={!zoom && !zoomMode} onClick={reset}>還原全貌</button></div>
@@ -230,7 +236,6 @@ function MatrixChart({ kind, points, excluded, sharedY, selectedId, onSelect, on
       {hovered && hoverValue && !zoomMode && <div className="matrix-tooltip" style={{ left: Math.min(Math.max(8, geometry.x(hoverValue.x) - 110), width - 228), top: Math.max(0, geometry.y(hoverValue.y) - 85) }}><b>{hovered.symbol}・{direction(hovered)}</b><span>{date(hovered.openAt)} → {date(hovered.closeAt)}</span><span>{config.xShort} {matrixPercent(hoverValue.x, 2)}・{config.yShort} {matrixPercent(hoverValue.y, 2)}</span></div>}
     </div>
     <div className="matrix-legend" aria-label={config.title + "分類圖例"}>{MATRIX_LEGENDS.map(item => <span key={item.key}><LegendMark shape={item.shape} tone={item.tone}/>{item.label}<b>{points.filter(point => point.category === item.key).length} 筆</b></span>)}</div>
-    <p className="matrix-reference-note">等值線：實際損益率＝{config.xShort}。0% 水平線區分盈虧。{kind === "maeReturn" ? "−10% MAE 為觀察參考。" : ""}參考線不代表策略合格標準。{zoom ? "圖例筆數依完整篩選樣本計算。" : ""}</p>
     {kind === "maeReturn" && showAmplitude && <p className="matrix-amplitude-note">幅度線 Y＝−X：獲利等於逆向波動幅度；僅限 MAE≤0、損益率≥0。這是事後比較，不是事前風險報酬比或 R 倍數。{!amplitude ? "此線目前在視窗外。" : ""}</p>}
     {candidates.length > 0 && <div className="matrix-candidates" role="group" aria-label="重疊交易候選"><b>附近有 {candidates.length} 筆交易，選擇要查看的一筆</b>{candidates.map(point => <button type="button" key={point.cycleId} onClick={() => choose(point)}>{name(point)}<small>{config.xShort} {matrixPercent(matrixCoordinates(point, kind).x, 2)}・{config.yShort} {matrixPercent(matrixCoordinates(point, kind).y, 2)}</small></button>)}</div>}
     {selected ? <section className="matrix-selection" aria-label={config.title + "交易摘要"} aria-live="polite">
@@ -241,14 +246,9 @@ function MatrixChart({ kind, points, excluded, sharedY, selectedId, onSelect, on
       <p>{interpretation(selected, kind)}</p>
       {selected.retention == null && <p className="matrix-retention-note">留存率僅於 MFE 大於 0 且比值有效時顯示，不影響此圖繪製。</p>}
       {!selected.reason && !matrixVisible(selected, kind, domains) && <p>此筆交易在目前視窗外，可按「還原全貌」查看位置。</p>}
-    </section> : <p className="matrix-selection-hint">點選交易查看數值與解讀；也可從下方樣本明細選取。</p>}
+    </section> : null}
+    <span className="sr-only" id={id + "-keys"}>方向鍵選樣本，Enter 查看摘要，+／− 縮放，Home 還原，Escape 關閉摘要。也可由樣本明細選取。</span>
     <span className="sr-only" aria-live="polite">{hovered ? name(hovered) + `，${config.xShort} ${matrixPercent(hoverValue!.x)}，${config.yShort} ${matrixPercent(hoverValue!.y)}` : ""}</span>
-    <details className="matrix-help"><summary>如何閱讀與操作</summary>
-      {kind === "mfeReturn" ? <><p>等值線 Y＝X 代表實際損益率與 MFE 相等。線下但仍獲利，表示實現報酬小於順向波動；MFE 大於 0 而最終虧損，屬於浮盈轉虧。線上方的交易需配合加減碼與行情計算方式解讀。</p><p>與 MFE 差距＝MFE − 實際損益率，以百分點表示。例如 MFE 20%、實際損益率 8%，相差 12 個百分點；摘要中的留存率為 8% ÷ 20%＝40%。MFE 為零或負值仍可繪圖，留存率則不計算。</p></> : <><p>等值線 Y＝X 代表實際損益率與 MAE 相等。線上方是最終損益率高於 MAE，線下方則較低；線下方交易須配合費用、加減碼及行情覆蓋解讀，不直接判定為錯誤。</p><p>相對 MAE 差距＝實際損益率 − MAE。例如 MAE −10%、最終 −4%，高出 6 個百分點。MAE −10%、最終 +12%，高出 22 個百分點。</p><p>勾選「獲利＝逆向幅度」可顯示 Y＝−X 的非負報酬部分。MAE −10%、獲利 10% 在此線上；獲利 12% 位於線上方，獲利／逆向幅度為 1.2 倍。這是事後幅度比較，不是事前風險報酬比或 R 倍數。</p></>}
-      <p>兩圖全貌共用縱軸刻度，放大後各自呈現局部範圍。等值線依真實數值座標繪製，不固定為視覺上的 45 度。選取交易的細垂直線表示與等值線的差距；超出視窗的部分只裁切，不把端點移到邊界。</p>
-      <p>實際交易損益率＝扣除已登錄費用的交易損益 ÷ 全部進場金額。MFE／MAE 以持有期間日線高低價相對平均進場成本、依多空方向計算，屬日線近似；加減碼時，留存率不等同帳戶實際最高浮盈的保留比例。原始日線 MAE 若為正值，也不強制改為零。</p>
-      <p id={id + "-keys"}>圖表聚焦後：方向鍵選樣本、Enter 查看摘要、+／− 放大或縮小、Home 還原全貌、Escape 取消框選或關閉摘要。手機一般模式可垂直捲頁。</p>
-    </details>
     <details className="matrix-data"><summary>檢視 {all.length} 筆樣本明細與缺資料原因</summary><div className="table-wrap" tabIndex={0} role="region" aria-label={config.title + "樣本明細"}><table><thead><tr><th>交易閉環</th><th>{config.xShort}</th><th>{config.yShort}</th><th>分類／缺資料原因</th><th>操作</th></tr></thead><tbody>{all.map(point => <tr key={point.cycleId}><td><b>{point.symbol}・{direction(point)}</b><small>{date(point.openAt)} → {date(point.closeAt)}</small></td><td>{matrixPercent(matrixCoordinates(point, kind).x, 2)}</td><td>{matrixPercent(matrixCoordinates(point, kind).y, 2)}</td><td>{point.reason || label(point)}</td><td><button type="button" className="text-button" onClick={() => choose(point)}>查看 {point.symbol} 摘要</button></td></tr>)}</tbody></table></div></details>
   </article>;
 }

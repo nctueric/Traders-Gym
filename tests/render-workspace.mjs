@@ -41,7 +41,14 @@ export function renderTraining({scenario = "rich", filters = ["all", "", "", "",
   const report = summarize(dataset);
   const props = { dataset, fetchHistory: fetch, cycles: report.cycles, marketBars: dataset.marketBars, reviews: dataset.cycleReviews || {}, fxRate: scenario === "missing" ? null : 32, strategies: dataset.strategies || [], strategyAssignments: dataset.strategyAssignments || {}, entryContexts, onSelectCycle() {}, onQualityRatingChange() {} };
   const html = renderToStaticMarkup(React.createElement(load(new URL("training-workspace.tsx", app), source).TrainingWorkspace, props));
-  const digest = createHash("sha256").update(JSON.stringify([...calls].sort((a,b) => a.name.localeCompare(b.name)))).digest("hex");
+  const digest = createHash("sha256").update(JSON.stringify([...calls].map(call=>{
+    if(call.name!=="buildProfitLossTradeStats")return call;
+    // Preserve the established calculation contract; additive metrics have their own numeric tests.
+    const result=structuredClone(call.result);
+    delete result.totalPnlUsd;delete result.missingFxCount;
+    for(const group of [result.winners,result.losers])for(const key of ['totalPnlUsd','missingFxCount','averageHoldingDays','missingHoldingDays'])delete group[key];
+    return {...call,result};
+  }).sort((a,b) => a.name.localeCompare(b.name)))).digest("hex");
   return { html, calls, digest, unchanged: before === JSON.stringify(dataset) };
 }
 export const parityCases = [

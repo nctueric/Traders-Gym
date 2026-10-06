@@ -68,7 +68,7 @@ test("overview keeps asset history and holdings in accessible disclosures", () =
   assert.match(metrics.getText(source), /<EquityBreakdown equity=\{currentEquity\}/);
   assert.equal(chart.parent.openingElement.tagName.getText(source), "OverviewDisclosure");
   assert.equal(chart.parent.parent.pos, metrics.parent.parent.pos);
-  assert.equal(metrics.parent.parent.pos, metadata.parent.pos);
+  assert.equal(metrics.parent.parent.pos, metadata.parent.parent.pos);
   assert.ok(metrics.end < metadata.pos && metadata.end < chart.pos);
   assert.match(chart.getText(source), /data=\{data\} quotes=\{quotes\} fxRate=\{fxRate\} asOf=\{currentEquity\.asOf\}/);
   assert.doesNotMatch(stylesheet.toString(), /overview-finances|overview-equity|overview-results/);

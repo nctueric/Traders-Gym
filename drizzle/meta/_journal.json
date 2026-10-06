@@ -64,6 +64,13 @@
       "when": 1791186133949,
       "tag": "0008_member_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791302400000,
+      "tag": "0009_snapshot_retention",
+      "breakpoints": true
     }
   ]
 }

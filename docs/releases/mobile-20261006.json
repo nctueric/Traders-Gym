@@ -1,0 +1,27 @@
+{
+  "site": "https://tradergym.app",
+  "worker_version": "148e2487-888b-4ad6-8096-2c049c756111",
+  "previous_worker_version": "f4425228-6872-42d6-9c83-74571355a2ca",
+  "scope": "mobile UI and typography, no database migration",
+  "checks": {
+    "tests_passed": 419,
+    "lint": "pass",
+    "typescript": "pass",
+    "build": "pass",
+    "wrangler_dry_run": "pass",
+    "production_browser_login": "pass",
+    "production_demo_mobile": {
+      "viewport": 390,
+      "document_width": 390,
+      "primary_font_px": 26,
+      "mobile_holdings_present": true
+    },
+    "snapshots_unchanged": 2
+  },
+  "limitations": [
+    "No authenticated production member writes tested",
+    "iOS/Android physical-device keyboard and touch acceptance pending",
+    "Command-line HTTP probes returned 403; production pages verified in browser instead"
+  ],
+  "github_pushed": false
+}

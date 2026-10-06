@@ -23,6 +23,9 @@ if (args["--open-google-login"] && !["true", "false"].includes(args["--open-goog
 config.routes = domain ? [{ pattern: domain, custom_domain: true }, { pattern: `www.${domain}`, custom_domain: true }] : [];
 config.vars = { ...(personalEmail ? { PERSONAL_PASSWORD_LOGIN: "true", PERSONAL_LOGIN_EMAIL: personalEmail.toLowerCase() } : {}),
   ...(clientId ? { GOOGLE_CLIENT_ID: clientId } : {}), APPLICATIONS_OPEN: args["--applications-open"] || "false", OPEN_GOOGLE_LOGIN: args["--open-google-login"] || "false" };
+if(args['--snapshot-retention'] && !['true','false'].includes(args['--snapshot-retention'])) throw new Error('--snapshot-retention must be true or false');
+config.vars.SNAPSHOT_RETENTION_ENABLED=args['--snapshot-retention'] || 'false';
+config.triggers={crons:config.vars.SNAPSHOT_RETENTION_ENABLED==='true'?['15 * * * *']:[]};
 config.observability = { enabled: false };
 await writeFile("dist/server/wrangler.cloudflare.json", JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 console.log(`Prepared ${resolve("dist/server/wrangler.cloudflare.json")}; no resources created, no deployment performed.`);

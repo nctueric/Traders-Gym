@@ -67,5 +67,9 @@ export function fixtureDataset(scenario = "rich") {
     dataset.strategies[0].description = "此段內容用於測試長文字換行與閱讀，不應造成整頁橫向溢出。".repeat(25);
     dataset.positionPlans["main:QAHOLD"] = { note: "LongUnbrokenPlanText".repeat(30) };
   }
+  if (scenario.startsWith("mobile-many")) {
+    dataset.cashActivities[0].amount=9876543210.5;
+    for(let i=0;i<24;i++) dataset.fills.push({id:`mobile-${i}`,accountId:i%2?'tw':'main',symbol:`QALONGSYMBOL${i}`,currency:i%2?'TWD':'USD',market:i%2?'TWSE':'NASDAQ',quantity:1234567+i,fee:0,side:i%3?'BUY':'SELL',price:100,timestamp:'2026-09-01T09:30:00Z'});
+  }
   return dataset;
 }

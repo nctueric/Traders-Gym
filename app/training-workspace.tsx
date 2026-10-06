@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import {FitNumber,MobileDetails} from "./mobile-ui";
 
 import { BehaviorMatrices } from "./behavior-matrices";
 import { ReplayEventSymbol } from "./replay-event-symbol";
@@ -11,8 +12,8 @@ import { replayFocus } from "@/lib/position-ledger.mjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildBehaviorDashboard, buildCycleReplay, buildOpenPositionReplay, buildProfitLossTradeStats, buildTradeQualityAnalysis, cycleAnalysisPeriod, filterCyclesByPeriod } from "@/lib/coach-engine.mjs";
 import { ReviewLedgerTable } from "./review-ledger-table";
-import {InfoPopoverGroup} from "./info-popover";
-import { SectionLinks } from "./workspace-ui";
+import {InfoPopover,InfoPopoverGroup} from "./info-popover";
+import { WorkspaceTabs } from "./workspace-ui";
 
 function pct(value: number | null, digits = 1) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`; }
 function plainPct(value: number | null, digits = 1) { return value == null ? "—" : `${(value * 100).toFixed(digits)}%`; }
@@ -110,7 +111,7 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
         if (value < 0) return `hsl(355 72% ${88 - 52 * Math.min(1, Math.abs(value) / 0.58)}%)`;
         return `hsl(126 69% ${88 - 58 * Math.pow(Math.min(1, value / 2.6), 0.72)}%)`;
       };
-      context.fillStyle = "#26312d";
+      context.fillStyle = getComputedStyle(canvas).getPropertyValue("--ink").trim() || "#26312d";
       context.font = "700 12px system-ui";
       context.textAlign = "center";
       context.fillText("獲利交易率", margin.left + columns * cellWidth / 2, 15);
@@ -127,7 +128,7 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
         const ratio = Number((0.2 + row * 0.1).toFixed(1));
         const y = margin.top + row * cellHeight;
         if (ratio === 0.2 || Math.round(ratio * 10) % 5 === 0) {
-          context.fillStyle = "#52605a";
+          context.fillStyle = getComputedStyle(canvas).getPropertyValue("--muted").trim() || "#52605a";
           context.font = "12px system-ui";
           context.textAlign = "right";
           context.fillText(ratio.toFixed(1), margin.left - 8, y + 11);
@@ -186,13 +187,13 @@ function ExpectancyHeatmap({ stats, label }: { stats: any; label: string }) {
 
 function ProfitLossAnalysis({ stats, scope, period }: { stats: ReturnType<typeof buildProfitLossTradeStats>; scope: string; period: string }) {
   const groups = [{ key: "profit", title: "總獲利單", tone: "positive", data: stats.winners }, { key: "loss", title: "總虧損單", tone: "negative", data: stats.losers }];
-  return <><section className="profit-loss-analysis"><div className="analysis-head"><div><h2>盈虧結構</h2><p>依出場日期分組；平均投入持倉金額為每個閉環的總進場成交金額，全部換算為美元等值。</p></div><strong className="analysis-sample">{periodLabel(scope, period)}・{stats.cycles.length} 筆</strong></div><div className="profit-loss-top"><div className="edge-summary"><div><span>我的勝率</span><b>{stats.winRate == null ? "—" : `${(stats.winRate * 100).toFixed(1)}%`}</b><small>獲利 ÷ 獲利與虧損交易</small></div><div><span>我的風報比</span><b>{stats.rewardRisk == null ? "—" : stats.rewardRisk.toFixed(2)}</b><small>平均獲利率 ÷ 平均虧損率</small></div><div><span>我的交易期望值</span><b className={stats.expectancyR == null ? "" : stats.expectancyR >= 0 ? "positive" : "negative"}>{stats.expectancyR == null ? "—" : `${stats.expectancyR >= 0 ? "+" : ""}${stats.expectancyR.toFixed(2)}R`}</b><small>每筆交易的期望 R 值</small></div></div><ExpectancyHeatmap stats={stats} label={periodLabel(scope, period)}/></div><div className="profit-loss-groups">{groups.map((group) => <article key={group.key} className={`profit-loss-group ${group.key}`}><div><span>{group.title}</span><b className={group.tone}>{group.data.count} 筆</b></div><dl><div><dt>交易單數</dt><dd>{group.data.count}</dd><small>已平倉交易閉環</small></div><div><dt>{group.key === "profit" ? "平均獲利率" : "平均虧損率"}</dt><dd className={group.tone}>{pct(group.data.averageReturn)}</dd><small>交易報酬率算術平均</small></div><div><dt>{group.key === "profit" ? "平均獲利金額" : "平均虧損金額"}</dt><dd className={group.tone}>{money(group.data.averagePnlUsd, "USD")}</dd><small>{group.data.missingFx ? "缺少USDTWD，不推測" : "美元等值"}</small></div><div><dt>平均投入持倉金額</dt><dd>{money(group.data.averageEntryNotionalUsd, "USD")}</dd><small>總進場成交金額平均</small></div></dl></article>)}</div>{stats.flatCount > 0 && <small className="analysis-flat-note">另有 {stats.flatCount} 筆損益兩平交易，未納入獲利或虧損組。</small>}</section></>;
+  return <><section className="profit-loss-analysis"><div className="analysis-head"><div className="section-title-help"><h2>盈虧結構</h2><InfoPopover label="盈虧結構" mobilePresentation="sheet"><p>依出場日期分組；平均投入持倉金額為每個閉環的總進場成交金額，全部換算為美元等值。</p><p>勝率＝獲利 ÷ 獲利與虧損交易；風報比＝平均獲利率 ÷ 平均虧損率絕對值；交易期望值＝勝率 × 風報比 − 虧損機率。</p><p>平均報酬與金額採閉環算術平均；平均持有天數沿用閉環日曆天數，每個閉環等權計算。總盈虧為各閉環損益加總，已含登錄費用。台幣沿用帳本目前匯率換算美元，缺少匯率不推測數值。所有數值受區間、策略、版本及呈現筆數篩選影響。</p></InfoPopover></div><strong className="analysis-sample">{periodLabel(scope, period)}・{stats.cycles.length} 筆</strong></div><div className="profit-loss-top"><div className="edge-summary"><div><span>總盈虧</span><b className={stats.totalPnlUsd == null || stats.totalPnlUsd === 0 ? "" : stats.totalPnlUsd > 0 ? "positive" : "negative"}><FitNumber>{money(stats.totalPnlUsd)}</FitNumber></b>{stats.missingFxCount > 0 && <small>缺少匯率・{stats.missingFxCount} 筆</small>}</div><div><span>勝率</span><b><FitNumber>{stats.winRate == null ? "—" : `${(stats.winRate * 100).toFixed(1)}%`}</FitNumber></b></div><div><span>風報比</span><b><FitNumber>{stats.rewardRisk == null ? "—" : stats.rewardRisk.toFixed(2)}</FitNumber></b></div><div><span>期望值</span><b className={stats.expectancyR == null ? "" : stats.expectancyR >= 0 ? "positive" : "negative"}><FitNumber>{stats.expectancyR == null ? "—" : `${stats.expectancyR >= 0 ? "+" : ""}${stats.expectancyR.toFixed(2)}R`}</FitNumber></b></div></div><ExpectancyHeatmap stats={stats} label={periodLabel(scope, period)}/></div><div className="profit-loss-groups">{groups.map((group) => <article key={group.key} className={`profit-loss-group ${group.key}`}><div><span>{group.title}</span><b className={group.tone}>{group.data.count} 筆</b></div><dl><div className="group-total"><dt>{group.key === "profit" ? "總獲利" : "總虧損"}</dt><dd className={group.data.totalPnlUsd === 0 ? "" : group.tone}><FitNumber>{money(group.data.totalPnlUsd)}</FitNumber></dd>{group.data.missingFxCount > 0 && <small>缺少匯率・{group.data.missingFxCount} 筆</small>}</div><div><dt>{group.key === "profit" ? "平均獲利率" : "平均虧損率"}</dt><dd className={group.tone}>{pct(group.data.averageReturn)}</dd></div><div><dt>{group.key === "profit" ? "平均獲利金額" : "平均虧損金額"}</dt><dd className={group.tone}><FitNumber>{money(group.data.averagePnlUsd, "USD")}</FitNumber></dd><small>{group.data.missingFx ? "缺少USDTWD，不推測" : "美元等值"}</small></div><div><dt>平均投入持倉金額</dt><dd><FitNumber>{money(group.data.averageEntryNotionalUsd, "USD")}</FitNumber></dd></div><div><dt>平均持有天數</dt><dd>{group.data.averageHoldingDays == null ? "—" : `${group.data.averageHoldingDays.toFixed(1)} 天`}</dd>{group.data.missingHoldingDays > 0 && <small>缺少日期・{group.data.missingHoldingDays} 筆</small>}</div></dl></article>)}</div>{stats.flatCount > 0 && <small className="analysis-flat-note">另有 {stats.flatCount} 筆損益兩平交易，未納入獲利或虧損組。</small>}</section></>;
 }
 
 function QualityDistributionCard({ group, cycles, onSelectCycle }: { group: any; cycles: any[]; onSelectCycle: (cycleId: string) => void }) {
   const cycleName = (cycleId: string) => cycles.find((cycle) => cycle.id === cycleId)?.symbol || "閉環";
   return <article className={`quality-distribution-card ${String(group.id).toLowerCase()}`}>
-    <div className="quality-distribution-head"><div><h3>{group.title}</h3><small>比例只計入已評分交易</small></div><span className={`status ${group.sampleState === "ESTABLISHED" ? "ok" : "warn"}`}>{group.sampleState === "ESTABLISHED" ? "樣本已建立" : `${group.ratedCount}/20・待觀察`}</span></div>
+    <div className="quality-distribution-head"><div><h3>{group.title}</h3></div><span className={`status ${group.sampleState === "ESTABLISHED" ? "ok" : "warn"}`}>{group.sampleState === "ESTABLISHED" ? "樣本已建立" : `${group.ratedCount}/20・待觀察`}</span></div>
     <div className="quality-distribution-stats"><span>適用 <b>{group.applicableCount}</b></span><span>已評 <b>{group.ratedCount}</b></span><span>待評 <b>{group.pendingCount}</b></span><span>覆蓋 <b>{plainPct(group.coverage)}</b></span></div>
     <div className="quality-distribution-items">{group.items.map((item: any) => <div key={item.value} className={`quality-distribution-row ${String(item.value).toLowerCase()}`}>
       <div><span><b>{item.label}</b><small>{item.description}</small></span><strong>{item.count} 筆・{item.percentage == null ? "—" : `${item.percentage.toFixed(1)}%`}</strong></div>
@@ -203,7 +204,7 @@ function QualityDistributionCard({ group, cycles, onSelectCycle }: { group: any;
 }
 
 function QualityTagDistribution({ analysis, cycles, onSelectCycle }: { analysis: any; cycles: any[]; onSelectCycle: (cycleId: string) => void }) {
-  return <section className="quality-tag-distribution"><div className="panel-head"><div><h2>交易品質標籤分布</h2><p>人工單選是主要評分結論；點擊標的可回到原始閉環、K 線與回顧證據。</p></div><div className="quality-rating-total"><span>進出場皆完成</span><b>{analysis.fullyRatedCount}/{analysis.total}</b><small>完整覆蓋率 {plainPct(analysis.completeCoverage)}</small></div></div><div className="quality-distribution-grid"><QualityDistributionCard group={analysis.entry} cycles={cycles} onSelectCycle={onSelectCycle}/><QualityDistributionCard group={analysis.profitExit} cycles={cycles} onSelectCycle={onSelectCycle}/><QualityDistributionCard group={analysis.stopExit} cycles={cycles} onSelectCycle={onSelectCycle}/></div></section>;
+  return <section className="quality-tag-distribution"><div className="panel-head"><div className="section-title-help"><h2>品質評分</h2><InfoPopover label="交易品質標籤分布"><p>人工單選是主要評分結論；點擊標的可回到原始閉環、K 線與回顧證據。比例只計入已評分交易。</p></InfoPopover></div><div className="quality-rating-total"><span>進出場皆完成</span><b>{analysis.fullyRatedCount}/{analysis.total}</b><small>完整覆蓋率 {plainPct(analysis.completeCoverage)}</small></div></div><div className="quality-distribution-grid"><QualityDistributionCard group={analysis.entry} cycles={cycles} onSelectCycle={onSelectCycle}/><QualityDistributionCard group={analysis.profitExit} cycles={cycles} onSelectCycle={onSelectCycle}/><QualityDistributionCard group={analysis.stopExit} cycles={cycles} onSelectCycle={onSelectCycle}/></div></section>;
 }
 
 export function TrainingWorkspace({ accountId = "", cycles, marketBars, reviews, fxRate, strategies = [], strategyAssignments = {}, onSelectCycle, dataset, fetchHistory }: { accountId?: string; dataset: any; fetchHistory: typeof fetch; entryContexts?: Record<string, any>; cycles: any[]; marketBars: any[]; reviews: Record<string, any>; fxRate: number | null; strategies?: any[]; strategyAssignments?: Record<string, any>; onSelectCycle: (cycleId: string) => void }) {
@@ -224,18 +225,11 @@ export function TrainingWorkspace({ accountId = "", cycles, marketBars, reviews,
   const matrices = useMemo(() => buildBehaviorDashboard(periodCycles, marketBars, reviews, [], []), [marketBars, periodCycles, reviews]);
   const profitLossStats = useMemo(() => buildProfitLossTradeStats(periodCycles, scope, period, fxRate), [periodCycles, fxRate, period, scope]);
   return <div className="training-workspace quality-workspace">
-    <section className="strategy-analysis-filters" aria-label="交易分析篩選"><div className="analysis-period-controls"><label>資料區間<select value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">總累計</option><option value="year">年區間</option><option value="month">月區間</option><option value="week">週區間</option></select></label>{scope !== "all" && <label>選擇期間<select value={period} onChange={(event) => setPeriod(event.target.value)}>{options.map((option) => <option key={option} value={option}>{periodLabel(scope, option)}</option>)}</select></label>}<strong>{periodLabel(scope, period)}・{periodCycles.length} 筆</strong></div><label>策略<select value={strategyId} onChange={(event) => { setStrategyId(event.target.value); setVersionId(""); }}><option value="">全部策略與未指派交易</option>{strategies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>版本<select value={versionId} disabled={!strategyId} onChange={(event) => setVersionId(event.target.value)}><option value="">全部版本</option>{(strategy?.versions || []).map((version: any) => <option key={version.id} value={version.id}>v{version.version}・{version.changeReason}</option>)}</select></label><label>呈現筆數<select value={sampleLimit} onChange={(event) => setSampleLimit(event.target.value)}><option value="0">全部</option><option value="10">最新 10 筆</option><option value="25">最新 25 筆</option><option value="50">最新 50 筆</option></select></label><small>下方統計、評分與報酬矩陣共用此篩選。</small></section>
-    <SectionLinks label="交易行為分析區段" links={[{id:"performance-structure",label:"盈虧結構"},{id:"return-analysis",label:"報酬品質"},{id:"quality-rating",label:"逐筆複盤"}]}/>
-    <section className="analysis-section" id="performance-structure" tabIndex={-1}>
-    <ProfitLossAnalysis stats={profitLossStats} scope={scope} period={period}/>
-    </section>
-    <section className="analysis-section" id="return-analysis" tabIndex={-1}>
-    <section className="matrix-section"><div className="matrix-head"><div><h2>報酬品質</h2><p>每個點代表一筆交易閉環；點選先看摘要，再開啟 K 線復盤。</p></div><div className="matrix-filters"><strong>{periodLabel(scope, period)}・篩選 {periodCycles.length}／{scopedCycles.length} 筆</strong></div></div><BehaviorMatrices key={JSON.stringify([accountId, scope, period, strategyId, versionId, sampleLimit])} data={matrices} onSelectCycle={onSelectCycle}/></section>
-    </section>
-    <section className="analysis-section review-analysis-panel" id="quality-rating" tabIndex={-1}>
-    <h2>逐筆複盤</h2>
-    <QualityTagDistribution analysis={quality.tagAnalysis} cycles={periodCycles} onSelectCycle={onSelectCycle}/>
-    <ReviewLedgerTable accountId={accountId} allCycles={cycles} dataset={dataset} cycles={periodCycles} lossSampleCycles={scopedCycles} trades={quality.trades} fetchHistory={fetchHistory} onSelectCycle={onSelectCycle}/>
-    </section>
+    <section className="strategy-analysis-filters" aria-label="交易分析篩選"><div className="analysis-period-controls"><label>資料區間<select value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">總累計</option><option value="year">年區間</option><option value="month">月區間</option><option value="week">週區間</option></select></label>{scope !== "all" && <label>選擇期間<select value={period} onChange={(event) => setPeriod(event.target.value)}>{options.map((option) => <option key={option} value={option}>{periodLabel(scope, option)}</option>)}</select></label>}<strong>{periodLabel(scope, period)}・{periodCycles.length} 筆</strong></div><label>策略<select value={strategyId} onChange={(event) => { setStrategyId(event.target.value); setVersionId(""); }}><option value="">全部策略與未指派交易</option>{strategies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><MobileDetails className="analysis-advanced" label={`進階篩選・${versionId?"指定版本":"全部版本"}・${sampleLimit==="0"?"全部":sampleLimit+" 筆"}`}><label>版本<select value={versionId} disabled={!strategyId} onChange={(event) => setVersionId(event.target.value)}><option value="">全部版本</option>{(strategy?.versions || []).map((version: any) => <option key={version.id} value={version.id}>v{version.version}・{version.changeReason}</option>)}</select></label><label>呈現筆數<select value={sampleLimit} onChange={(event) => setSampleLimit(event.target.value)}><option value="0">全部</option><option value="10">最新 10 筆</option><option value="25">最新 25 筆</option><option value="50">最新 50 筆</option></select></label></MobileDetails><InfoPopover label="分析篩選"><p>三個分頁共用所選區間、策略、版本與筆數；切換分頁保留目前篩選。</p></InfoPopover></section>
+    <WorkspaceTabs label="交易行為分析" items={[
+      {id:"performance-structure",label:"盈虧結構",content:<ProfitLossAnalysis stats={profitLossStats} scope={scope} period={period}/>},
+      {id:"return-analysis",label:"報酬品質",content:<section className="matrix-section"><div className="matrix-head"><div className="section-title-help"><h2>報酬品質</h2><InfoPopover label="報酬品質"><p>每個點代表一筆交易閉環；點選先看摘要，再開啟 K 線復盤。</p></InfoPopover></div><div className="matrix-filters"><strong>{periodLabel(scope, period)}・篩選 {periodCycles.length}／{scopedCycles.length} 筆</strong></div></div><BehaviorMatrices key={JSON.stringify([accountId, scope, period, strategyId, versionId, sampleLimit])} data={matrices} onSelectCycle={onSelectCycle}/></section>},
+      {id:"quality-rating",label:"逐筆複盤",content:<div className="review-analysis-panel"><QualityTagDistribution analysis={quality.tagAnalysis} cycles={periodCycles} onSelectCycle={onSelectCycle}/><ReviewLedgerTable accountId={accountId} allCycles={cycles} dataset={dataset} cycles={periodCycles} lossSampleCycles={scopedCycles} trades={quality.trades} fetchHistory={fetchHistory} onSelectCycle={onSelectCycle}/></div>}
+    ]}/>
   </div>;
 }

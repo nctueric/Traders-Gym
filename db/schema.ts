@@ -42,7 +42,7 @@ export const snapshotHistory = sqliteTable("snapshot_history", {
   version: integer("version").notNull(), createdAt: text("created_at").notNull(),
   datasetJson: text("dataset_json").notNull(), objectKey: text("object_key"),
   sizeBytes: integer("size_bytes").notNull(), pinned: integer("pinned").notNull().default(0),
-}, table => [uniqueIndex("history_account_version").on(table.accountId, table.version), index("history_owner_date").on(table.ownerUserId, table.createdAt)]);
+}, table => [uniqueIndex("history_account_version").on(table.accountId, table.version), index("history_owner_date").on(table.ownerUserId, table.createdAt), index("history_account_day").on(table.accountId,table.createdAt,table.version)]);
 
 // Separate identity binding; never links by email to the Google owner.
 export const sitesTrialIdentity = sqliteTable("sites_trial_identity", {
@@ -83,3 +83,8 @@ export const memberPreferences=sqliteTable("member_preferences",{userId:text("us
 export const emailCredentials=sqliteTable("email_credentials",{userId:text("user_id").primaryKey().references(()=>appUsers.id),passwordHash:text("password_hash").notNull(),verifiedAt:text("verified_at").notNull(),updatedAt:text("updated_at").notNull()});
 export const emailTokens=sqliteTable("email_tokens",{tokenHash:text("token_hash").primaryKey(),purpose:text("purpose").notNull(),email:text("email").notNull(),name:text("name").notNull().default(""),userId:text("user_id").references(()=>appUsers.id),sessionId:text("session_id"),expiresAt:text("expires_at").notNull(),consumedAt:text("consumed_at"),claimId:text("claim_id"),createdAt:text("created_at").notNull()},table=>[index("email_tokens_expiry").on(table.expiresAt)]);
 export const memberSessionCredentials=sqliteTable("member_session_credentials",{sessionId:text("session_id").primaryKey().references(()=>authSessions.id,{onDelete:"cascade"}),fingerprint:text("fingerprint").notNull()});
+
+export const snapshotObjectGc=sqliteTable("snapshot_object_gc",{
+  objectKey:text("object_key").primaryKey(),ownerUserId:text("owner_user_id").notNull(),
+  sizeBytes:integer("size_bytes").notNull(),createdAt:text("created_at").notNull(),
+});

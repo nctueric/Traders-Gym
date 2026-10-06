@@ -1,0 +1,45 @@
+{
+  "site": "https://tradergym.app",
+  "worker_version": "ff100103-46a6-4282-9739-31c0c6ec71a4",
+  "previous_worker_version": "148e2487-888b-4ad6-8096-2c049c756111",
+  "scope": "Compact mobile assets and holdings, collapsible holdings, fit numbers, behavior tabs, semantic dark surfaces and shared explanations",
+  "checks": {
+    "tests_passed": 420,
+    "lint": "pass",
+    "typescript": "pass",
+    "build": "pass",
+    "wrangler_dry_run": "pass",
+    "viewports": [
+      360,
+      390,
+      430,
+      768,
+      1440
+    ],
+    "text_zoom_percent": 200,
+    "production_login": "pass",
+    "production_demo": "pass",
+    "production_demo_width": 390,
+    "production_demo_document_width": 390,
+    "return_metrics_on_one_row": true,
+    "keyboard_tabs_and_retained_chart_selection": "pass",
+    "holdings_disclosure": "pass",
+    "help_escape_focus_return": "pass",
+    "strategy_and_cash_draft_resize": "pass",
+    "production_data_comparison": {
+      "snapshot_records": 2,
+      "unchanged_snapshot_records": 1,
+      "background_sync_snapshot_records": 1,
+      "changed_dataset_fields": [
+        "marketSnapshot"
+      ],
+      "trades_cash_plans_reviews_settings_unchanged": true
+    }
+  },
+  "backup_directory": "data/private/mobile-compact-20261006",
+  "limitations": [
+    "iOS/Android physical-device touch and keyboard acceptance pending",
+    "No production member writes were performed; online interaction checks used the isolated demo"
+  ],
+  "github_pushed": false
+}

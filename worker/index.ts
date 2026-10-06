@@ -1,3 +1,4 @@
+import {maintainSnapshotHistory} from "../lib/snapshot-retention.mjs";
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
@@ -5,6 +6,8 @@ import handler from "vinext/server/app-router-entry";
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  SNAPSHOTS?: {delete(key:string):Promise<void>};
+  SNAPSHOT_RETENTION_ENABLED?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -26,6 +29,9 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  async scheduled(_event: unknown, env: Env, ctx: ExecutionContext) {
+    if(env.SNAPSHOT_RETENTION_ENABLED === 'true') ctx.waitUntil(maintainSnapshotHistory(env.DB,env.SNAPSHOTS));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
@@ -43,6 +49,12 @@ const worker = {
     }
 
     const original = await handler.fetch(request, env, ctx);
+    if(env.SNAPSHOT_RETENTION_ENABLED === 'true' && ((request.method === 'PUT' && url.pathname === '/api/trade-records') || (request.method === 'POST' && url.pathname === '/api/admin/history' && url.searchParams.get('action') === 'restore')) && original.ok){
+      ctx.waitUntil(original.clone().json().then((value: unknown)=>{
+        const accountId=(value as {account?:{id?:string}}).account?.id;
+        if(accountId)return maintainSnapshotHistory(env.DB,env.SNAPSHOTS,{accountId});
+      }));
+    }
     const response = new Response(original.body, original);
     response.headers.set("Cache-Control", "no-store");
     response.headers.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");

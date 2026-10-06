@@ -254,3 +254,11 @@ test("invalid ranges fail closed and no-exit records never enter the score", () 
   const empty=cycleRangeScore(cycles,"2026-07-01","2026-07-31",32);
   assert.equal(empty.error,"");assert.equal(empty.cycles.length,0);assert.equal(empty.averageReturn,null);assert.equal(empty.winRate,null);
 });
+
+test('range score exposes separate winning and losing USD totals without rounding or netting',()=>{
+ const cycles=[{closeAt:'2026-01-04',pnl:100,currency:'USD',returnPct:.1},{closeAt:'2026-01-05',pnl:320,currency:'TWD',returnPct:.2},{closeAt:'2026-01-06',pnl:-20,currency:'USD',returnPct:-.1}];
+ const score=cycleRangeScore(cycles,'2026-01-01','2026-12-31',32);
+ assert.equal(score.winningPnlUsd,110);assert.equal(score.losingPnlUsd,-20);assert.equal(score.winningPnlUsd+score.losingPnlUsd,score.totalPnlUsd);
+ const missing=cycleRangeScore(cycles,'','',null);assert.equal(missing.winningPnlUsd,null);assert.equal(missing.losingPnlUsd,-20);
+ const empty=cycleRangeScore([],'','',32);assert.equal(empty.winningPnlUsd,0);assert.equal(empty.losingPnlUsd,0);
+});

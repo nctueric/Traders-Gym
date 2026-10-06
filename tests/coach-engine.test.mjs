@@ -272,3 +272,14 @@ test("NVTS acceptance: post-exit rapid repurchase links back to the decision cha
   assert.equal(event.date, "2026-08-10");
   assert.match(event.detail, /已連結決策鏈/);
 });
+
+test('profit/loss totals reconcile and holding days average closed cycles equally',()=>{
+ const rows=[{...cycle,id:'a',pnl:100,holdingDays:2},{...cycle,id:'b',pnl:3200,currency:'TWD',holdingDays:8},{...cycle,id:'c',pnl:-50,holdingDays:4},{...cycle,id:'d',pnl:0,holdingDays:1}];
+ const stats=buildProfitLossTradeStats(rows,'all','',32);
+ assert.equal(stats.totalPnlUsd,150);assert.equal(stats.winners.totalPnlUsd,200);assert.equal(stats.losers.totalPnlUsd,-50);assert.equal(stats.flatCount,1);
+ assert.equal(stats.winners.averageHoldingDays,5);assert.equal(stats.losers.averageHoldingDays,4);assert.equal(stats.winRate,2/3);
+ assert.equal(stats.cycles.length,4);assert.equal(stats.totalPnlUsd,stats.winners.totalPnlUsd+stats.losers.totalPnlUsd);
+ const missing=buildProfitLossTradeStats(rows,'all','',null);assert.equal(missing.totalPnlUsd,null);assert.equal(missing.missingFxCount,1);assert.equal(missing.losers.totalPnlUsd,-50);
+ const empty=buildProfitLossTradeStats([]);assert.equal(empty.totalPnlUsd,0);assert.equal(empty.winners.totalPnlUsd,0);assert.equal(empty.winners.averageHoldingDays,null);
+ const invalid=buildProfitLossTradeStats([{...cycle,openAt:'invalid'}]);assert.equal(invalid.winners.averageHoldingDays,null);assert.equal(invalid.winners.missingHoldingDays,1);
+});

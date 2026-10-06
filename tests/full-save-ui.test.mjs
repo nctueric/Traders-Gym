@@ -62,7 +62,8 @@ function harness(initial = source(), values = new Map()) {
     close(){for(const hook of hooks)hook?.cleanup?.();},
   };
 }
-const manual = h => find(h.tree,n => n.type === "button" && ["立即儲存","儲存中…"].includes(n.props.children));
+const navigate = (h,page) => { find(h.tree,n=>n.type?.name==="WorkspaceNavigation").props.onNavigate(page); h.render(); };
+const manual = h => { navigate(h,"ledgers"); return find(h.tree,n => n.type === "button" && ["立即儲存","儲存中…"].includes(n.props.children)); };
 
 test("homepage manual button waits for full write, prevents duplicates, and restored evidence survives offline", async t => {
   const h=harness();t.after(()=>h.close());h.render();assert.equal(manual(h).props.disabled,true);
@@ -82,7 +83,7 @@ test("price-only updates and explicit plan saves persist complete snapshots thro
   h.online=true;h.runTimers(30_000);await h.settle();const before=h.writes.length;h.runTimers(900);await h.settle();assert.equal(h.writes.length,before,"quote changes must wait for ten-minute clock");h.runTimers(600_000);await h.settle();
   assert.equal(h.writes.at(-1).saveMode,"auto");assert.equal(h.stored.marketSnapshot.quotes.AAA.price,15);
   assert.equal(h.stored.marketSnapshot.quotes["USDTWD=X"].price,32,"failed refresh must not remove FX");
-  find(h.tree,n=>n.type==="button"&&n.props.children==="持倉").props.onClick();await h.settle();
+  navigate(h,"overview");await h.settle();
   const panel=find(h.tree,n=>n.type?.name==="PositionsPanel");
   panel.props.onOpenChart(panel.props.positions[0]);await h.settle();
   await find(h.tree,n=>n.type?.name==="OpenPositionDetail").props.onSavePlan(panel.props.positions[0],{note:"新的持倉計畫"},"test-plan-batch");
@@ -118,7 +119,7 @@ test("new registration page saves a no-impact account draft, commits atomically 
 
 test('cached plan releases form during network failure and retries without duplicate history',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
- find(h.tree,n=>n.type==='button'&&n.props.children==='持倉').props.onClick();await h.settle();
+ navigate(h,"overview");await h.settle();
  const panel=find(h.tree,n=>n.type?.name==='PositionsPanel'),p=panel.props.positions[0];panel.props.onOpenChart(p);await h.settle();
  h.fail=true;await find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(p,{stopLoss:12,takeProfit:20},'retry-batch');await h.settle();assert.ok(!h.stored.planHistory?.some(v=>v.batchId==='retry-batch'));
  h.fail=false;await find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(p,{stopLoss:12,takeProfit:20},'retry-batch');await h.settle();
@@ -128,7 +129,7 @@ test('cached plan releases form during network failure and retries without dupli
 
 test('locally saved plan survives reload before cloud acknowledgement',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
- find(h.tree,n=>n.type==='button'&&n.props.children==='持倉').props.onClick();await h.settle();
+ navigate(h,"overview");await h.settle();
  const panel=find(h.tree,n=>n.type?.name==='PositionsPanel'),position=panel.props.positions[0];
  panel.props.onOpenChart(position);await h.settle();h.fail=true;
  await find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(position,{stopLoss:8,note:'cached offline'},'local-reload');
@@ -141,7 +142,7 @@ test('locally saved plan survives reload before cloud acknowledgement',async t=>
 
 test('holdings palette defaults green-up, updates both displays and restores from cache and cloud',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
- find(h.tree,n=>n.type==='button'&&n.props.children==='持倉').props.onClick();await h.settle();
+ navigate(h,"overview");await h.settle();
  const choose=(scope,label)=>find(scope.tree,n=>n.type==='button'&&n.props.children===label);
  assert.equal(choose(h,'綠漲紅跌').props['aria-pressed'],true);
  choose(h,'紅漲綠跌').props.onClick();await h.settle();
@@ -153,7 +154,7 @@ test('holdings palette defaults green-up, updates both displays and restores fro
  assert.equal(restored.stored.settings.holdingsColorScheme,'red-up');
  assert.deepEqual(restored.stored.fills,source().fills);
  const fresh=harness(restored.stored);t.after(()=>fresh.close());await fresh.settle();
- find(fresh.tree,n=>n.type==='button'&&n.props.children==='持倉').props.onClick();await fresh.settle();
+ navigate(fresh,"overview");await fresh.settle();
  assert.equal(choose(fresh,'紅漲綠跌').props['aria-pressed'],true);
 });
 

@@ -298,3 +298,19 @@ test('local ledger recycle preserves file data and blocks stale writes across de
   const saved=await h.call(owner,'/api/trade-records',{accountId:'primary',accountName:'Local acceptance',dataset:edited,baseVersion:39},'PUT');assert.equal(saved.status,200);assert.equal(saved.body.account.version,40);
   assert.deepEqual((await files.read('primary')).dataset,edited);
 });
+
+test('daily policy preview is non-destructive; enabled cleanup preserves current and restore advances version',async t=>{
+ const h=setup(t,{retentionEnabled:true}),owner=await h.login(OWNER_EMAIL);
+ const before=await h.call(owner,'/api/trade-records');
+ const payload={accountId:'primary',accountName:'daily',dataset:before.body.dataset,baseVersion:37};
+ assert.equal((await h.call(owner,'/api/trade-records',payload,'PUT')).status,200);
+ const list=await h.call(owner,'/api/admin/history');assert.equal(list.body.retentionEnabled,true);
+ const baseline=list.body.items.find(r=>r.version===37);
+ const restored=await h.call(owner,'/api/admin/history?action=restore',{id:baseline.id,baseVersion:38});assert.equal(restored.body.account.version,39);
+ const preview=await h.call(owner,'/api/admin/history?action=retention-preview');assert.equal(preview.body.removable,2);assert.equal(preview.body.retained,1);
+ assert.equal(h.sqlite.prepare('SELECT count(*) n FROM snapshot_history').get().n,3);
+ const clean=await h.call(owner,'/api/admin/history?action=cleanup',{ids:h.sqlite.prepare('SELECT id FROM snapshot_history').all().map(r=>r.id)});assert.equal(clean.body.removed,2);
+ assert.deepEqual(h.sqlite.prepare('SELECT version FROM snapshot_history').all().map(r=>r.version),[39]);
+ const after=await h.call(owner,'/api/trade-records');assert.deepEqual(after.body.dataset,before.body.dataset);
+ assert.equal((await h.call(owner,'/api/trade-records',{...payload,baseVersion:38},'PUT')).status,409);
+});
