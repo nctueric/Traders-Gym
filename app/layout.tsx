@@ -3,7 +3,7 @@ import "./globals.css";
 import "./account.css";
 
 export const metadata: Metadata = {
-  title: "交易復盤顧問",
+  title: "TraderGym",
   description: "私人交易紀錄、持倉計畫、閉環證據與行為復盤工作台。",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };

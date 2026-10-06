@@ -42,9 +42,9 @@ test('confirmation invalidates on quantity, timestamp, or inventory changes; no 
  assert.throws(()=>commitEntry(data,{...entry,quantity:'11'},snapshot(),now),/重新確認/);
  data.fills=[fill('a','BUY',3,100)];assert.throws(()=>commitEntry(data,entry,snapshot(),now),/重新確認/);data.fills=[];assert.equal(JSON.stringify(data),original);
 });
-test('historical insertion blocks moved annotated cycles and reports IDs; plain append allowed',()=>{
+test('historical insertion remaps annotated cycles without blocking and preserves original evidence',()=>{
  const data=fixture();data.fills=[fill('first','BUY',10,100)];data.cycleReviews={'cycle-first':{reflection:'keep'}};
- const early=draft(data,{timestamp:'2026-08-26T15:00:00Z'});assert.equal(previewEntry(data,early,now).affected[0].cycleId,'cycle-first');assert.throws(()=>submit(data,early),/重組已註記閉環.*cycle-first/);
+ const early=draft(data,{timestamp:'2026-08-26T15:00:00Z'});assert.equal(previewEntry(data,early,now).affected[0].cycleId,'cycle-first');const rebuilt=submit(data,early);assert.equal(rebuilt.cycleReviews['cycle-new'].reflection,'keep');assert.equal(rebuilt.cycleRebuildHistory[0].original.cycleReviews['cycle-first'].reflection,'keep');assert.equal(data.cycleReviews['cycle-first'].reflection,'keep');
  assert.equal(previewEntry(data,draft(data),now).affected.length,0);
  for(const field of ['strategyAssignments','positionPlans','entryContexts']){const copy=fixture();copy.fills=data.fills;copy[field]=field==='entryContexts'?{old:{cycleId:'cycle-first'}}:{'cycle-first':{id:'preserve'}};assert.equal(previewEntry(copy,early,now).affected.length,1);}
 });
@@ -113,4 +113,26 @@ test('draft and committed fields survive auto/manual full JSON writes, store res
  const next=submit(resumed,resumed.entryDraft);assert.equal(next.entryDraft,undefined);await store.save(payload(next,1,'manual'));
  const recovered=(await createLocalRecordStore(root).read('test')).dataset;assert.deepEqual(recovered,JSON.parse(completeTradeJson(next)));assert.equal(recovered.entryContexts.new.planSnapshot.stopLoss,95);assert.equal(recovered.planHistory.length,2);
  await assert.rejects(store.save(payload(data,1,'auto')),/版本/);assert.deepEqual((await store.read('test')).dataset,recovered);
+});
+
+
+test('backdated closing fill splits prior cycle, preserves annotation audit and rebuilds realized trades',()=>{
+ const data=fixture();data.fills=[fill('a','BUY',10,100,'2026-08-20T15:00:00Z'),fill('b','BUY',10,110,'2026-08-24T15:00:00Z'),fill('c','SELL',10,120,'2026-08-27T15:00:00Z')];
+ data.cycleReviews={'cycle-a':{reflection:'original combined review'}};
+ data.entryContexts={a:{fillId:'a',cycleId:'cycle-a',planSnapshot:{stopLoss:90}},b:{fillId:'b',cycleId:'cycle-a',planSnapshot:{stopLoss:95}}};
+ const prior=JSON.stringify(data);
+ const next=submit(data,draft(data,{side:'SELL',timestamp:'2026-08-22T15:00:00Z'}));
+ const result=buildCycles(next);assert.equal(result.cycles.length,2);assert.equal(result.positions.length,0);
+ assert.equal(result.cycles.reduce((sum,c)=>sum+c.pnl,0),200);
+ assert.equal(next.cycleReviews['cycle-a'],undefined);assert.equal(next.cycleRebuildHistory[0].changes[0].automatic,false);
+ assert.equal(next.cycleRebuildHistory[0].original.cycleReviews['cycle-a'].reflection,'original combined review');
+ assert.equal(next.entryContexts.b.cycleId,'cycle-b');assert.deepEqual(next.entryContexts.b.planSnapshot,{stopLoss:95});assert.equal(JSON.stringify(data),prior);
+ assert.deepEqual(JSON.parse(completeTradeJson(next)).cycleRebuildHistory,next.cycleRebuildHistory);
+});
+
+test('historical completed round trip automatically appears in closed cycles',()=>{
+ let data=fixture();data.fills=[fill('later','BUY',5,125,'2026-08-27T15:00:00Z')];
+ data=submit(data,draft(data,{id:'old-buy',timestamp:'2026-08-20T15:00:00Z',price:'100'}));
+ data=submit(data,draft(data,{id:'old-sell',side:'SELL',timestamp:'2026-08-21T15:00:00Z',price:'120'}));
+ const result=buildCycles(data);assert.equal(result.cycles.length,1);assert.equal(result.cycles[0].pnl,200);assert.equal(result.positions[0].id,'cycle-later');assert.equal(data.fills.length,3);
 });

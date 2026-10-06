@@ -83,7 +83,7 @@ test("manual and auto saving share complete snapshots, and unload is guarded", (
   assert.ok(source.includes("serializeInBackground(captured.dataset)"));
   assert.ok(source.includes("立即儲存"));
   assert.match(source, /beforeunload/);
-  assert.match(source, /writeLocalRecord\(browserRecordStorage\(\)/);
+  assert.match(source, /writeLocalRecord\(recordStorage\(\)/);
   assert.doesNotMatch(source, /雲端儲存失敗，本機備份仍安全/);
 });
 

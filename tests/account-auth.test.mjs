@@ -282,3 +282,19 @@ test('old clients cannot empty a populated ledger via background saves',async t=
  const after=await h.call(owner,'/api/trade-records');
  assert.equal(after.body.account.version,37);assert.deepEqual(after.body.dataset,populated);
 });
+
+test('local ledger recycle preserves file data and blocks stale writes across delete and restore', async t => {
+  const dir=await mkdtemp(join(tmpdir(),'tg-recycle-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const files=createLocalRecordStore(dir),h=setup(t,{files});h.sqlite.prepare('DELETE FROM trade_account_snapshots').run();
+  await files.save({accountId:'primary',accountName:'Local acceptance',dataset:h.original,baseVersion:0},{initialVersion:37});
+  const owner=await h.login(OWNER_EMAIL),loaded=await h.call(owner,'/api/trade-records');assert.equal(loaded.body.account.version,37);
+  const trashed=await h.call(owner,'/api/ledgers',{action:'trash',id:'primary',baseVersion:37});assert.equal(trashed.status,200);
+  assert.equal((await h.call(owner,'/api/trade-records')).body.account,null);
+  assert.equal((await h.call(owner,'/api/trade-records',{accountId:'primary',accountName:'stale',dataset:h.original,baseVersion:37},'PUT')).status,410);
+  assert.deepEqual((await files.read('primary')).dataset,h.original);
+  const restored=await h.call(owner,'/api/ledgers',{action:'restore',id:'primary',baseVersion:trashed.body.account.version});assert.equal(restored.status,200);
+  const again=await h.call(owner,'/api/trade-records');assert.deepEqual(again.body.dataset,h.original);assert.equal(again.body.account.version,39);
+  const edited={...h.original,profile:{...h.original.profile,name:'new edit'}};
+  const saved=await h.call(owner,'/api/trade-records',{accountId:'primary',accountName:'Local acceptance',dataset:edited,baseVersion:39},'PUT');assert.equal(saved.status,200);assert.equal(saved.body.account.version,40);
+  assert.deepEqual((await files.read('primary')).dataset,edited);
+});

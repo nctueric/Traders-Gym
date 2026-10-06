@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+import { ProductOnboarding } from "./product-onboarding";
+import { CashLedger,CashEditor } from './cash-ledger';
+import { LedgerManager } from './ledger-manager';
+import { useDemoRuntime } from './demo-context';
+import { updateCashActivity } from '@/lib/cash-activities.mjs';
+import { Brand } from './brand';
 import {sortCycleRows} from "@/lib/cycle-table-sort.mjs";
 import {OpenPositionDetail} from './open-position-detail';
 import {commitPositionPlanEdit} from '@/lib/position-plan-edit.mjs';
@@ -108,7 +114,11 @@ function fetchHistoryInBackground(url: string, signal: AbortSignal, fetcher: typ
 }
 
 export default function TradeWorkspace({ user, requestedAccountId, storageTarget = "雲端" }: { user: AccountUser; requestedAccountId?:string; storageTarget?: string }) {
-  const sessionScope = useMemo(() => createSessionScope(user.sessionId, fetch), [user.sessionId]);
+  const demo=useDemoRuntime();
+  const sessionScope = useMemo(() => createSessionScope(user.sessionId, demo?.fetcher || fetch), [user.sessionId,demo]);
+  const recordStorage=useCallback(()=>demo?.storage || browserRecordStorage(),[demo]);
+  const [manageLedgers,setManageLedgers]=useState(false),[noLedger,setNoLedger]=useState(false);
+  const [cashEditor,setCashEditor]=useState<CashActivity|null|undefined>(undefined);
   const storageKey = `${STORAGE_KEY}.user.${user.id}`;
   const [sessionEnded, setSessionEnded] = useState(false);
   const sessionInvalidatedRef = useRef(false);
@@ -179,7 +189,9 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "帳本讀取失敗");
         if (!active) return;
-        const recovery = readPendingRecord(browserRecordStorage(), storageKey, payload.account.id, payload.dataset);
+        if(!payload.account){setNoLedger(true);setRecordAccounts([]);setStorageReady(true);setCloudReady(true);setSaveState('尚無帳本');return;}
+        setNoLedger(false);
+        const recovery = readPendingRecord(recordStorage(), storageKey, payload.account.id, payload.dataset);
         loadDataset(recovery.dataset);
         setStorageConflict(Boolean(recovery.conflict));
         setRecordAccounts(payload.accounts || [payload.account]);
@@ -199,9 +211,11 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     };
     void restore();
     return () => { active = false; sessionScope.stop(); };
-  }, [loadDataset, sessionScope, storageKey,requestedAccountId]);
+  }, [loadDataset, sessionScope, storageKey,requestedAccountId,recordStorage]);
 
   const persistCompleteSnapshot = useCallback((force = false, label = "自動") => saveQueueRef.current(async () => {
+    if(demo){demo.update(latestSaveRef.current.dataset);setSaveState('當次練習已更新・離開後重置');return;}
+    if(noLedger)return;
     sessionScope.assertActive();
     if (storageConflict) throw Object.assign(new Error("尚有版本衝突，請先匯出備份並確認版本"), { status: 409, retryable: false });
     const captured = latestSaveRef.current;
@@ -209,7 +223,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     const serialized = await serializeInBackground(captured.dataset);
     sessionScope.assertActive();
     if (latestSaveRef.current.accountId !== captured.accountId) return;
-    const localSaved = writeLocalRecord(browserRecordStorage(), storageKey, captured.accountId, captured.serialized, lastSavedJsonRef.current, recordVersionRef.current);
+    const localSaved = writeLocalRecord(recordStorage(), storageKey, captured.accountId, captured.serialized, lastSavedJsonRef.current, recordVersionRef.current);
     if (!force && serialized === lastSavedJsonRef.current && recordVersionRef.current != null) {
       lastSavedSnapshotRef.current = captured.dataset;
       return;
@@ -234,30 +248,31 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
       pending = { ...pending, dataset: merged as Dataset, serialized: durableDatasetJson(merged) };
       latestSaveRef.current = pending;
     }
-    writeLocalRecord(browserRecordStorage(), storageKey, captured.accountId, pending.serialized, saved.serialized, saved.account.version);
+    writeLocalRecord(recordStorage(), storageKey, captured.accountId, pending.serialized, saved.serialized, saved.account.version);
     setRecordAccounts(current => [saved.account, ...current.filter(account => account.id !== saved.account.id)]);
     const newerEdits = pending.dataset !== captured.dataset && !saved.dataset;
     setSaveState(`${storageTarget}已儲存（${label}）・${new Date(saved.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}・v${saved.account.version}${newerEdits ? "；較新資料待背景儲存" : ""}${localSaved ? "" : "；瀏覽器暫存不可用（完整資料已寫入）"}`);
     return saved;
-  }), [activeRecordAccountId, activeRecordAccountName, loadDataset, storageConflict, sessionScope, storageKey, storageTarget]);
+  }), [activeRecordAccountId, activeRecordAccountName, loadDataset, storageConflict, sessionScope, storageKey, storageTarget,recordStorage,demo,noLedger]);
 
   const handleSaveError = useCallback((error: any) => {
     if (sessionInvalidatedRef.current) return;
     if ([401, 403].includes(error?.status)) {
       sessionInvalidatedRef.current = true;
       const latest = latestSaveRef.current;
-      if (recordVersionRef.current != null) writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
+      if (recordVersionRef.current != null) writeLocalRecord(recordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
       sessionScope.stop(); setSessionEnded(true); setCloudReady(false); setStorageReady(false); setData(emptyData); setQuotes({}); setBenchmarkBars([]); setPendingImport(null); clearTimeout(retryTimerRef.current); return;
     }
+    if(error?.status===410){setCloudReady(false);setStorageConflict(true);clearTimeout(retryTimerRef.current);setSaveState('帳本已移至回收筒，已停止背景同步。請管理帳本以還原或切換。');return;}
     const retryable = error?.retryable !== false;
     if (error?.status === 409) setStorageConflict(true);
     const delay = Math.min(30_000, 5_000 * 2 ** retryCountRef.current++);
     const latest = latestSaveRef.current;
-    const backedUp = writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
+    const backedUp = writeLocalRecord(recordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
     setSaveState(`${retryable ? "等待重試" : "儲存失敗"}：${error instanceof Error ? error.message : "未知錯誤"}；${backedUp ? "本機備援已保存" : "本機備援無法保存，請立即下載 JSON"}${retryable ? `；${delay / 1000} 秒後重試` : ""}`);
     clearTimeout(retryTimerRef.current);
     if (retryable) retryTimerRef.current = setTimeout(() => setSaveRetry(current => current + 1), delay);
-  }, [sessionScope, storageKey]);
+  }, [sessionScope, storageKey,recordStorage]);
 
   async function manualSave() {
     if (!storageReady || !cloudReady || storageConflict || manualSavingRef.current) return;
@@ -287,10 +302,10 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     backgroundSaveRef.current = () => { void persistCompleteSnapshot().catch(handleSaveError); };
   }, [persistCompleteSnapshot, handleSaveError]);
   useEffect(() => {
-    if (!storageReady || !cloudReady || storageConflict) return;
+    if (demo || noLedger || !storageReady || !cloudReady || storageConflict) return;
     const timer = window.setInterval(() => backgroundSaveRef.current(), 600_000);
     return () => window.clearInterval(timer);
-  }, [activeRecordAccountId, cloudReady, storageConflict, storageReady]);
+  }, [activeRecordAccountId, cloudReady, storageConflict, storageReady,demo,noLedger]);
   useEffect(() => {
     if (!saveRetry || !storageReady || !cloudReady || storageConflict) return;
     backgroundSaveRef.current();
@@ -298,20 +313,21 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   useEffect(() => {
     if (!storageReady || storageConflict || sessionInvalidatedRef.current || recordVersionRef.current == null) return;
     const latest = latestSaveRef.current;
-    writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
-  }, [storageReady, storageConflict, storageKey, activeRecordAccountId, durableJson]);
+    writeLocalRecord(recordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
+  }, [storageReady, storageConflict, storageKey, activeRecordAccountId, durableJson,recordStorage]);
   useEffect(() => {
-    if (!storageReady) return;
+    if (demo || noLedger || !storageReady) return;
     try { setOnboardingOpen(localStorage.getItem(`${ONBOARDING_KEY}.${user.id}`) !== "done"); } catch { /* The guide remains replayable even when preferences cannot persist. */ }
-  }, [storageReady, user.id]);
+  }, [storageReady, user.id,demo,noLedger]);
   useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
   useEffect(() => {
+    if(demo)return;
     const retry = () => setSaveRetry(current => current + 1);
     const preserve = () => {
       if (!storageReady || storageConflict || sessionInvalidatedRef.current) return;
       const latest = latestSaveRef.current;
-      writeLocalRecord(browserRecordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
+      writeLocalRecord(recordStorage(), storageKey, latest.accountId, latest.serialized, lastSavedJsonRef.current, recordVersionRef.current);
     };
     const beforeUnload = (event: BeforeUnloadEvent) => {
       preserve();
@@ -321,8 +337,9 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     window.addEventListener("pagehide", preserve);
     window.addEventListener("beforeunload", beforeUnload);
     return () => { window.removeEventListener("online", retry); window.removeEventListener("pagehide", preserve); window.removeEventListener("beforeunload", beforeUnload); };
-  }, [storageReady, storageConflict, storageKey]);
+  }, [storageReady, storageConflict, storageKey,recordStorage,demo]);
   useEffect(() => {
+    if(demo)return;
     let active = true;
     const verify = async () => {
       try {
@@ -339,7 +356,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     window.addEventListener("storage", changed);
     try { localStorage.setItem("tg.auth.changed", user.sessionId); } catch { /* Periodic server checks still enforce expiry. */ }
     return () => { active = false; window.clearInterval(timer); window.clearTimeout(expiry); window.removeEventListener("focus", focus); window.removeEventListener("pageshow", focus); window.removeEventListener("storage", changed); };
-  }, [sessionScope, handleSaveError, user.sessionId, user.expiresAt]);
+  }, [sessionScope, handleSaveError, user.sessionId, user.expiresAt,demo]);
   const calculationData = useMemo(() => ({ fills: data.fills, marketBars: data.marketBars }), [data.fills, data.marketBars]);
   const report = useMemo(() => summarize(calculationData), [calculationData]);
   const tests = useMemo(() => runSelfTests(), []);
@@ -366,8 +383,8 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
             ...current,
             ...Object.fromEntries(payload.quotes.map((quote: Quote) => [quote.symbol, quote])),
           }));
-          if (payload.quotes.length) setLastQuoteAt(Date.now());
-          setQuoteState(payload.errors?.length ? `${payload.errors.length} 個報價更新失敗` : "背景行情已更新");
+          if (payload.quotes.length) setLastQuoteAt(demo?Date.parse(demo.now):Date.now());
+          setQuoteState(payload.errors?.length ? `${payload.errors.length} 個報價更新失敗` : demo?"合成示範行情・2026/09/25":"背景行情已更新");
         });
       } catch (error) {
         if (active && !(error instanceof DOMException && error.name === "AbortError")) startTransition(() => setQuoteState(`更新失敗：${error instanceof Error ? error.message : "未知錯誤"}`));
@@ -376,7 +393,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     refresh();
     const timer = window.setInterval(refresh, QUOTE_REFRESH_MS);
     return () => { active = false; controller?.abort(); window.clearInterval(timer); };
-  }, [quoteKey, storageReady, activeRecordAccountId, sessionScope]);
+  }, [quoteKey, storageReady, activeRecordAccountId, sessionScope,demo]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -448,7 +465,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   }, [cycleHistoryKey, cycleHistoryRefresh, storageReady, activeRecordAccountId, sessionScope]);
 
   const fxQuote = quotes[USDTWD_SYMBOL];
-  const fxStale = !fxQuote || isQuoteStale(fxQuote.updatedAt, Date.now());
+  const fxStale = !fxQuote || (!demo && isQuoteStale(fxQuote.updatedAt, Date.now()));
   const fxRate = fxQuote?.price > 0 ? fxQuote.price : null; // Saved FX remains usable, with its stale/as-of label.
   const unrealizedByCurrency = useMemo(() => report.positions.reduce<Record<string, number>>((result: Record<string, number>, position: any) => {
     const quote = quotes[toProviderSymbol(position.symbol, position.market)];
@@ -512,8 +529,9 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   }
 
   function exportJson() { const url = URL.createObjectURL(new Blob([JSON.stringify(completeSnapshot, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `trade-review-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setMessage("JSON 備份已下載。"); }
-  function finishOnboarding() { setOnboardingOpen(false); try { localStorage.setItem(`${ONBOARDING_KEY}.${user.id}`, "done"); } catch { /* Preference persistence is optional. */ } }
+  function finishOnboarding() { setOnboardingOpen(false); if(demo)return; try { localStorage.setItem(`${ONBOARDING_KEY}.${user.id}`, "done"); } catch { /* Preference persistence is optional. */ } }
   async function logout() {
+    if(demo){location.assign("/login");return;}
     try {
       if (storageReady && cloudReady && !storageConflict) await persistCompleteSnapshot(true, "登出前");
       await sessionScope.fetch("/api/auth/logout", { method: "POST" });
@@ -524,7 +542,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     } catch (error) { handleSaveError(error); }
   }
   function openEntry() {
-    setData((current) => current.entryDraft ? current : { ...current, entryDraft: { ...createEntryDraft(current.accounts), quoteSnapshot: { quotes, capturedAt: new Date().toISOString() } } });
+    setData((current) => current.entryDraft ? current : { ...current, entryDraft: { ...createEntryDraft(current.accounts,demo?.now), quoteSnapshot: { quotes, capturedAt: new Date().toISOString() } } });
     changePage("entry");
   }
   function submitEntry(submittedEntry?: any) {
@@ -536,18 +554,27 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
     setMessage("已一次登錄成交、計畫與勾選證據；缺項保留為待補，將於 10 分鐘背景儲存週期同步，可按立即儲存。");
     changePage("overview");
   }
+  async function saveCashRows(next:Dataset) {
+    if(!storageReady||!cloudReady||storageConflict||noLedger)throw new Error('帳本尚未就緒，請先處理同步狀態');
+    const serialized=durableDatasetJson(next);
+    if(!writeLocalRecord(recordStorage(),storageKey,activeRecordAccountId,serialized,lastSavedJsonRef.current,recordVersionRef.current))throw new Error('本機備援無法保存，請保留輸入後重試');
+    latestSaveRef.current={...latestSaveRef.current,dataset:next,serialized};setData(next);
+    if(demo)demo.update(next);setSaveState(demo?'當次練習已更新・離開後重置':'已保存在本機・等待背景同步');
+  }
+  async function beforeLedgerChange(){if(!noLedger&&cloudReady){await persistCompleteSnapshot(true,'帳本管理');if(completeTradeJson(latestSaveRef.current.dataset)!==lastSavedJsonRef.current)throw new Error('仍有未同步修改，請先完成儲存');}}
+  function navigateLedger(id?:string){sessionScope.stop();location.assign(id?`/?accountId=${encodeURIComponent(id)}`:'/');}
   function deleteFill(id: string) { setData({ ...data, fills: data.fills.filter((fill) => fill.id !== id) }); setMessage("成交紀錄已刪除。"); }
   async function savePositionPlan(position:any,draft:any,batchId:string) {
     if(!storageReady||!cloudReady||storageConflict)throw new Error('帳本尚未就緒或有同步衝突，請先處理後重試');
     const current=latestSaveRef.current.dataset;
     const next=commitPositionPlanEdit(current,position,draft,new Date().toISOString(),batchId) as Dataset;
     const serialized=durableDatasetJson(next);
-    const cached=writeLocalRecord(browserRecordStorage(),storageKey,activeRecordAccountId,serialized,lastSavedJsonRef.current,recordVersionRef.current);
+    const cached=writeLocalRecord(recordStorage(),storageKey,activeRecordAccountId,serialized,lastSavedJsonRef.current,recordVersionRef.current);
     if(!cached)throw new Error('本機快取無法寫入，尚未保存計畫；請保留草稿並確認瀏覽器儲存空間');
     if(next!==current){latestSaveRef.current={...latestSaveRef.current,dataset:next,serialized};setData(next);}
     setSaveState('本機已保存計畫；等待背景同步至雲端');
     // Release the form once durable local storage succeeds. Network latency never locks it.
-    void persistCompleteSnapshot(false,'背景同步').catch(handleSaveError);
+    if(demo)demo.update(next); else void persistCompleteSnapshot(false,'背景同步').catch(handleSaveError);
   }
   async function saveStrategies(strategies:any[]) {
     if(!storageReady||!cloudReady||storageConflict)throw new Error('帳本尚未就緒或有同步衝突，請先處理後重試');
@@ -614,7 +641,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   const monthSignal = monthlyReturnSignal(monthReturn.rate);
   const metrics = [
     ["目前總資產", currentEquity.totalUsd == null ? "匯率待更新" : positionMoney(currentEquity.totalUsd), ""],
-    ["總損益（USD等值）", totalUsd == null ? "匯率待更新" : positionMoney(totalUsd), Object.entries(totalPnlByCurrency).map(([currency, value]) => positionMoney(value, currency)).join(" · ")],
+    ["交易損益（USD等值）", totalUsd == null ? "匯率待更新" : positionMoney(totalUsd), Object.entries(totalPnlByCurrency).map(([currency, value]) => positionMoney(value, currency)).join(" · ")],
     ["已實現（USD等值）", realizedUsd == null ? "匯率待更新" : positionMoney(realizedUsd), Object.entries(report.realizedPnlByCurrency as Record<string, number>).map(([currency, value]) => positionMoney(value, currency)).join(" · ")],
     ["完整閉環", report.cycles.length, `${report.positions.length} 個未平倉部位`],
     ["成交紀錄", data.fills.length, `${(data.cashActivities || []).length} 筆資金活動`],
@@ -633,20 +660,22 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
   return <div className="shell">
     <a className="skip-link" href="#workspace-main">跳至主要內容</a>
     <aside className="sidebar">
-      <div className="brand"><span>TR</span><strong>交易復盤顧問</strong></div>
+      <Brand/>
       <button className="mobile-nav-toggle" type="button" aria-expanded={navOpen} aria-controls="primary-navigation" onClick={() => setNavOpen((open) => !open)}><span>{title}</span><span>{navOpen ? "收合導覽 −" : "展開導覽 ＋"}</span></button>
-      <nav id="primary-navigation" className={navOpen ? "is-open" : ""} aria-label="主要導覽">{[["overview", "持倉"], ["cycles", "復盤"], ["performance", "績效"], ["trades", "資料"]].map(([key, label]) => <button key={key} className={navigationTab === key ? "active" : ""} aria-current={navigationTab === key ? "page" : undefined} onClick={() => changePage(key === "cycles" ? "training" : key)}>{label}</button>)}</nav>
-      <div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並自動儲存。</small></div>
-      <div className="local-note">雲端保存完整交易資料與行情快照<br/><b>手動儲存＋每 10 分鐘背景自動儲存</b><small>不會自動寫入 Obsidian；請下載 JSON 另存備份。</small></div>
-      <div className="account-identity"><strong>{user.name}</strong><span>{user.email}</span>{user.authProvider === "sites" && <small>獨立試用帳本 · Google／雲端完整驗收暫停</small>}{user.isOwner && <a href="/admin">系統管理</a>}<button type="button" onClick={() => void logout()}>登出</button></div>
+      <nav id="primary-navigation" className={navOpen ? "is-open" : ""} aria-label="主要導覽">{[["overview", "持倉"], ["cycles", "復盤"], ["performance", "績效"], ["trades", "成交與資金"]].map(([key, label]) => <button key={key} className={navigationTab === key ? "active" : ""} aria-current={navigationTab === key ? "page" : undefined} onClick={() => changePage(key === "cycles" ? "training" : key)}>{label}</button>)}</nav>
+      {!demo&&<><div className="provider"><span>行情來源</span><b>市場行情適配器</b><small>持倉與USDTWD每30秒更新；閉環 OHLC 日線自動同步並自動儲存。</small></div>
+      <div className="local-note">雲端保存完整交易資料與行情快照<br/><b>手動儲存＋每 10 分鐘背景自動儲存</b><small>不會自動寫入 Obsidian；請下載 JSON 另存備份。</small></div></>}
+      <div className="account-identity"><strong>{user.name}</strong><span>{user.email}</span>{user.authProvider === "sites" && <small>獨立試用帳本 · Google／雲端完整驗收暫停</small>}{!demo&&<a href="/settings">帳號設定</a>}{user.isOwner && <a href="/admin">系統管理</a>}<button type="button" onClick={() => void logout()}>{demo?"離開體驗":"登出"}</button></div>
     </aside>
     <main className="content" id="workspace-main" tabIndex={-1}>
-      <header className="topbar"><div><h1>{title}</h1></div><div className="actions"><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => prepareImport(event.target.files?.[0])}/><button className="ghost" disabled={!storageReady} onClick={() => inputRef.current?.click()}>匯入 JSON／CSV</button><button type="button" className="ghost" disabled={!storageReady || !cloudReady || storageConflict || manualSaving} aria-busy={manualSaving} title="將目前帳號的完整資料寫入儲存位置，包含已載入的行情與匯率" onClick={() => void manualSave()}>{manualSaving ? "儲存中…" : "立即儲存"}</button><button className="ghost" disabled={!storageReady} onClick={exportJson}>匯出備份</button><button className="primary" disabled={!storageReady} onClick={openEntry}>新增交易</button></div></header>
+      <header className="topbar"><h1>{title}</h1><div className="actions">{!demo&&<><input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={event=>prepareImport(event.target.files?.[0])}/><details className="workspace-tools"><summary>更多操作</summary><div><button className="ghost" disabled={!storageReady||noLedger} onClick={()=>inputRef.current?.click()}>匯入 JSON／CSV</button><button className="ghost" disabled={!storageReady||noLedger} onClick={exportJson}>匯出備份</button></div></details><button className="ghost" disabled={!storageReady||!cloudReady||noLedger||storageConflict||manualSaving} onClick={()=>void manualSave()}>{manualSaving?'儲存中…':'立即儲存'}</button></>}<button className="primary" disabled={!storageReady||noLedger} onClick={openEntry}>新增交易</button></div></header>
+      {demo&&<div className="demo-banner"><div><strong>訪客練習・離開後重置</strong><span>2026/09/25 合成資料・非即時行情</span></div><button className="ghost" onClick={()=>{if(confirm('重置所有練習，回到原始示範？'))location.reload();}}>重置示範</button><a href="/apply">申請私人帳本</a></div>}
+
       <section className="account-store" aria-label="交易帳號資料庫">
         <div><span>你的交易帳本</span><strong>{activeRecordAccountName}</strong></div>
-        {recordAccounts.length>1 && <label>切換帳本 <select aria-label="切換帳本" value={activeRecordAccountId} disabled={!cloudReady || manualSaving || storageConflict} onChange={async event=>{
+        {!demo&&<button className="ghost" onClick={()=>setManageLedgers(true)}>管理帳本</button>}{recordAccounts.length>1 && <label>切換帳本 <select aria-label="切換帳本" value={activeRecordAccountId} disabled={!cloudReady || manualSaving || storageConflict} onChange={async event=>{
           const id=event.target.value;setManualSaving(true);
-          try { await persistCompleteSnapshot(true,'切換前'); if(completeTradeJson(latestSaveRef.current.dataset)!==lastSavedJsonRef.current) throw new Error('仍有新修改，請稍後再切換'); sessionScope.stop();window.location.assign(`/?accountId=${encodeURIComponent(id)}`); }
+          try { await persistCompleteSnapshot(true,'切換前'); if(completeTradeJson(latestSaveRef.current.dataset)!==lastSavedJsonRef.current) throw new Error('仍有新修改，請稍後再切換'); const selected=await sessionScope.fetch('/api/ledgers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'select',id})});if(!selected.ok)throw new Error('帳本切換未完成');navigateLedger(id); }
           catch(error){setMessage(error instanceof Error?error.message:'切換失敗，已保留目前帳本');setManualSaving(false);}
         }}>{recordAccounts.map(account=><option key={account.id} value={account.id}>{account.name}</option>)}</select></label>}
         <p role="status" aria-live="polite" className={saveFailed ? "save-error" : ""}><span className="save-dot"/> {saveState}</p>
@@ -659,19 +688,21 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
       {storageReady && ["cycles", "strategies", "training"].includes(tab) && <nav className="workspace-subnav" aria-label="復盤工具"><button type="button" aria-current={tab === "training" ? "page" : undefined} onClick={() => changePage("training")}>行為分析</button><button type="button" aria-current={tab === "strategies" ? "page" : undefined} onClick={() => changePage("strategies")}>策略管理</button><button type="button" aria-current={tab === "cycles" ? "page" : undefined} onClick={() => changePage("cycles")}>閉環交易</button></nav>}
       {storageReady && ["trades", "tests"].includes(tab) && <nav className="workspace-subnav" aria-label="資料工具"><button type="button" aria-current={tab === "trades" ? "page" : undefined} onClick={() => changePage("trades")}>成交與資金</button><button type="button" aria-current={tab === "tests" ? "page" : undefined} onClick={() => changePage("tests")}>資料檢查</button></nav>}
       <div id="workspace-content" aria-busy={!storageReady}>
-      {!storageReady ? <div className="workspace-loading" role="status"><span/><span/><span/><p>正在載入交易紀錄…</p></div> : <>
+      {noLedger ? <section className="panel ledger-empty"><h2>建立你的第一份帳本</h2><p>從空白帳本開始，或從回收筒還原。</p><button className="primary" onClick={()=>setManageLedgers(true)}>建立／還原帳本</button></section> : !storageReady ? <div className="workspace-loading" role="status"><span/><span/><span/><p>正在載入交易紀錄…</p></div> : <>
+      {!demo&&onboardingOpen&&tab!=="today"&&<ProductOnboarding onFinish={finishOnboarding}/>}
       {tab === "today" && <TodayWorkspace brief={coachBrief} positionRows={todayPositionRows} cycles={report.cycles} reviews={cycleReviews} totalEquityUsd={currentEquity.totalUsd} qualityPct={report.qualityPct} onboardingOpen={onboardingOpen} experiment={activeExperiment} experimentResult={activeExperimentResult} experimentSuggestion={activeExperiment ? null : coachFindings[0] || null} onGuide={() => setOnboardingOpen(true)} onGuideFinish={finishOnboarding} onStartExperiment={startCoachExperiment} onCompleteExperiment={completeCoachExperiment} onAction={changePage} onPosition={(positionId) => setSelectedPositionId(positionId)} onCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
-      {(tab === "overview" || tab === "positions") && <>
-        <section className="quote-bar"><div><span className="live-dot"/> <b>持倉報價</b><small className={/失敗|無法/.test(quoteState) ? "negative" : ""}>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate" title={fxQuote ? `報價時間：${localDateTime(fxQuote.updatedAt)}` : "尚無匯率資料"}><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "使用上次匯率（待更新）" : "目前匯率" : /失敗|無法/.test(quoteState) ? "缺少匯率" : "正在取得匯率"}</small></div><QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/></section>
+      {(tab === "overview" || tab === "positions") && !data.fills.length && <section className="panel ledger-empty"><h2>{data.cashActivities?.length?'資金已就緒，開始記錄交易':'先登錄資金，建立你的帳本'}</h2><p>入金建立資金基準，成交則記錄實際股數與價格。也可以匯入現有交易紀錄。</p><div className="actions"><button className="primary" onClick={()=>setCashEditor(null)}>新增資金</button><button className="ghost" onClick={openEntry}>新增交易</button>{!demo&&<button className="ghost" onClick={()=>inputRef.current?.click()}>匯入資料</button>}</div></section>}
+      {(tab === "overview" || tab === "positions") && !!data.fills.length && <>
+        <section className="quote-bar"><div><span className="live-dot"/> <b>持倉報價</b><small className={/失敗|無法/.test(quoteState) ? "negative" : ""}>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 ? "good" : "warn"}`} role="status" aria-label={`資料品質 ${report.qualityPct}%`} title={`資料品質 ${report.qualityPct}%`}/></div><div className="fx-rate" title={fxQuote ? `報價時間：${localDateTime(fxQuote.updatedAt)}` : "尚無匯率資料"}><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "使用上次匯率（待更新）" : demo ? "示範匯率" : "目前匯率" : /失敗|無法/.test(quoteState) ? "缺少匯率" : "正在取得匯率"}</small></div>{demo?<small>示範日期 2026/09/25</small>:<QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/>}</section>
         <section className="panel overview-section" id="overview-assets" aria-labelledby="overview-assets-title">
           <header className="overview-section-head"><h2 id="overview-assets-title">資產</h2></header>
           <InfoPopoverGroup><div className="asset-summary-grid">
             <section className="asset-summary-column asset-summary-total">
               <div className="asset-label">目前總資產<InfoPopover label="總資產"><p>現金水位為帳本現金餘額；持倉水位為多單市值與空單市值絕對值合計。總資產以現金＋多單市值－空單市值計算。</p><p>曝險比率＝持倉水位 ÷ 總資產；各交易帳戶共用美元資金池，台幣部位依目前 USDTWD 匯率換算。</p>{currentEquity.totalUsd != null && currentEquity.totalUsd <= 0 && <p>總資產未大於零，曝險比率不適用。</p>}</InfoPopover></div>
-              <strong className="asset-value asset-primary">{metrics[0][1]}</strong><EquityBreakdown equity={currentEquity} compact/>
+              <strong className="asset-value asset-primary">{metrics[0][1]}</strong><EquityBreakdown equity={currentEquity} compact/><button className="text-button" onClick={()=>setCashEditor(null)}>新增資金</button>
             </section>
             <section className="asset-summary-column asset-summary-profits">
-              {metrics.slice(1,3).map(([label,value,hint])=><article key={String(label)}><div className="asset-label">{label}<InfoPopover label={String(label)}><p>{hint}</p><p>{String(label).startsWith("總損益")?"總損益包含已實現及未實現損益。":"已實現損益沿用成交成本與已登錄費用計算。"}台幣依目前匯率換算為美元等值。</p></InfoPopover></div><strong className="asset-value">{value}</strong></article>)}
+              {metrics.slice(1,3).map(([label,value,hint])=><article key={String(label)}><div className="asset-label">{label}<InfoPopover label={String(label)}><p>{hint}</p><p>{String(label).startsWith("交易損益")?"交易損益包含已實現及未實現損益；不含另外登錄的股息、利息與稅費。":"已實現損益沿用成交成本與已登錄費用計算。"}台幣依目前匯率換算為美元等值。</p></InfoPopover></div><strong className="asset-value">{value}</strong></article>)}
             </section>
             <section className="asset-summary-column asset-summary-returns" aria-label="期間報酬率">
               <article className="asset-month-return"><div className="asset-label">當月報酬率<InfoPopover label="當月報酬率"><p>{monthReturn.profitUsd == null?"缺少計算資料":`本月損益 ${positionMoney(monthReturn.profitUsd)}`}</p><p>本月月初至目前，採 Modified Dietz 加權估算，排除入出金本金並考慮投入時間；台幣沿用目前匯率，不含匯率變動報酬。</p><p>超過 +30% 紫色；≤ −5% 橘色、≤ −8% 紅色、≤ −10% 深紅色；其餘為綠色，缺資料為灰色。依未四捨五入數值判斷。</p>{monthReturn.problems.map((problem:string)=><p key={problem}>{problem}</p>)}</InfoPopover></div><div className="monthly-return-value"><strong className={`asset-value asset-primary ${monthReturn.rate==null?"muted":monthReturn.rate>=0?"positive":"negative"}`}>{pct(monthReturn.rate)}</strong><span className={`monthly-return-light ${monthSignal.tone}`} role="img" aria-label={monthSignal.label} title={monthSignal.label}/></div>{monthReturn.rate==null&&<small>缺少計算資料</small>}</article>
@@ -691,7 +722,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
           <header className="overview-section-head"><h2 id="overview-holdings-title">持倉</h2><div className="holdings-color-switch" role="group" aria-label="持倉漲跌配色">{(["green-up","red-up"] as const).map(scheme=><button key={scheme} type="button" disabled={!storageReady || !cloudReady || storageConflict} aria-pressed={normalizeHoldingsColorScheme(data.settings.holdingsColorScheme)===scheme} onClick={()=>{
             const next={...latestSaveRef.current.dataset,settings:{...latestSaveRef.current.dataset.settings,holdingsColorScheme:scheme}};
             const serialized=durableDatasetJson(next);
-            if(!writeLocalRecord(browserRecordStorage(),storageKey,activeRecordAccountId,serialized,lastSavedJsonRef.current,recordVersionRef.current)){setSaveState("配色尚未保存：本機快取無法寫入，請重試");return;}
+            if(!writeLocalRecord(recordStorage(),storageKey,activeRecordAccountId,serialized,lastSavedJsonRef.current,recordVersionRef.current)){setSaveState("配色尚未保存：本機快取無法寫入，請重試");return;}
             latestSaveRef.current={...latestSaveRef.current,dataset:next,serialized};setData(next);
             setSaveState("配色已保存至本機；將隨每 10 分鐘背景同步，可按立即儲存");
           }}>{scheme==="green-up"?"綠漲紅跌":"紅漲綠跌"}</button>)}</div></header>
@@ -704,7 +735,7 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
       </>}
       {tab === "entry" && (data.entryDraft ? <TradeEntryWorkspace key={activeRecordAccountId} data={data} draft={data.entryDraft} quotes={quotes} onChange={(patch) => setData((current) => current.entryDraft?.id === data.entryDraft?.id ? ({ ...current, entryDraft: { ...current.entryDraft, ...patch } }) : current)} onSubmit={submitEntry} onBack={() => changePage("overview")}/> : <div className="panel"><p>這個帳號沒有待填草稿。</p><button className="primary" onClick={openEntry}>開始登錄成交</button></div>)}
       {tab === "performance" && <PerformanceWorkspace key={activeRecordAccountId} cacheKey={`${user.id}:${activeRecordAccountId}`} data={{fills:data.fills,cashActivities:data.cashActivities}} fetcher={sessionScope.fetch}/>}
-      {tab === "trades" && <><div className="ledger-switch" role="group" aria-label="帳本內容"><button type="button" aria-pressed={ledgerTab === "fills"} onClick={() => setLedgerTab("fills")}>成交紀錄 <span>{data.fills.length}</span></button><button type="button" aria-pressed={ledgerTab === "cash"} onClick={() => setLedgerTab("cash")}>資金活動 <span>{(data.cashActivities || []).length}</span></button></div>{ledgerTab === "fills" ? <section className="panel"><div className="panel-head"><div><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><div className="table-wrap" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="fills-table"><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th>操作</th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{fill.timestamp.slice(0, 10)}</td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section> : <CashLedger activities={data.cashActivities || []} accounts={data.accounts}/>}</>}
+      {tab === "trades" && <><div className="ledger-switch" role="group" aria-label="帳本內容"><button type="button" aria-pressed={ledgerTab === "fills"} onClick={() => setLedgerTab("fills")}>成交紀錄 <span>{data.fills.length}</span></button><button type="button" aria-pressed={ledgerTab === "cash"} onClick={() => setLedgerTab("cash")}>資金活動 <span>{(data.cashActivities || []).length}</span></button></div>{ledgerTab === "fills" ? <section className="panel"><div className="panel-head"><div><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><div className="table-wrap" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="fills-table"><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th>操作</th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{fill.timestamp.slice(0, 10)}</td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section> : <CashLedger activities={data.cashActivities || []} accounts={data.accounts} onAdd={()=>setCashEditor(null)} onEdit={setCashEditor} onDelete={row=>saveCashRows({...latestSaveRef.current.dataset,cashActivities:(latestSaveRef.current.dataset.cashActivities||[]).filter(a=>a.id!==row.id)})} onRestore={row=>saveCashRows(updateCashActivity(latestSaveRef.current.dataset,row) as Dataset)}/>}</>}
       {tab === "cycles" && <><WeeklyCyclePanel stats={weeklyCycleSummaries}/><CycleTable cycles={report.cycles} title="全部交易閉環" historyState={cycleHistoryState} onRefresh={() => setCycleHistoryRefresh((value) => value + 1)} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/></>}
       {tab === "strategies" && <StrategyWorkspace strategies={data.strategies || []} assignments={data.strategyAssignments || {}} cycles={report.cycles} fxRate={fxRate} entryContexts={data.entryContexts||{}} onStrategiesChange={saveStrategies} onDirtyChange={dirty=>{strategyDirtyRef.current=dirty;}} onSelectCycle={setSelectedCycleId}/>}
       {tab === "training" && <TrainingWorkspace key={activeRecordAccountId} accountId={activeRecordAccountId} dataset={data} fetchHistory={sessionScope.fetch} cycles={report.cycles} marketBars={data.marketBars} reviews={cycleReviews} fxRate={fxRate} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} entryContexts={data.entryContexts || {}} onSelectCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
@@ -712,6 +743,8 @@ export default function TradeWorkspace({ user, requestedAccountId, storageTarget
       </>}
       </div>
     </main>
+    {manageLedgers&&!demo&&<LedgerManager fetcher={sessionScope.fetch} beforeChange={beforeLedgerChange} onChanged={navigateLedger} onClose={()=>setManageLedgers(false)}/>}
+    {cashEditor!==undefined&&<CashEditor activity={cashEditor||undefined} now={demo?.now} accounts={data.accounts} onSave={row=>saveCashRows(updateCashActivity(latestSaveRef.current.dataset,row) as Dataset)} onClose={()=>setCashEditor(undefined)}/>}
     {pendingImport && <DialogFrame label="匯入資料確認" onClose={() => setPendingImport(null)}><div className="modal import-modal"><div className="panel-head dialog-header"><div><h2>確認匯入資料</h2></div><button type="button" className="close" aria-label="關閉視窗" onClick={() => setPendingImport(null)}>×</button></div><p className="modal-copy">確認後將取代目前交易帳號的帳本，並沿用現有自動儲存流程。請先確認帳號與備份；取消不會修改資料。</p><div className="import-summary"><article><span>格式</span><b>{pendingImport.kind}</b><small>{pendingImport.fileName}</small></article><article><span>成交</span><b>{pendingImport.dataset.fills.length}</b><small>{pendingImport.duplicateCount} 筆與目前ID相同</small></article><article><span>資金活動</span><b>{(pendingImport.dataset.cashActivities || []).length}</b><small>{(pendingImport.dataset.cashActivities || []).filter((activity) => activity.requiresReview).length} 筆待指定幣別</small></article><article><span>行情日線</span><b>{pendingImport.dataset.marketBars.length}</b><small>CSV會保留可匹配的既有日線</small></article></div>{(pendingImport.dataset.cashActivities || []).some((activity) => activity.requiresReview) && <label className="cash-choice">待確認資金活動幣別<select value={cashCurrency} onChange={(event) => setCashCurrency(event.target.value)}><option value="USD">USD 美元</option><option value="TWD">TWD 台幣</option></select></label>}{pendingImport.warnings.length > 0 && <div className="import-warnings"><b>資料提醒</b>{pendingImport.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<div className="modal-actions"><button type="button" className="ghost" onClick={() => setPendingImport(null)}>取消</button><button type="button" className="primary" onClick={confirmImport}>確認匯入並取代</button></div></div></DialogFrame>}
     {selectedCycle && <CycleReviewDialog entryContexts={data.entryContexts || {}} cycle={selectedCycle} marketBars={data.marketBars} review={cycleReviews[selectedCycle.id] || {}} planHistory={data.planHistory || []} rapidPairs={rapidRepurchases} cycles={report.cycles} decisionLinks={data.decisionLinks || {}} decisionLinkHistory={data.decisionLinkHistory || []} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} onAssignStrategy={assignStrategy} onStrategyCheck={updateStrategyAudit} onStageReview={updateStageReview} onAddPlanVersion={addPlanVersion} onReviewChange={updateCycleReview} onToggleDecisionLink={toggleDecisionLink} onClose={() => setSelectedCycleId(null)}/>}
     {selectedPosition && <OpenPositionDetail data={data} entryContexts={data.entryContexts || {}} key={`${selectedPosition.id}:${positionEventId || "latest"}`} initialEventId={positionEventId} position={selectedPosition} plan={positionPlanFor(data.positionPlans || {}, selectedPosition)} marketBars={data.marketBars} planHistory={data.planHistory || []} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} onAssignStrategy={assignStrategy} onStrategyCheck={updateStrategyAudit} onStageReview={updateStageReview} onAddPlanVersion={addPlanVersion} onSavePlan={savePositionPlan} onOpenAnalysis={() => { setSelectedPositionId(null); setTab("training"); }} onClose={() => setSelectedPositionId(null)}/>}
@@ -772,7 +805,8 @@ function PositionsPanel({ positions, quotes, plans, accounts, totalAssetUsd, fxR
 }
 
 function TradeMetrics({ cycles, monthKey, fxRate, onSelect }: { cycles: any[]; monthKey: string; fxRate: number | null; onSelect: (cycle: any) => void }) {
-  const [requestedScope, setScope] = useState("month");
+  const demo=useDemoRuntime();
+  const [requestedScope, setScope] = useState(demo?"all":"month");
   const scope = requestedScope === "all" || requestedScope === "year" ? requestedScope : "month";
   const [selection, setSelection] = useState<{ year?: string; month?: string }>({});
   const selectedYear = selection.year ?? monthKey.slice(0, 4);
@@ -823,7 +857,6 @@ function MonthScorecard({ score }: { score: MonthScore }) {
   </article>;
 }
 
-function CashLedger({ activities, accounts }: { activities: CashActivity[]; accounts: Dataset["accounts"] }) { const accountNames = Object.fromEntries(accounts.map((account) => [account.id, account.name])); return <section className="panel"><div className="panel-head"><div><h2>資金活動帳本</h2></div><span className="muted">不計入交易損益</span></div>{activities.length ? <div className="table-wrap" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="cash-table"><thead><tr><th>日期</th><th>類型</th><th>帳戶</th><th>金額</th><th>狀態</th><th>來源／備註</th></tr></thead><tbody>{[...activities].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((activity) => <tr key={activity.id}><td>{activity.timestamp.slice(0, 10)}</td><td>{activity.type === "DEPOSIT" ? "入金" : activity.type === "WITHDRAWAL" ? "提款" : activity.type === "FEE" ? "稅費" : activity.type}</td><td>{activity.accountId ? accountNames[activity.accountId] || activity.accountId : "待指定"}</td><td>{activity.currency ? money(activity.amount, activity.currency) : activity.amount.toLocaleString("zh-TW")}</td><td><span className={activity.requiresReview ? "status warn" : "status ok"}>{activity.requiresReview ? "待確認" : "已確認"}</span></td><td>{activity.note || activity.source || "本機資料"}</td></tr>)}</tbody></table></div> : <Empty text="尚無入金、出金或其他資金活動"/>}</section>; }
 function WeeklyCyclePanel({ stats }: { stats: any[] }) {
  const scrollRef=useRef<HTMLDivElement>(null);
  useEffect(()=>{

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+import {useDemoRuntime} from './demo-context';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildReviewLedgerMetrics, reviewHistoryRequests } from "@/lib/review-ledger.mjs";
 import { reviewCacheKey, scopedReviewMetrics, validReviewCache, REVIEW_CACHE_VERSION } from "@/lib/review-cache.mjs";
@@ -23,6 +24,7 @@ const signedPct = (value: number | null) => value == null ? "—" : `${value >= 
 const label = (value: string, entry: boolean) => (entry ? ENTRY_QUALITY_TAGS : PROFIT_EXIT_QUALITY_TAGS).find(tag => tag.value === value)?.label || "未評";
 
 export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, lossSampleCycles, trades, fetchHistory, onSelectCycle }: { accountId?: string; allCycles?: any[]; dataset: any; cycles: any[]; lossSampleCycles: any[]; trades: any[]; fetchHistory: typeof fetch; onSelectCycle: (id: string) => void }) {
+  const demo=useDemoRuntime();
   const [order, setOrder] = useState<ColumnId[]>(defaultOrder);
   const [dragging, setDragging] = useState<ColumnId | null>(null);
   const [target, setTarget] = useState<ColumnId | null>(null);
@@ -30,7 +32,7 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
   const drag = useRef<{ id: ColumnId; x: number; moved: boolean } | null>(null);
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(orderKey) || "null");
+      const saved = JSON.parse((demo?.storage||localStorage).getItem(orderKey) || "null");
       if (Array.isArray(saved)) {
         const valid = [...new Set(saved.filter((id): id is ColumnId => defaultOrder.includes(id)))];
         // Hydrate browser-only preferences after SSR without changing server markup.
@@ -39,10 +41,10 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
         setOrder(valid);
       }
     } catch { /* Unavailable or invalid storage uses the default order. */ }
-  }, []);
+  }, [demo?.storage]);
   function saveOrder(next: ColumnId[], message: string) {
     setOrder(next);
-    try { localStorage.setItem(orderKey, JSON.stringify(next)); setAnnouncement(message); }
+    try { (demo?.storage||localStorage).setItem(orderKey, JSON.stringify(next)); setAnnouncement(message); }
     catch { setAnnouncement(`${message}；瀏覽器無法保存設定，本次頁面仍可使用。`); }
   }
   function moveColumn(id: ColumnId, destination: ColumnId) {

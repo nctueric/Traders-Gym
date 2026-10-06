@@ -1,8 +1,10 @@
+import { createResendMailer } from '@/lib/email-auth.mjs';
+import { createMixedAuthenticator } from "@/lib/mixed-auth.mjs";
 import { requireSitesTrialUser } from "@/lib/sites-trial-auth.mjs";
 import { env } from "cloudflare:workers";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { authError, json, requireSession } from "@/lib/auth-core.mjs";
+import { authError, json } from "@/lib/auth-core.mjs";
 import { createAccountApi } from "@/lib/account-api.mjs";
 import { createPasswordAuth } from "@/lib/password-auth.mjs";
 
@@ -22,8 +24,8 @@ export async function apiUser(request: Request, owner = false): Promise<AccountU
     return payload.user;
   }
   if (!env.DB) throw authError("帳號服務尚未設定", 503);
-  if (env.PERSONAL_PASSWORD_LOGIN === "true") return passwordAuth().authenticate(request, { owner });
-  return env.SITES_TRIAL_AUTH === "true" ? requireSitesTrialUser(env.DB, request) : requireSession(env.DB, request, { owner });
+  if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return requireSitesTrialUser(env.DB, request);
+  return createMixedAuthenticator(env.DB, env.PERSONAL_PASSWORD_LOGIN === "true" ? passwordAuth() : null)(request, { owner });
 }
 export async function pageUser(owner = false) {
   const incoming = await headers();
@@ -39,12 +41,10 @@ export async function pageUser(owner = false) {
 }
 export async function accountHandler(request: Request) {
   if (!env.DB) return json({ error: "帳號服務尚未設定" }, 503);
-  if (env.PERSONAL_PASSWORD_LOGIN === "true") {
-    const auth = passwordAuth();
-    if (new URL(request.url).pathname === "/api/auth/password") return auth.login(request);
-    return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: "", trial: true, authenticate: auth.authenticate }).handle(request);
-  }
-  return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: String(env.GOOGLE_CLIENT_ID || ""), ...(env.SITES_TRIAL_AUTH === "true" ? { trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) } : {}) }).handle(request);
+  if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: "", trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) }).handle(request);
+  const password = env.PERSONAL_PASSWORD_LOGIN === "true" ? passwordAuth() : null;
+  return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, clientId: String(env.GOOGLE_CLIENT_ID || ""), authenticate: createMixedAuthenticator(env.DB, password),
+    accessOptions: { openGoogleLogin: env.OPEN_GOOGLE_LOGIN === "true", password, sendMail:createResendMailer({apiKey:String(env.RESEND_API_KEY || ''),from:String(env.EMAIL_FROM || 'TraderGym <no-reply@tradergym.app>')}), origin:String(env.APP_ORIGIN || ''), ownerEmail: String(env.PERSONAL_LOGIN_EMAIL || ""), applicationsOpen: env.APPLICATIONS_OPEN === "true" } }).handle(request);
 }
 export async function rejectAnonymous(request: Request) {
   try { await apiUser(request); return null; }

@@ -11,7 +11,7 @@ const result = await build({
   configFile: false, root, logLevel: "warn",
   resolve: { alias: { "@": root } },
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
-  build: { write: false, lib: { entry: root + "tests/ui-fixture.tsx", formats: ["es"], fileName: "fixture", cssFileName: "fixture" } },
+  build: { write: false, lib: { entry: root + (process.env.MEMBER_UI_FIXTURE === "true" ? "tests/member-ui-fixture.tsx" : "tests/ui-fixture.tsx"), formats: ["es"], fileName: "fixture", cssFileName: "fixture" } },
 });
 const output = result.output || result[0].output;
 const assets = new Map(output.map(item => ["/" + item.fileName, item.type === "chunk" ? item.code : item.source]));

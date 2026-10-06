@@ -1,8 +1,8 @@
-# 交易復盤顧問 v2.3.0
+# TraderGym v2.4.0
 
 投資組合績效回顧、持倉風險與集中式交易登錄。歷史績效支援 QQQ／SPY 同期比較，交易登錄與複盤共用 K 線互動。
 
-正式服務部署於 [Cloudflare Workers](https://traders-gym.nctueric.workers.dev)，沿用個人密碼登入及 D1／私人 R2 保存。詳見 [v2.3.0 版本說明](docs/releases/v2.3.0.md)。本機私人帳本及登入設定不隨程式發布。
+正式服務部署於 [Cloudflare Workers](https://tradergym.app)，支援 Google 主要登入、Mail 備援及 D1／私人 R2 保存。詳見 [v2.4.0 版本說明](docs/releases/v2.4.0.md)。本機私人帳本及登入設定不隨程式發布。
 
 ## 功能
 

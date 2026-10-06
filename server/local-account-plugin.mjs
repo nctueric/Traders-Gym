@@ -1,15 +1,16 @@
+import { createResendMailer } from '../lib/email-auth.mjs';
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createPasswordAuth } from "../lib/password-auth.mjs";
-import { requireSession } from "../lib/auth-core.mjs";
+import { createMixedAuthenticator } from "../lib/mixed-auth.mjs";
 import { reviewCacheHandler } from "../lib/review-cache-api.mjs";
 import { join } from "node:path";
 import { createAccountApi } from "../lib/account-api.mjs";
 import { sqliteAdapter } from "./sqlite-adapter.mjs";
 import { createLocalRecordStore } from "./local-record-store.mjs";
 
-export function localAccountPlugin({ directory, clientId = "", migrations, personalEmail = "", passwordHash = "" }) {
+export function localAccountPlugin({ directory, clientId = "", migrations, personalEmail = "", passwordHash = "", applicationsOpen = false, openGoogleLogin = false, mailPreview = false, resendApiKey = "" }) {
   return { name: "traders-gym-local-accounts", apply: "serve", enforce: "pre", configureServer(server) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const sqlite = new DatabaseSync(join(directory, "accounts.sqlite"));
@@ -22,8 +23,9 @@ export function localAccountPlugin({ directory, clientId = "", migrations, perso
     }
     const db = sqliteAdapter(sqlite);
     const password = personalEmail && passwordHash ? createPasswordAuth({db,email:personalEmail,passwordHash}) : null;
-    const authenticate = password ? password.authenticate : (request, options) => requireSession(db,request,options);
-    const api = createAccountApi({ db, clientId, files: createLocalRecordStore(directory), ...(password ? {trial:true,authenticate} : {}) });
+    const authenticate = createMixedAuthenticator(db, password);
+    const sendMail=mailPreview ? async message=>{await mkdir(join(directory,'mail-preview'),{recursive:true,mode:0o700});await writeFile(join(directory,'mail-preview',crypto.randomUUID()+'.json'),JSON.stringify(message),{mode:0o600});} : createResendMailer({apiKey:resendApiKey});
+    const api = createAccountApi({ db, clientId, files: createLocalRecordStore(directory), authenticate, accessOptions: { sendMail, password, ownerEmail: personalEmail, applicationsOpen, openGoogleLogin } });
     const cacheDir = join(directory,"估值快取");
     const objects = {
       async get(key) {try {const saved=JSON.parse(await readFile(join(cacheDir,encodeURIComponent(key)+".json"),"utf8"));return {body:saved.body,customMetadata:saved.customMetadata};}catch(e){if(e.code==='ENOENT')return null;throw e;}},
@@ -32,7 +34,7 @@ export function localAccountPlugin({ directory, clientId = "", migrations, perso
     server.httpServer?.once("close", () => sqlite.close());
     server.middlewares.use(async (req, res, next) => {
       const path = (req.url || "").split("?")[0];
-      if (!(path === "/api/review-valuations" || path === "/api/trade-records" || path.startsWith("/api/auth/") || path.startsWith("/api/admin/"))) return next();
+      if (!(path === "/api/ledgers" || path === "/api/review-valuations" || path === "/api/trade-records" || path.startsWith("/api/auth/") || path.startsWith("/api/admin/"))) return next();
       try {
         const host = req.headers.host || "";
         if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) { res.writeHead(403); res.end(); return; }
@@ -42,9 +44,10 @@ export function localAccountPlugin({ directory, clientId = "", migrations, perso
         const headers = new Headers();
         for (const [key, value] of Object.entries(req.headers)) if (value != null) headers.set(key, Array.isArray(value) ? value.join(",") : value);
         const request = new Request(`http://${host}${req.url}`, { method: req.method, headers, ...(chunks.length ? { body: Buffer.concat(chunks) } : {}) });
-        const response = path === "/api/auth/password" && password ? await password.login(request) : path === "/api/review-valuations" ? await reviewCacheHandler(request,{db,objects,authenticate}) : await api.handle(request);
+        const response = path === "/api/review-valuations" ? await reviewCacheHandler(request,{db,objects,authenticate}) : await api.handle(request);
         res.statusCode = response.status;
-        response.headers.forEach((value, key) => res.setHeader(key, value));
+        response.headers.forEach((value, key) => { if (key !== "set-cookie") res.setHeader(key, value); });
+        if (response.headers.getSetCookie().length) res.setHeader("set-cookie", response.headers.getSetCookie());
         res.end(Buffer.from(await response.arrayBuffer()));
       } catch { res.writeHead(500, { "Cache-Control": "no-store" }); res.end(JSON.stringify({ error: "本機帳號服務暫時無法使用" })); }
     });

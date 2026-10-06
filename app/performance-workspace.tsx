@@ -1,4 +1,5 @@
 "use client";
+import {useDemoRuntime} from './demo-context';
 import {startTransition,useEffect,useMemo,useRef,useState} from 'react';
 import {buildPerformanceDaily,performanceRange} from '@/lib/performance-engine.mjs';
 import {loadPerformanceHistory,performanceRequests} from '@/lib/performance-history.mjs';
@@ -46,21 +47,22 @@ function MonthChart({months,visible}:{months:Month[];visible:Series[]}){
  {months.map((m,i)=>{const center=left+(width-left-12)*(i+.5)/months.length;return <g key={m.month}>{visible.map((k,j)=>{const v=m[k],x=center+(j-(visible.length-1)/2)*17-7,label=`${m.month}${m.partial?'（部分期間）':''} ${names[k]} ${v==null?'資料不足':percent(v)}`;return <g key={k} tabIndex={0} aria-label={label} onFocus={()=>setHint(label)} onBlur={()=>setHint('')} onPointerEnter={()=>setHint(label)} onClick={()=>setHint(label)}><rect x={x} y={top} width="15" height={plot} fill="transparent"/>{v==null?<text x={x+7} y={y(0)-3} textAnchor="middle">—</text>:<rect x={x} y={Math.min(y(0),y(v))} width="14" height={Math.max(1,Math.abs(y(v)-y(0)))} fill={colors[k]}/>}</g>;})}<text x={center} y={height-18} textAnchor="middle">{m.month.slice(2)}{m.partial?'＊':''}</text></g>;})}</svg></div></div>;
 }
 export function PerformanceWorkspace({data,cacheKey,fetcher}:{data:object;cacheKey:string;fetcher:typeof fetch}){
- const sourceKey=JSON.stringify(data);const source=useMemo(()=>JSON.parse(sourceKey),[sourceKey]);const targetKey=JSON.stringify(performanceRequests(source));
+ const demo=useDemoRuntime();const [asOf]=useState(()=>new Date(demo?.now||Date.now()));
+ const sourceKey=JSON.stringify(data);const source=useMemo(()=>JSON.parse(sourceKey),[sourceKey]);const targetKey=JSON.stringify(performanceRequests(source,asOf));
  const [history,setHistory]=useState<Awaited<ReturnType<typeof loadPerformanceHistory>>|null>(null),[status,setStatus]=useState('準備歷史資料…'),[retry,setRetry]=useState(0);
  const [dataOpen,setDataOpen]=useState(false),[dataPage,setDataPage]=useState(0);
  const [scope,setScope]=useState('all'),[custom,setCustom]=useState({start:'',end:''}),[selected,setSelected]=useState<number|null>(null),[visible,setVisible]=useState<Series[]>(keys),[ddEtfs,setDdEtfs]=useState(false),[year,setYear]=useState('recent');
  useEffect(()=>{
   const controller=new AbortController();const storageKey='performance-history-v1:'+cacheKey;
-  const load=async()=>{let saved=null;try{saved=JSON.parse(localStorage.getItem(storageKey)||'null');if(saved?.version!==1)saved=null;}catch{saved=null;}
+  const load=async()=>{let saved=null;try{saved=JSON.parse((demo?.storage||localStorage).getItem(storageKey)||'null');if(saved?.version!==1)saved=null;}catch{saved=null;}
    startTransition(()=>{setStatus('正在補齊歷史資料…');setHistory(null);setSelected(null);});
    try{const result=await loadPerformanceHistory(JSON.parse(targetKey),saved,fetcher,controller.signal,(done:number,total:number)=>{if(!controller.signal.aborted)startTransition(()=>setStatus(`讀取歷史資料 ${done}／${total}`));});if(controller.signal.aborted)return;
-    let cacheWarning='';try{localStorage.setItem(storageKey,JSON.stringify(result.cache));}catch{cacheWarning='；本機快取空間不足，下次將重新讀取';}
+    let cacheWarning='';try{(demo?.storage||localStorage).setItem(storageKey,JSON.stringify(result.cache));}catch{cacheWarning='；本機快取空間不足，下次將重新讀取';}
     startTransition(()=>{setHistory(result);setStatus((result.errors.length?`${result.errors.length} 個行情區間待補`:'歷史資料已就緒')+cacheWarning);});
    }catch{if(!controller.signal.aborted)startTransition(()=>setStatus('歷史資料讀取失敗，請重試'));}
   };load();return()=>controller.abort();
- },[cacheKey,targetKey,fetcher,retry]);
- const daily=useMemo(()=>buildPerformanceDaily(source,history?.cache),[source,history]);
+ },[cacheKey,targetKey,fetcher,retry,demo]);
+ const daily=useMemo(()=>buildPerformanceDaily(source,history?.cache,asOf),[source,history,asOf]);
  const bounds=useMemo(()=>{const end=daily.end;let start=daily.start||end;if(scope==='custom')return {start:custom.start||start,end:custom.end||end};if(scope==='ytd')start=end.slice(0,4)+'-01-01';if(scope==='1y'||scope==='3y'){const d=new Date(end);d.setUTCFullYear(d.getUTCFullYear()-(scope==='1y'?1:3));start=d.toISOString().slice(0,10);}return {start:daily.start&&start<daily.start?daily.start:start,end};},[daily,scope,custom]);
  const result=useMemo(()=>performanceRange(daily,bounds.start,bounds.end) as unknown as Range,[daily,bounds]);
  const rows=result.points,selectedPoint=selected==null?null:rows[selected],validRange=bounds.start<=bounds.end;

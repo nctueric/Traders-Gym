@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import {useDemoRuntime} from './demo-context';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {ReplayCanvas,EMA_STYLE} from './replay-canvas';
 import {InfoPopover} from './info-popover';
@@ -10,9 +11,10 @@ import {toProviderSymbol,USDTWD_SYMBOL} from '@/lib/quote-engine.mjs';
 const shift=(day:string,days:number)=>new Date(Date.parse(day+'T12:00:00Z')+days*86400000).toISOString().slice(0,10);
 const n=(v:any)=>v==null?'—':Number(v).toLocaleString('en-US',{maximumFractionDigits:4});
 export function useEntryMarket(draft:any,data:any,quotes:any) {
+ const demo=useDemoRuntime(); const fetcher=demo?.fetcher || fetch;
  const symbol=String(draft.symbol||'').trim().toUpperCase(),day=marketDate(draft.timestamp,draft.market);
  const identity=`${draft.id}:${draft.accountId}:${draft.market}:${symbol}:${day}`;
- const [clock,setClock]=useState(()=>new Date()),[latest,setLatest]=useState(false),[months,setMonths]=useState(3),[revision,setRevision]=useState(0);
+ const [clock,setClock]=useState(()=>new Date(demo?.now||Date.now())),[latest,setLatest]=useState(false),[months,setMonths]=useState(3),[revision,setRevision]=useState(0);
  const today=marketDate(clock.toISOString(),draft.market),historical=!!day&&day<today;
  const end=historical&&!latest?(shift(day,90)<today?shift(day,90):today):today;
  const start=shift(historical&&!latest?day:end,-months*31);
@@ -23,12 +25,12 @@ export function useEntryMarket(draft:any,data:any,quotes:any) {
   const abort=new AbortController(),provider=toProviderSymbol(symbol,draft.market);
   let busy=false,loaded=false;
   const run=async()=>{
-   if(document.hidden||busy||abort.signal.aborted)return;busy=true;setClock(new Date());
+   if(document.hidden||busy||abort.signal.aborted)return;busy=true;setClock(new Date(demo?.now||Date.now()));
    setState((old:any)=>({...old,status:'更新行情中…'}));
-   const request=async(url:string)=>{const response=await fetch(url,{signal:AbortSignal.any([abort.signal,AbortSignal.timeout(20000)])});const body=await response.json();if(!response.ok)throw new Error(body.error||'行情讀取失敗');return body;};
+   const request=async(url:string)=>{const response=await fetcher(url,{signal:AbortSignal.any([abort.signal,AbortSignal.timeout(20000)])});const body=await response.json();if(!response.ok)throw new Error(body.error||'行情讀取失敗');return body;};
    try {
     const query=new URLSearchParams({symbol:provider,datasetSymbol:symbol,mode:'ohlc',start:emaWarmupStart(start),end});
-    const liveQuery=new URLSearchParams({symbol:provider,datasetSymbol:symbol,mode:'ohlc',start:shift(marketDate(new Date().toISOString(),draft.market),-7),end:marketDate(new Date().toISOString(),draft.market),live:'true'});
+    const liveQuery=new URLSearchParams({symbol:provider,datasetSymbol:symbol,mode:'ohlc',start:shift(marketDate(new Date(demo?.now||Date.now()).toISOString(),draft.market),-7),end:marketDate(new Date(demo?.now||Date.now()).toISOString(),draft.market),live:'true'});
     const jobs=await Promise.allSettled([loaded?Promise.resolve(null):request('/api/history?'+query),request('/api/history?'+liveQuery),request('/api/quotes?symbols='+encodeURIComponent(provider+','+USDTWD_SYMBOL))]);
     if(abort.signal.aborted)return;
     const history=jobs[0].status==='fulfilled'?jobs[0].value:null,live=jobs[1].status==='fulfilled'?jobs[1].value:null,quote=jobs[2].status==='fulfilled'?jobs[2].value:null;
@@ -37,7 +39,7 @@ export function useEntryMarket(draft:any,data:any,quotes:any) {
      const previous=old.identity===identity?old:{bars:refs.current.data.marketBars||[],quotes:refs.current.quotes};
      const bars=[...new Map([...previous.bars,...(history?.bars||[]),...(live?.bars||[])].filter((b:any)=>b.symbol===symbol).map((b:any)=>[b.date,b])).values()];
      const incomplete=jobs.some(j=>j.status==='rejected')||!bars.length||!quote?.quotes?.some((q:any)=>q.symbol===provider);
-     return {identity,bars,quotes:{...refs.current.quotes,...previous.quotes,...Object.fromEntries((quote?.quotes||[]).map((q:any)=>[q.symbol,q]))},live:live?.live||previous.live,source:live?.source||history?.source||previous.source,fetchedAt:new Date().toISOString(),status:incomplete?'部分行情未取得；保留上次資料，可重試':'每 30 秒更新・行情可能延遲'};
+     return {identity,bars,quotes:{...refs.current.quotes,...previous.quotes,...Object.fromEntries((quote?.quotes||[]).map((q:any)=>[q.symbol,q]))},live:live?.live||previous.live,source:live?.source||history?.source||previous.source,fetchedAt:new Date(demo?.now||Date.now()).toISOString(),status:incomplete?'部分行情未取得；保留上次資料，可重試':demo?'合成示範行情・非即時':'每 30 秒更新・行情可能延遲'};
     });
    }catch {if(!abort.signal.aborted)setState((old:any)=>({...old,status:'行情更新失敗，可重試'}));}
    finally {busy=false;}
@@ -45,7 +47,7 @@ export function useEntryMarket(draft:any,data:any,quotes:any) {
   const timer=window.setTimeout(()=>void run(),400),interval=window.setInterval(()=>void run(),30000);
   const visible=()=>{if(!document.hidden)void run();};document.addEventListener('visibilitychange',visible);
   return()=>{abort.abort();window.clearTimeout(timer);window.clearInterval(interval);document.removeEventListener('visibilitychange',visible);};
- },[identity,symbol,day,draft.market,start,end,revision]);
+ },[identity,symbol,day,draft.market,start,end,revision,demo,fetcher]);
  const current=state.identity===identity?state:{identity,bars:(data.marketBars||[]).filter((b:any)=>b.symbol===symbol),quotes,live:null,status:symbol?'行情載入中…':'請先輸入標的'};
  return {...current,identity,symbol,start,end,day,today,historical,latest,months,setMonths,setLatest,refresh:()=>setRevision(v=>v+1)};
 }

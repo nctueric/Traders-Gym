@@ -56,12 +56,12 @@ export default defineConfig(async ({ command, mode }) => {
         : {}),
     },
     plugins: [
-      localAccountPlugin({ personalEmail: settings.LOCAL_PERSONAL_EMAIL || "", passwordHash: Buffer.from(settings.LOCAL_PASSWORD_HASH_BASE64 || "", "base64").toString("utf8"), directory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
+      localAccountPlugin({ openGoogleLogin:settings.OPEN_GOOGLE_LOGIN === "true", mailPreview:settings.LOCAL_MAIL_PREVIEW === "true", resendApiKey:settings.RESEND_API_KEY || "", applicationsOpen: settings.APPLICATIONS_OPEN === "true", personalEmail: settings.LOCAL_PERSONAL_EMAIL || "", passwordHash: Buffer.from(settings.LOCAL_PASSWORD_HASH_BASE64 || "", "base64").toString("utf8"), directory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
       vinext(),
       sites(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: { ...localBindingConfig, ...(command === "serve" ? { vars: { LOCAL_ACCOUNT_SERVICE: "true", PERSONAL_PASSWORD_LOGIN: settings.LOCAL_PERSONAL_EMAIL ? "true" : "false", GOOGLE_CLIENT_ID: googleClientId } } : {}) },
+        config: { ...localBindingConfig, ...(command === "serve" ? { vars: { LOCAL_ACCOUNT_SERVICE: "true", PERSONAL_PASSWORD_LOGIN: settings.LOCAL_PERSONAL_EMAIL ? "true" : "false", GOOGLE_CLIENT_ID: googleClientId, APPLICATIONS_OPEN: settings.APPLICATIONS_OPEN || "false" } } : {}) },
         inspectorPort: false,
       }),
     ],

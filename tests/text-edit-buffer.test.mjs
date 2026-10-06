@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createTextEditBuffer} from '../lib/text-edit-buffer.mjs';
+function fixture(){const saved=[],tasks=new Map();let id=0;const buffer=createTextEditBuffer('',value=>saved.push(value),{schedule:fn=>{tasks.set(++id,fn);return id;},cancel:key=>tasks.delete(key)});return {buffer,saved,tick(){const pending=[...tasks.values()];tasks.clear();pending.forEach(fn=>fn());},tasks};}
+test('typing does not commit per key and only the latest pause commits',()=>{const f=fixture();for(const text of ['進','進場','進場太晚'])f.buffer.edit(text);assert.deepEqual(f.saved,[]);assert.equal(f.tasks.size,1);f.tick();assert.deepEqual(f.saved,['進場太晚']);});
+test('IME pauses do not commit intermediate text',()=>{const f=fixture();f.buffer.edit('old');f.buffer.composition(true);f.buffer.edit('注音');f.tick();assert.deepEqual(f.saved,[]);f.buffer.edit('進場');f.buffer.composition(false);f.tick();assert.deepEqual(f.saved,['進場']);});
+test('blur or dialog close flushes immediately once, including clearing text',()=>{const f=fixture();f.buffer.edit('備註');f.buffer.flush();f.buffer.flush();f.tick();assert.deepEqual(f.saved,['備註']);f.buffer.edit('');f.buffer.flush();assert.deepEqual(f.saved,['備註','']);});
+test('quote refresh cannot replace dirty input and disposal cancels stale account writes',()=>{const f=fixture();f.buffer.edit('draft');assert.equal(f.buffer.receive('server'),false);f.buffer.dispose();f.tick();assert.deepEqual(f.saved,[]);const other=fixture();assert.equal(other.buffer.receive('restored'),true);other.buffer.flush();assert.deepEqual(other.saved,[]);});

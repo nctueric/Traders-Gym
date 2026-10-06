@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 function harness() {
   let cursor = 0;
   const states = [], cache = new Map();
-  const react = { ...React,
+  const react = { ...React, useContext: () => null,
     useState(initial) {
       const index = cursor++;
       if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial;
