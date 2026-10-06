@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { durableTradeJson, validateTradeRecordPayload } from "../lib/trade-record-store.mjs";
-import { createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "../lib/trade-record-client.mjs";
+import { canRefreshCloudRecord, createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "../lib/trade-record-client.mjs";
 
 const data = () => ({ profile: { name: "帳號" }, accounts: [], fills: [], marketBars: [], settings: {} });
 const response = (status, body) => ({ ok: status >= 200 && status < 300, status, async json() { return body; } });
@@ -59,11 +59,14 @@ test("save queue serializes edits and remains usable after a failure", async () 
   await failure; assert.equal(await second, 2); assert.deepEqual(events, [1,2]);
 });
 
-test("pending edits recover only from a matching baseline and conflict remains protected", () => {
+test("login always displays cloud data while pending edits are archived", () => {
   const local = storage(), base = data(), edited = { ...data(), note: "edited" };
   assert.equal(writeLocalRecord(local, "records", "primary", durableTradeJson(edited), durableTradeJson(base), 1), true);
-  assert.equal(readPendingRecord(local, "records", "primary", base).recovered, true);
-  assert.equal(readPendingRecord(local, "records", "primary", { ...base, other: 1 }).conflict, true);
+  const recovered = readPendingRecord(local, "records", "primary", base);
+  assert.equal(recovered.archivedPending, true);
+  assert.deepEqual(recovered.dataset, base);
+  assert.equal(local.getItem(recovered.recoveryKey), local.getItem("records.primary.pending"));
+  assert.deepEqual(readPendingRecord(local, "records", "primary", { ...base, other: 1 }).dataset, { ...base, other: 1 });
   assert.deepEqual(readPendingRecord(local, "records", "primary", edited).dataset, edited);
   assert.equal(writeLocalRecord({ setItem() { throw Error("quota"); } }, "records", "primary", "x", "y", 1), false);
 });
@@ -115,9 +118,17 @@ test('empty pending journal cannot replace a populated cloud ledger and is quara
   writeLocalRecord(local,'records','primary',JSON.stringify(empty),JSON.stringify(base),394);
   const original=local.getItem('records.primary.pending');
   const result=readPendingRecord(local,'records','primary',base);
-  assert.deepEqual(result.dataset,base);assert.equal(result.blockedEmptyRecovery,true);
+  assert.deepEqual(result.dataset,base);assert.equal(result.archivedPending,true);
   assert.equal(result.recovered,undefined);assert.equal(local.getItem(result.recoveryKey),original);
   const blocked=readPendingRecord({getItem:k=>local.getItem(k),setItem(){throw Error('quota');}},'records','primary',base);
   assert.deepEqual(blocked.dataset,base);assert.equal(blocked.conflict,true);
   assert.equal(local.getItem('records.primary.pending'),original);
+});
+
+test("cloud refresh accepts clean data but preserves unsynced edits and unknown baselines", () => {
+ const baseline = data();
+ assert.equal(canRefreshCloudRecord(JSON.stringify({...baseline,marketBars:[{close:10}]}),JSON.stringify(baseline)),true);
+ assert.equal(canRefreshCloudRecord(JSON.stringify({...baseline,cycleReviews:{one:{comment:'local'}}}),JSON.stringify(baseline)),false);
+ assert.equal(canRefreshCloudRecord(JSON.stringify(baseline),''),false);
+ assert.equal(canRefreshCloudRecord('invalid',JSON.stringify(baseline)),false);
 });

@@ -11,7 +11,6 @@ import { createLocalRecordStore } from "../server/local-record-store.mjs";
 import { buildCurrentEquity, buildWeeklyEquitySeries, cycleRangeScore } from "../lib/portfolio-engine.mjs";
 import { summarize } from "../lib/trade-engine.mjs";
 import { fixtureDataset } from "./ui-fixture-data.mjs";
-import { mergeMarketBars } from "../lib/quote-engine.mjs";
 
 const stamp = "2026-08-28T02:00:00Z";
 function fixture() {
@@ -74,10 +73,11 @@ test("emergency ledger recovery preserves server OHLC, FX and benchmark evidence
   const values = new Map(), storage = { setItem(k,v) { assert.ok(v.length < 100_000); values.set(k,v); }, getItem: k => values.get(k) || null };
   assert.equal(writeLocalRecord(storage, "records", "test", completeTradeJson(edit), completeTradeJson(server), 1), true);
   const restored = readPendingRecord(storage, "records", "test", server);
-  assert.equal(restored.recovered, true);
-  assert.equal(restored.dataset.positionPlans.one.note, "尚未同步");
+  assert.equal(restored.archivedPending, true);
+  assert.equal(JSON.parse(JSON.parse(values.get(restored.recoveryKey)).serialized).positionPlans.one.note, "尚未同步");
+  assert.deepEqual(restored.dataset.positionPlans,server.positionPlans);
   assert.deepEqual(restored.dataset.marketSnapshot, server.marketSnapshot);
-  assert.deepEqual(restored.dataset.marketBars, mergeMarketBars(server.marketBars));
+  assert.deepEqual(restored.dataset.marketBars, server.marketBars);
 });
 
 test("cache-only cross-tab changes merge newer quotes without overwriting independently edited plans", async () => {

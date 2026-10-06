@@ -158,7 +158,9 @@ test("session cancellation drops late responses and journals never cross user na
   const values = new Map(), storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) }, dataset = emptyDataset();
   writeLocalRecord(storage, "records.user.a", "primary", JSON.stringify({ ...dataset, note: "a private draft" }), JSON.stringify(dataset), 1);
   assert.deepEqual(readPendingRecord(storage, "records.user.b", "primary", dataset).dataset, dataset);
-  assert.equal(readPendingRecord(storage, "records.user.a", "primary", dataset).dataset.note, "a private draft");
+  const recovery=readPendingRecord(storage, "records.user.a", "primary", dataset);
+  assert.deepEqual(recovery.dataset,dataset);
+  assert.equal(JSON.parse(JSON.parse(values.get(recovery.recoveryKey)).serialized).note,"a private draft");
 });
 
 test('history captures upgrade baseline atomically; restore creates a new version and checks CAS', async t => {

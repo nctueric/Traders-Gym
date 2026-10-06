@@ -1,3 +1,4 @@
+import {previewSimpleBatch} from '../lib/simple-entry.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -17,9 +18,9 @@ const find = (tree, fn) => nodes(tree).find(fn);
 
 // Run the real component's hooks and event handlers; no browser, DOM or account writes.
 function harness(initial = source(), values = new Map()) {
-  let stored = structuredClone(initial), version = 1, index = 0, dirty = true, tree, serial = 0, onlineMarkets = false, failWrites = false;
+  let stored = structuredClone(initial), version = 1, index = 0, dirty = true, tree, serial = 0, onlineMarkets = false, failWrites = false, failLocal = false;
   const hooks = [], effects = [], timers = new Map(), writes = [], events = new Map();
-  const storage = { getItem: k => values.get(k) || null, setItem: (k,v) => values.set(k,v) };
+  const storage = { getItem: k => values.get(k) || null, setItem: (k,v) => {if(failLocal)throw Error('quota');values.set(k,v);} };
   const timer = (fn, ms) => { const id = ++serial; timers.set(id, { fn, ms }); return id; };
   const window = { setTimeout: timer, clearTimeout: id => timers.delete(id), setInterval: (fn,ms)=>{const id=timer(fn,ms);timers.get(id).interval=true;return id;}, clearInterval: id => timers.delete(id), addEventListener: (name, fn) => events.set(name,fn), removeEventListener: name => events.delete(name), scrollTo() {} };
   const react = { ...React, startTransition: fn => fn(),
@@ -38,6 +39,7 @@ function harness(initial = source(), values = new Map()) {
       if (payload.baseVersion !== version) return response(409,{});
       stored=payload.dataset;version++;return response(200,{account:{...account,version}});
     }
+    if (url === "/api/ledgers") return response(200,{accounts:[account]});
     if (url === "/api/trade-records") return response(200,{account,dataset:structuredClone(stored),accounts:[account]});
     if (url.startsWith("/api/trade-records?")) return response(200,{account,dataset:structuredClone(stored)});
     if (onlineMarkets && url.startsWith("/api/quotes")) return response(200,{quotes:[{symbol:"AAA",price:15,updatedAt:"2026-08-28T00:00:00Z"}],errors:[]});
@@ -52,13 +54,14 @@ function harness(initial = source(), values = new Map()) {
       return id.endsWith("trade-record-client.mjs") ? {...actual,browserRecordStorage:()=>storage,saveTradeRecord:args=>actual.saveTradeRecord({...args,fetcher})} : actual;
     }
     return require(id);
-  },componentModule,componentModule.exports,window,{getElementById:()=>null},storage,fetcher,timer,window.clearTimeout);
+  },componentModule,componentModule.exports,window,{getElementById:()=>null,visibilityState:"visible"},storage,fetcher,timer,window.clearTimeout);
   function render() { index=0;dirty=false;tree=componentModule.exports.default({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}}); for(const effect of effects.splice(0)) effect();return tree; }
   return {
     render, get tree(){return tree;},get stored(){return stored;}, writes,events,values,
     async settle(){ for(let i=0;i<15;i++){if(dirty)render();await new Promise(resolve=>setImmediate(resolve));}return tree; },
     runTimers(ms){ for(const [id,task] of [...timers]) if(task.ms===ms){if(!task.interval)timers.delete(id);task.fn();} },
-    set online(value){onlineMarkets=value;},set fail(value){failWrites=value;},
+    remoteUpdate(next){stored=structuredClone(next);version++;},
+    set quota(value){failLocal=value;},set online(value){onlineMarkets=value;},set fail(value){failWrites=value;},
     close(){for(const hook of hooks)hook?.cleanup?.();},
   };
 }
@@ -103,13 +106,13 @@ test("failed manual write never reports success or removes the current data", as
 test("new registration page saves a no-impact account draft, commits atomically and reopens full evidence", async t => {
   const h=harness();t.after(()=>h.close());await h.settle();
   find(h.tree,n=>n.type==="button"&&n.props.children==="新增交易").props.onClick();await h.settle();
-  const entry=()=>find(h.tree,n=>n.type?.name==="TradeEntryWorkspace");
+  const entry=()=>find(h.tree,n=>n.type?.name==="TradeRegistration");
   assert.ok(entry(),"workspace page replaces old modal");
-  entry().props.onChange({symbol:"AAA",quantity:"2",price:"13",timestamp:new Date(Date.now()-60000).toISOString(),entrySetup:"PULLBACK",volumeTags:["SUPPORT_RETEST"],addReason:"RETEST",stopLoss:"10",takeProfit:"18",note:"回測後加碼"});
+  entry().props.onFullChange({symbol:"AAA",quantity:"2",price:"13",timestamp:new Date(Date.now()-60000).toISOString(),entrySetup:"PULLBACK",volumeTags:["SUPPORT_RETEST"],addReason:"RETEST",stopLoss:"10",takeProfit:"18",note:"回測後加碼"});
   await h.settle();h.runTimers(600_000);await h.settle();
   assert.equal(h.stored.fills.length,1);assert.equal(h.stored.entryDraft.note,"回測後加碼");
-  const current=entry().props,preview=previewEntry(current.data,current.draft);
-  current.onChange({confirmedKey:preview.confirmationKey});await h.settle();entry().props.onSubmit();await h.settle();
+  const current=entry().props,preview=previewEntry(current.data,current.data.entryDraft);
+  current.onFullChange({confirmedKey:preview.confirmationKey});await h.settle();entry().props.onFullSubmit();await h.settle();
   assert.equal(entry(),undefined);
   manual(h).props.onClick();await h.settle();
   assert.equal(h.stored.fills.length,2);assert.equal(h.stored.entryDraft,undefined);
@@ -127,7 +130,7 @@ test('cached plan releases form during network failure and retries without dupli
 });
 
 
-test('locally saved plan survives reload before cloud acknowledgement',async t=>{
+test('reload archives unsynced plan and shows cloud version without uploading stale content',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
  navigate(h,"overview");await h.settle();
  const panel=find(h.tree,n=>n.type?.name==='PositionsPanel'),position=panel.props.positions[0];
@@ -136,8 +139,9 @@ test('locally saved plan survives reload before cloud acknowledgement',async t=>
  await h.settle();assert.equal(h.writes.length,0);
  const restored=harness(source(),h.values);t.after(()=>restored.close());await restored.settle();
  manual(restored).props.onClick();await restored.settle();
- assert.ok(Object.values(restored.stored.positionPlans).some(p=>p.note==='cached offline'));
- assert.equal(restored.stored.planHistory.filter(p=>p.batchId==='local-reload'&&p.field==='stopLoss').length,1);
+ assert.deepEqual(restored.stored.positionPlans,source().positionPlans);
+ assert.ok([...restored.values].some(([key,value])=>key.includes('.recovery.')&&value.includes('cached offline')));
+ assert.equal(restored.stored.planHistory.filter(p=>p.batchId==='local-reload'&&p.field==='stopLoss').length,0);
 });
 
 test('holdings palette defaults green-up, updates both displays and restores from cache and cloud',async t=>{
@@ -149,7 +153,8 @@ test('holdings palette defaults green-up, updates both displays and restores fro
  assert.equal(find(h.tree,n=>n.props?.id==='overview-holdings').props['data-holdings-colors'],'red-up');
  assert.equal(find(h.tree,n=>n.type?.name==='HoldingsHeatmap').props.colorScheme,'red-up');
  assert.equal(h.writes.length,0);
- const restored=harness(source(),h.values);t.after(()=>restored.close());await restored.settle();
+ manual(h).props.onClick();await h.settle();
+ const restored=harness(h.stored,h.values);t.after(()=>restored.close());await restored.settle();
  manual(restored).props.onClick();await restored.settle();
  assert.equal(restored.stored.settings.holdingsColorScheme,'red-up');
  assert.deepEqual(restored.stored.fills,source().fills);
@@ -169,4 +174,33 @@ test('repeated authentication failures and unload cannot overwrite the preserved
  changed({key:'tg.auth.changed',newValue:'another-session'});oldUnload();await h.settle();
  for(const [key,value] of backups)assert.equal(h.values.get(key),value);
  h.runTimers(600_000);await h.settle();assert.equal(h.writes.length,0);
+});
+
+test("returning mobile page reads newer cloud ledger without writing it back", async t => {
+ const h=harness();t.after(()=>h.close());h.render();await h.settle();
+ const newer=structuredClone(h.stored);newer.profile.name='雲端最新帳本';
+ h.remoteUpdate(newer);h.events.get('visibilitychange')();await h.settle();
+ assert.ok(JSON.stringify(h.tree).includes('已更新至雲端最新版本'));
+ assert.equal(h.writes.length,0);
+ assert.ok([...h.values.values()].some(value=>value.includes('雲端最新帳本')));
+});
+
+test('simple batch persists atomically locally and a second click never appends twice',async t=>{
+ const h=harness();t.after(()=>h.close());await h.settle();
+ find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
+ const entry=()=>find(h.tree,n=>n.type?.name==='TradeRegistration');
+ const original=entry().props.data.simpleEntryDraft;
+ const batch={...original,date:'2026-08-27',rows:[{...original.rows[0],symbol:'AAA',market:'NASDAQ',quantity:2,price:13}]};
+ entry().props.onSimpleChange(batch);await h.settle();
+ const p=previewSimpleBatch(entry().props.data,batch);const submit=entry().props.onSimpleSubmit;const version=entry().props.ledgerVersion;
+ submit(batch,p.confirmationKey,version);assert.throws(()=>submit(batch,p.confirmationKey,version),/草稿/);await h.settle();
+ assert.equal(h.writes.length,0);assert.ok([...h.values].some(([key,value])=>key.endsWith('.pending')&&JSON.parse(JSON.parse(value).serialized).fills.length===2));
+ manual(h).props.onClick();await h.settle();assert.equal(h.stored.fills.length,2);assert.equal(h.stored.simpleEntryDraft,undefined);
+});
+test('failed simple batch backup preserves draft and ledger unchanged',async t=>{
+ const h=harness();t.after(()=>h.close());await h.settle();find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
+ const entry=()=>find(h.tree,n=>n.type?.name==='TradeRegistration');const original=entry().props.data.simpleEntryDraft;
+ const batch={...original,date:'2026-08-27',rows:[{...original.rows[0],symbol:'AAA',market:'NASDAQ',quantity:2,price:13}]};
+ entry().props.onSimpleChange(batch);await h.settle();const p=previewSimpleBatch(entry().props.data,batch);h.quota=true;
+ assert.throws(()=>entry().props.onSimpleSubmit(batch,p.confirmationKey,entry().props.ledgerVersion),/備援/);await h.settle();assert.equal(entry().props.data.fills.length,1);assert.equal(entry().props.data.simpleEntryDraft.rows[0].quantity,2);assert.equal(h.writes.length,0);
 });
