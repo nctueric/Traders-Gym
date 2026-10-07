@@ -1,0 +1,24 @@
+{
+  "workerVersion": "51dc0561-e093-4e3d-8a46-45ab001b0ad4",
+  "origin": "https://tradergym.app/demo",
+  "expectedCycles": 150,
+  "cyclesBySymbol": {
+    "AAPL": 50,
+    "MSFT": 50,
+    "2330": 50
+  },
+  "fills": 332,
+  "openPositions": 2,
+  "tests": 490,
+  "lint": true,
+  "typescript": true,
+  "build": true,
+  "deployDryRun": true,
+  "memberLedgerMigrationRequired": false,
+  "browserClosedCycleRows": 150,
+  "browserOverviewFills": 332,
+  "browserOpenPositions": 2,
+  "browserPerformanceHistoryReady": true,
+  "browserNavigationPreservesCycles": true,
+  "browserErrors": []
+}

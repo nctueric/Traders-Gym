@@ -14,7 +14,7 @@ test('demo runtimes are independent, use captured real markets and never forward
  const a=await createDemoRuntime(),b=await createDemoRuntime(),original=b.read();
  const modified=a.read();modified.fills[0].price=999;a.update(modified);a.storage.setItem('journal','private-to-guest-a');
  assert.equal(b.storage.getItem('journal'),null);assert.deepEqual(b.read(),original);assert.deepEqual((await createDemoRuntime()).read(),original);
- const result=summarize(original);assert.equal(result.positions.length,2);assert.equal(result.cycles.length,3);assert.ok(result.cycles.some(c=>c.pnl<0));assert.ok(result.cycles.some(c=>c.pnl>0));
+ const result=summarize(original);assert.equal(result.positions.length,2);assert.equal(result.cycles.length,150);assert.ok(result.cycles.some(c=>c.pnl<0));assert.ok(result.cycles.some(c=>c.pnl>0));
  for(const path of ['/api/ledgers','/api/admin/accounts','/api/auth/google-link'])assert.equal((await a.fetcher(path)).status,403);
  assert.equal((await a.fetcher('/api/trade-records',{method:'PUT'})).status,403);
  const unknown=await a.fetcher('/api/quotes?symbols=SECRET');const payload=await unknown.json();assert.deepEqual(payload.quotes,[]);assert.equal(payload.errors.length,1);

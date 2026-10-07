@@ -10,7 +10,7 @@ for(const path of ['/api/trade-records','/api/ledgers','/api/admin/accounts','/a
  const response=await fetch(origin+path);assert.ok([401,403].includes(response.status),path);rows.push({path,status:response.status,privateAccessDenied:true});
 }
 const runtime=createDemoRuntime({origin,networkFetch:(path,init)=>fetch(origin+path,init)});
-await runtime.initialize();const data=runtime.read(),summary=summarize(data);assert.deepEqual(validateDataset(data),[]);assert.equal(summary.cycles.length,3);assert.equal(summary.positions.length,2);
+await runtime.initialize();const data=runtime.read(),summary=summarize(data);assert.deepEqual(validateDataset(data),[]);assert.equal(summary.cycles.length,150);assert.equal(summary.positions.length,2);
 for(const fill of data.fills){assert.equal(fill.price,data.marketBars.find(b=>b.symbol===fill.symbol&&b.date===fill.tradeDate).close);}
 const quoteResponse=await runtime.fetcher('/api/quotes?symbols=AAPL,2330.TW,USDTWD=X,NVDA');assert.equal(quoteResponse.status,200);const payload=await quoteResponse.json();assert.equal(payload.quotes.length,4);assert.equal(payload.errors.length,0);
 const repeated=await runtime.fetcher('/api/quotes?symbols=AAPL,2330.TW,USDTWD=X,NVDA');assert.equal(repeated.status,200);assert.deepEqual((await repeated.json()).quotes,payload.quotes);

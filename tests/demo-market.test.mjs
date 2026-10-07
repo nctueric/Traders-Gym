@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createDemoRuntime,createDemoDataset} from '../lib/demo-workspace.mjs';
+import {createDemoRuntime,createDemoDataset,DEMO_CYCLE_COUNT,DEMO_CAPITAL} from '../lib/demo-workspace.mjs';
 import {TEST_NOW,fixtureOptions,fixtureNetwork} from './market-fixture.mjs';
 import {summarize,validateDataset} from '../lib/trade-engine.mjs';
 import {marketDate} from '../lib/trade-entry.mjs';
@@ -9,16 +9,47 @@ import {normalizeYahooChart} from '../lib/quote-engine.mjs';
 
 test('seed fills use actual sessions, raw closes and 10% budgets; positions are derived',()=>{
  const data=createDemoDataset(fixtureOptions()),report=summarize(data);
- assert.deepEqual(validateDataset(data),[]);assert.equal(data.fills.length,9);assert.equal(report.cycles.length,3);assert.equal(report.positions.length,2);assert.ok(report.cycles.some(c=>c.direction==='SHORT'));
+ assert.deepEqual(validateDataset(data),[]);assert.equal(data.fills.length,332);assert.equal(report.cycles.length,DEMO_CYCLE_COUNT);assert.equal(report.positions.length,2);assert.ok(report.cycles.some(c=>c.direction==='SHORT'));
  for(const fill of data.fills){const bar=data.marketBars.find(b=>b.symbol===fill.symbol&&b.date===fill.tradeDate);assert.equal(fill.price,bar.close);assert.equal(marketDate(fill.timestamp,fill.market),fill.tradeDate);assert.equal(fill.fee,0);assert.equal(fill.feeKnown,false);assert.match(fill.note,/示範成交/);}
  assert.equal(data.cashActivities.length,1);assert.equal(data.cashActivities[0].amount,50000);assert.deepEqual(data.strategies,[]);assert.deepEqual(data.strategyAssignments,{});
  assert.equal(data.marketSnapshot.quotes.AAPL.source,'Yahoo Finance via MarketDataAdapter');
  assert.equal(data.marketSnapshot.benchmarkBars[0].close,fixtureOptions().series.SPY.bars[0].close);
 });
+test('150 completed cycles span the past year without overlapping FIFO positions or exceeding entry budgets',()=>{
+ const options=fixtureOptions(),data=createDemoDataset(options),report=summarize(data);
+ assert.deepEqual(data.demoWarnings,[]);assert.deepEqual(createDemoDataset(options),data);
+ assert.ok(new Set(report.cycles.map(c=>c.fills.at(-1).tradeDate.slice(0,7))).size>=12);
+ assert.ok(Date.parse(data.fills.at(-1).tradeDate)-Date.parse(data.fills[0].tradeDate)>330*86400000);
+ for(const symbol of ['AAPL','MSFT','2330']){
+  const cycles=report.cycles.filter(c=>c.symbol===symbol).sort((a,b)=>a.openAt.localeCompare(b.openAt));
+  assert.equal(cycles.length,50);
+  for(let index=0;index<cycles.length;index++){
+   const cycle=cycles[index],entry=cycle.fills[0];
+   if(index)assert.ok(cycles[index-1].closeAt<cycle.openAt);
+   const fx=symbol==='2330'?options.series['USDTWD=X'].bars.filter(b=>b.date<=entry.tradeDate).at(-1).close:1;
+   const cost=entry.quantity*entry.price/fx;
+   assert.ok(cost<=DEMO_CAPITAL*.1&&cost>DEMO_CAPITAL*.1-entry.price/fx);
+   assert.ok(cycle.fills.every(f=>Number.isInteger(f.quantity)&&f.quantity>0));
+  }
+ }
+ assert.equal(report.cycles.filter(c=>c.fills.length===3).length,30);
+ for(const fill of data.fills)assert.ok(fill.tradeDate>='2025-10-07'&&fill.tradeDate<TEST_NOW.slice(0,10));
+ for(const position of report.positions)assert.ok(position.openAt>report.cycles.filter(c=>c.symbol===position.symbol).at(-1).closeAt);
+});
 test('insufficient history and missing historical FX omit scenarios, never fabricate',()=>{
  const options=fixtureOptions();delete options.series['USDTWD=X'];options.series.AAPL.bars=[];
  const data=createDemoDataset(options);assert.ok(data.demoWarnings.length);assert.ok(!data.fills.some(f=>['AAPL','2330'].includes(f.symbol)));
  const empty=createDemoDataset();assert.equal(empty.fills.length,0);assert.equal(empty.marketBars.length,0);assert.deepEqual(empty.marketSnapshot.quotes,{});
+});
+test('sparse or out-of-year sessions never create artificial dates to reach 150 cycles',()=>{
+ const options=fixtureOptions();delete options.series.MSFT;delete options.series['2330'];
+ const source=options.series.AAPL.bars.slice(0,5);
+ options.series.AAPL.bars=[{...source[0],date:'2024-01-02'},...source,{...source[0],date:'2026-10-07'},{...source[0],date:'2027-01-04'}];
+ const data=createDemoDataset(options),report=summarize(data);
+ assert.equal(report.cycles.length,1);assert.equal(report.positions.length,1);
+ assert.match(data.demoWarnings.join('；'),/1／150/);
+ assert.deepEqual(validateDataset(data),[]);
+ for(const fill of data.fills)assert.ok(source.some(b=>b.date===fill.tradeDate&&b.close===fill.price));
 });
 test('guest forwards only anonymous market GET requests, strips credentials and chunks history',async()=>{
  const calls=[],runtime=createDemoRuntime({networkFetch:fixtureNetwork(calls),clock:()=>Date.parse(TEST_NOW)});await runtime.initialize();calls.length=0;

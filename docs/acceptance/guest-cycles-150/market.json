@@ -1,0 +1,33 @@
+{
+  "verifiedAt": "2026-10-07T08:37:49.942Z",
+  "origin": "https://tradergym.app",
+  "readOnly": true,
+  "fills": 332,
+  "cycles": 150,
+  "positions": 2,
+  "cyclesBySymbol": {
+    "2330": 50,
+    "AAPL": 50,
+    "MSFT": 50
+  },
+  "firstTradeDate": "2025-10-07",
+  "lastTradeDate": "2026-10-06",
+  "months": [
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07",
+    "2026-08",
+    "2026-09",
+    "2026-10"
+  ],
+  "sourceClosesVerified": true,
+  "qualityIssues": [],
+  "warnings": []
+}
