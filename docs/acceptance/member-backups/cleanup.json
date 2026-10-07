@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-07T08:15:35.197Z",
+  "name": "traders-gym-backup-qa-20261007",
+  "databaseId": "27af1af5-ee78-4b16-97e4-d213c6bc8de4",
+  "syntheticObjectsDeleted": 4,
+  "workerDeleted": true,
+  "bucketDeleted": true,
+  "databaseDeleted": true,
+  "productionUnchanged": true
+}

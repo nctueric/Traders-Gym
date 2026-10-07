@@ -24,7 +24,7 @@ export const accountAdminEvents = sqliteTable("account_admin_events", {
 }, table => [index("admin_events_time_idx").on(table.createdAt)]);
 
 export const tradeAccountSnapshots = sqliteTable("trade_account_snapshots", {
-  accountId: text("account_id").primaryKey(),
+  accountId: text("account_id").primaryKey(), archivedAt: text("archived_at"),
   accountName: text("account_name").notNull(),
   datasetJson: text("dataset_json").notNull(),
   version: integer("version").notNull().default(1),
@@ -87,4 +87,32 @@ export const memberSessionCredentials=sqliteTable("member_session_credentials",{
 export const snapshotObjectGc=sqliteTable("snapshot_object_gc",{
   objectKey:text("object_key").primaryKey(),ownerUserId:text("owner_user_id").notNull(),
   sizeBytes:integer("size_bytes").notNull(),createdAt:text("created_at").notNull(),
+});
+
+export const ledgerHomeViews=sqliteTable('ledger_home_views',{
+ accountId:text('account_id').primaryKey().references(()=>tradeAccountSnapshots.accountId),ownerUserId:text('owner_user_id').notNull().references(()=>appUsers.id),
+ sourceVersion:integer('source_version').notNull(),schemaVersion:integer('schema_version').notNull(),sourceHash:text('source_hash').notNull(),objectKey:text('object_key').notNull().default(''),summaryJson:text('summary_json').notNull(),createdAt:text('created_at').notNull(),
+},table=>[index('ledger_home_views_owner').on(table.ownerUserId,table.accountId)]);
+
+export const memberLedgerBindings = sqliteTable('member_ledger_bindings', {
+ userId: text('user_id').primaryKey().references(() => appUsers.id),
+ accountId: text('account_id').notNull().unique().references(() => tradeAccountSnapshots.accountId),
+});
+export const memberWeeklyBackups = sqliteTable('member_weekly_backups', {
+ userId: text('user_id').primaryKey().references(() => appUsers.id), accountId: text('account_id').notNull(),
+ weekKey: text('week_key').notNull(), sourceVersion: integer('source_version').notNull(), sourceHash: text('source_hash').notNull(),
+ objectKey: text('object_key').notNull(), sizeBytes: integer('size_bytes').notNull(), scheduledAt: text('scheduled_at').notNull(),
+ capturedAt: text('captured_at').notNull(), completedAt: text('completed_at').notNull(),
+});
+export const memberBackupJobs = sqliteTable('member_backup_jobs', {
+ id: text('id').primaryKey(), userId: text('user_id').notNull().references(() => appUsers.id), accountId: text('account_id').notNull(),
+ weekKey: text('week_key').notNull(), sourceVersion: integer('source_version').notNull(), sourceObjectKey: text('source_object_key'), datasetJson: text('dataset_json').notNull(),
+ scheduledAt: text('scheduled_at').notNull(), capturedAt: text('captured_at').notNull(), completedAt: text('completed_at'),
+ state: text('state').notNull(), attempts: integer('attempts').notNull().default(0), leaseUntil: text('lease_until'), leaseToken: text('lease_token'),
+ error: text('error'), backupObjectKey: text('backup_object_key'),
+}, table => [uniqueIndex('member_backup_week').on(table.userId,table.weekKey),index('member_backup_pending').on(table.state,table.leaseUntil)]);
+export const ledgerRecoveryEvents = sqliteTable('ledger_recovery_events', {
+ id: text('id').primaryKey(), actorId: text('actor_id').notNull(), targetUserId: text('target_user_id').notNull(), accountId: text('account_id').notNull(),
+ backupWeek: text('backup_week').notNull(), sourceVersion: integer('source_version').notNull(), beforeVersion: integer('before_version').notNull(),
+ afterVersion: integer('after_version'), result: text('result').notNull(), createdAt: text('created_at').notNull(),
 });

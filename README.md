@@ -38,3 +38,9 @@ npm run build
 原始 Yahoo 回應測試夾具與來源雜湊位於 `tests/fixtures/market/`，只含公開市場資料。舊 `public/sample-trading-data.json` 為獨立匯入樣本，不是訪客行情來源。
 
 雲端帳本與計價改版的本機驗收及發布前 migration 說明：[驗收紀錄](docs/cloud-valuation-local.md)。
+
+## 首頁摘要與固定淺色介面
+
+首頁可透過 `HOME_VIEW_READS=true` 使用 D1 摘要，SSR 先顯示資產與最多 20 個持倉，再背景下載並校驗 R2 完整帳本。讀取摘要不初始化帳本，也不讀 R2；摘要缺失、過期版本或損壞時回到完整載入。儲存、建立、重新命名及還原帳本會原子更新摘要版本，修改與完整匯出仍須等完整資料就緒。所有頁面固定淺色，保留深綠行情列與漲跌配色偏好。
+
+上線順序、回填方式、P95 實測及限制見 [首頁加速驗收](docs/home-speed-local.md)。正式 migration 0011、回填及啟用開關尚未執行；正式網站仍為原版本。

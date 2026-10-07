@@ -13,3 +13,7 @@ Operate 模式，延續 V2 的系統字體、深綠側欄、淺色工作區、�
 登入設定中的擁有者 Google 連結要求先以密碼登入、再次確認密碼，再於 5 分鐘內選擇指定 Google 帳號。連結後 Google 與密碼登入使用同一份帳本，原有帳本與密碼備援保留。Client ID 未設定時顯示待設定狀態，密碼登入仍可使用。2026-10-05 已完成 Client ID 設定、本機綁定驗收與正式 Cloudflare 發布；正式 Google 回呼已通過，仍待擁有者在正式站親自綁定後開放申請。
 
 設計依據為 `app/apply/application-form.tsx`、`app/admin/applications-panel.tsx`、`app/admin/google-link-panel.tsx`、`app/admin/admin-workspace.tsx` 與現有樣式。側欄焦點框沿用已修正的萊姆綠焦點色。本輪獨立 reviewer 已檢查六份正常比例桌面／手機截圖，結論為可交付（ship），未要求 UI 修正；此結果不代表真實 Google 登入或正式發布已完成。
+
+## 2026-10-07 會員帳本管理更新
+
+一般會員改為單一正式帳本，最多 500 組已完成交易閉環。每週備份完全屬於後台內部資料，不在會員介面呈現。管理員新增「會員備份」頁籤，可預覽、確認還原及匯出封存帳本；還原對話框列出目標會員、版本與影響，完成後建立新版本並留下紀錄。現行契約、啟用順序及驗收見 [會員帳本與每週備份](member-backups-local.md)。本次尚未正式發布。

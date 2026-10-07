@@ -1,0 +1,85 @@
+{
+  "checkedAt": "2026-10-07T08:25:22.687Z",
+  "results": [
+    {
+      "path": "/login",
+      "status": 200,
+      "bytes": 11037,
+      "elapsedMs": 425,
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "/demo",
+      "status": 200,
+      "bytes": 10652,
+      "elapsedMs": 102,
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "/api/workspace/bootstrap",
+      "status": 401,
+      "bytes": 24,
+      "elapsedMs": 99,
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "/api/admin/member-backups",
+      "status": 401,
+      "bytes": 24,
+      "elapsedMs": 436,
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "/api/trade-records",
+      "status": 401,
+      "bytes": 24,
+      "elapsedMs": 83,
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "/api/preferences",
+      "status": 401,
+      "bytes": 24,
+      "elapsedMs": 81,
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "/api/market/quotes?symbols=AAPL,USDTWD%3DX",
+      "status": 200,
+      "bytes": 636,
+      "elapsedMs": 374,
+      "cacheControl": "public, max-age=15, s-maxage=15",
+      "response": {
+        "quotes": [
+          {
+            "symbol": "AAPL",
+            "price": 333.63,
+            "previousClose": 332.89,
+            "changePct": 0.0022229565321878475,
+            "currency": "USD",
+            "marketState": "UNKNOWN",
+            "exchange": "NMS",
+            "updatedAt": "2026-10-06T20:00:01.000Z",
+            "source": "Yahoo Finance via MarketDataAdapter",
+            "fetchedAt": "2026-10-07T08:25:22.439Z"
+          },
+          {
+            "symbol": "USDTWD=X",
+            "price": 31.86,
+            "previousClose": 31.78,
+            "changePct": 0.0025173064820640523,
+            "currency": "TWD",
+            "marketState": "UNKNOWN",
+            "exchange": "CCY",
+            "updatedAt": "2026-10-07T08:24:45.000Z",
+            "source": "Yahoo Finance via MarketDataAdapter",
+            "fetchedAt": "2026-10-07T08:25:22.439Z"
+          }
+        ],
+        "errors": [],
+        "fetchedAt": "2026-10-07T08:25:22.439Z",
+        "refreshAfterSeconds": 30
+      }
+    }
+  ]
+}

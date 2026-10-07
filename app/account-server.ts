@@ -1,3 +1,4 @@
+import {loadWorkspaceBootstrap} from '@/lib/workspace-bootstrap.mjs';
 import { createResendMailer } from '@/lib/email-auth.mjs';
 import { createMixedAuthenticator } from "@/lib/mixed-auth.mjs";
 import { requireSitesTrialUser } from "@/lib/sites-trial-auth.mjs";
@@ -41,12 +42,26 @@ export async function pageUser(owner = false) {
 }
 export async function accountHandler(request: Request) {
   if (!env.DB || !env.SNAPSHOTS) return json({ error: "雲端 D1／R2 帳本儲存綁定尚未設定" }, 503);
-  if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: "", trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) }).handle(request);
+  if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, singleLedger:env.MEMBER_SINGLE_LEDGER==="true", weeklyBackupsEnabled:env.MEMBER_WEEKLY_BACKUPS==="true", retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: "", trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) }).handle(request);
   const password = env.PERSONAL_PASSWORD_LOGIN === "true" ? passwordAuth() : null;
-  return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: String(env.GOOGLE_CLIENT_ID || ""), authenticate: createMixedAuthenticator(env.DB, password),
+  return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, singleLedger:env.MEMBER_SINGLE_LEDGER==="true", weeklyBackupsEnabled:env.MEMBER_WEEKLY_BACKUPS==="true", bootstrapOptions:{passwordEmail:String(env.PERSONAL_LOGIN_EMAIL||''),passwordHash:env.PERSONAL_PASSWORD_LOGIN==='true'?String(env.PERSONAL_PASSWORD_HASH||''):'',enabled:env.HOME_VIEW_READS==='true'}, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: String(env.GOOGLE_CLIENT_ID || ""), authenticate: createMixedAuthenticator(env.DB, password),
     accessOptions: { openGoogleLogin: env.OPEN_GOOGLE_LOGIN === "true", password, sendMail:createResendMailer({apiKey:String(env.RESEND_API_KEY || ''),from:String(env.EMAIL_FROM || 'TraderGym <no-reply@tradergym.app>')}), origin:String(env.APP_ORIGIN || ''), ownerEmail: String(env.PERSONAL_LOGIN_EMAIL || ""), applicationsOpen: env.APPLICATIONS_OPEN === "true" } }).handle(request);
 }
 export async function rejectAnonymous(request: Request) {
   try { await apiUser(request); return null; }
   catch (error) { const failure = error as { status?: number; message?: string }; return json({ error: failure.status ? failure.message : "帳號服務暫時無法使用" }, failure.status || 503); }
+}
+
+export async function pageBootstrap(accountId?:string) {
+ if(env.SITES_TRIAL_AUTH==="true"&&env.PERSONAL_PASSWORD_LOGIN!=="true")return null;
+ if(env.LOCAL_ACCOUNT_SERVICE!=="true"&&env.HOME_VIEW_READS!=="true")return null;
+ const incoming=await headers(), host=incoming.get('host')||'localhost';
+ try {
+  if(env.LOCAL_ACCOUNT_SERVICE==='true'){
+   if(!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host))throw authError('本機網址無效',403);
+   const response=await fetch(`http://${host}/api/workspace/bootstrap${accountId?'?accountId='+encodeURIComponent(accountId):''}`,{headers:{cookie:incoming.get('cookie')||''},cache:'no-store'});
+   if(response.status===401||response.status===403)throw authError('請重新登入',response.status);if(!response.ok)return null;return response.json();
+  }
+  return (await loadWorkspaceBootstrap({db:env.DB,singleLedger:env.MEMBER_SINGLE_LEDGER==='true',request:new Request(`https://${host}/${accountId?'?accountId='+encodeURIComponent(accountId):''}`,{headers:incoming}),passwordEmail:String(env.PERSONAL_LOGIN_EMAIL||''),passwordHash:env.PERSONAL_PASSWORD_LOGIN==='true'?String(env.PERSONAL_PASSWORD_HASH||''):''})).data;
+ }catch(error){if([401,403].includes((error as {status?:number}).status||0))redirect('/login');return null;}
 }

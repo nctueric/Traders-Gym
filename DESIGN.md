@@ -19,18 +19,6 @@
   "alert-bg": "#fff1ef"
   "alert-ink": "#80362d"
   "alert-line": "#dbb6b0"
-  "dark-ink": "#e5ece8"
-  "dark-muted": "#acbdb2"
-  "dark-paper": "#15221c"
-  "dark-card": "#1c2d24"
-  "dark-line": "#42554a"
-  "dark-green": "#8ccdaf"
-  "dark-red": "#f0a79a"
-  "dark-surface-muted": "#263c30"
-  "dark-action-ink": "#14261d"
-  "dark-alert-bg": "#3d2826"
-  "dark-alert-ink": "#f0c2bb"
-  "dark-alert-line": "#78524b"
 "typography":
   "headline":
     "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, \"PingFang TC\", \"Microsoft JhengHei\", \"Noto Sans TC\", sans-serif"
@@ -136,11 +124,11 @@ This is an extraction of approved incumbent code, not a replacement visual world
 
 ## Colors
 
-Deep green identifies actions and positive values; pale green-gray surfaces separate working areas, and selected workbench navigation uses green ink on a muted surface. Lime remains available to legacy dark navigation. Red retains its established loss/destructive meaning. Status text accompanies color.
+Deep green identifies actions and positive values; pale green-gray surfaces separate working areas, and selected workbench navigation uses green ink on a muted surface. Red retains its established loss/destructive meaning. Status text accompanies color.
 
 The frontmatter contains the normative values. Root `--surface` aliases `--card`; `--focus` uses the green value. `--review-chart-text` and `--review-chart-line` alias muted and line. Aliases are documented here rather than creating competing color primitives.
 
-`dark-*` values apply to `.auth-page`, `.cash-editor`, `.ledger-manager`, and the approved `.trading-workbench` scope under `prefers-color-scheme: dark`. These scopes override `--ink`, `--muted`, `--paper`, `--card`, `--line`, `--green`, and `--surface-muted`; `--surface` must resolve to the scoped card. The workbench also uses `dark-red` for losses, preserves deep-green primary actions with white labels, and adjusts table surfaces, pinned cells, hover states, and warning text within its scope. Member primary actions and alerts retain their own scoped rules. This does not establish a global dark theme for unrelated surfaces.
+All application surfaces use the established light palette and `color-scheme: light`, regardless of the system theme. Deep-green quote strips and the selectable gain/loss palettes remain unchanged.
 
 ## Typography
 
@@ -183,7 +171,7 @@ Controls normally use 8px corners, with 6px member ledger/cash field variants. P
 
 ### Don't
 - Don't equate local backup with completed synchronization.
-- Don't extend scoped dark overrides to unrelated surfaces without checking their semantic colors.
+- Keep all surfaces light; check semantic gain/loss colors on every surface.
 - Don't replace the official Google control with a styled imitation.
 - Don't add generated raster artwork to this approved member workflow.
 

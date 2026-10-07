@@ -8,3 +8,10 @@ GOOGLE_CLIENT_ID=
 # PERSONAL_PASSWORD_LOGIN=true
 # PERSONAL_LOGIN_EMAIL=your-email@example.com
 # PERSONAL_PASSWORD_HASH=<salted password verifier; secret>
+
+# Enable only after migration 0011 and verified summary backfill. False restores full loading.
+HOME_VIEW_READS=false
+
+# Enable only after migration 0012 and member-ledger activation.
+MEMBER_SINGLE_LEDGER=false
+MEMBER_WEEKLY_BACKUPS=false

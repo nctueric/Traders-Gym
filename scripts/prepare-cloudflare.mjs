@@ -26,7 +26,10 @@ config.vars = { ...(personalEmail ? { PERSONAL_PASSWORD_LOGIN: "true", PERSONAL_
   ...(clientId ? { GOOGLE_CLIENT_ID: clientId } : {}), APPLICATIONS_OPEN: args["--applications-open"] || "false", OPEN_GOOGLE_LOGIN: args["--open-google-login"] || "false" };
 if(args['--snapshot-retention'] && !['true','false'].includes(args['--snapshot-retention'])) throw new Error('--snapshot-retention must be true or false');
 config.vars.SNAPSHOT_RETENTION_ENABLED=args['--snapshot-retention'] || 'false';
-config.triggers={crons:config.vars.SNAPSHOT_RETENTION_ENABLED==='true'?['15 * * * *']:[]};
+if(args['--home-view-reads'] && !['true','false'].includes(args['--home-view-reads']))throw new Error('--home-view-reads must be true or false');
+config.vars.HOME_VIEW_READS=args['--home-view-reads'] || 'false';
+for(const [arg,key] of [['--member-single-ledger','MEMBER_SINGLE_LEDGER'],['--member-weekly-backups','MEMBER_WEEKLY_BACKUPS']]){if(args[arg]&&!['true','false'].includes(args[arg]))throw new Error(arg+' must be true or false');config.vars[key]=args[arg]||'false';}
+config.triggers={crons:config.vars.MEMBER_WEEKLY_BACKUPS==='true'?['* * * * *']:config.vars.SNAPSHOT_RETENTION_ENABLED==='true'?['15 * * * *']:[]};
 config.observability = { enabled: false };
 await writeFile("dist/server/wrangler.cloudflare.json", JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 console.log(`Prepared ${resolve("dist/server/wrangler.cloudflare.json")}; no resources created, no deployment performed.`);

@@ -1,0 +1,30 @@
+{
+  "releasedAt": "2026-10-07T08:25:00Z",
+  "origin": "https://tradergym.app",
+  "workerVersion": "31e42ccd-bb46-4b1c-9b6f-63e5f1310173",
+  "migrations": [
+    "0011_ledger_home_views.sql",
+    "0012_safe_smasher.sql"
+  ],
+  "originalLedgers": 3,
+  "originalIdsVersionsPointersAndChecksumsPreserved": true,
+  "homeViews": 3,
+  "memberBindings": 1,
+  "archivedLedgers": 0,
+  "weeklyBackups": 0,
+  "flags": {
+    "HOME_VIEW_READS": true,
+    "MEMBER_SINGLE_LEDGER": true,
+    "MEMBER_WEEKLY_BACKUPS": true
+  },
+  "cron": "* * * * *",
+  "nextBackupTaipei": "2026-10-10T04:00:00+08:00",
+  "memberClosedCycleLimit": 500,
+  "adminClosedCycleLimit": null,
+  "existingLoginConfigurationAndSecretPreserved": true,
+  "authenticatedProductionRestorePerformed": false,
+  "authenticatedProductionBenchmarkPerformed": false,
+  "browserDemoUSDTWDToggle": true,
+  "browserErrors": [],
+  "adminUnauthenticatedRedirect": "/login"
+}

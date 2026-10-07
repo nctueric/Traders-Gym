@@ -119,21 +119,8 @@
 
 .demo-banner>div{display:grid;gap:4px}.demo-banner>button{padding:9px 12px;border-radius:6px}
 /* New member surfaces follow the system theme without recoloring trading signals. */
-@media(prefers-color-scheme:dark){
- .auth-page,.cash-editor,.ledger-manager{color-scheme:dark;--ink:#e5ece8;--muted:#acbdb2;--paper:#15221c;--card:#1c2d24;--surface:var(--card);--line:#42554a;--green:#8ccdaf;--surface-muted:#263c30;color:var(--ink);background:var(--paper)}
- .auth-page .auth-panel,.cash-editor,.ledger-manager{background:var(--card)}
- .auth-page .primary,.cash-editor .primary,.ledger-manager .primary{background:#8ccdaf;color:#14261d}
- .auth-page .account-alert,.cash-editor .account-alert,.ledger-manager .account-alert{background:#3d2826;color:#f0c2bb!important;border-color:#78524b}
- .auth-page input,.cash-editor input,.cash-editor select,.ledger-manager input{background:var(--card);color:var(--ink)}
-}
+
 @media(prefers-reduced-motion:reduce){.auth-page *,.cash-editor *,.ledger-manager *{scroll-behavior:auto;transition:none;animation:none}}
 .ledger-confirm { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-muted, var(--paper)); margin: 16px 0; }
 .ledger-confirm label { display: grid; gap: 8px; }
 .ledger-confirm > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-@media(prefers-color-scheme:dark){
- :is(.auth-page,.cash-editor,.ledger-manager) input:not([type="radio"]):not([type="checkbox"]):not([type="range"]),
- :is(.auth-page,.cash-editor,.ledger-manager) select,
- :is(.auth-page,.cash-editor,.ledger-manager) textarea,
- :is(.auth-page,.cash-editor,.ledger-manager) .ghost { background:var(--card);color:var(--ink);border-color:var(--line); }
- :is(.auth-page,.cash-editor,.ledger-manager) button:disabled { background:var(--surface-muted);color:var(--muted);border-color:var(--line); }
-}

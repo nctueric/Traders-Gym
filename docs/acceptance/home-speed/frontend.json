@@ -1,0 +1,20 @@
+{
+  "environment": "Local development IAB; warm browser; viewport emulation, not Taiwan mobile network",
+  "desktop": {
+    "count": 10,
+    "homeP50": 93.5,
+    "homeP95": 329.80000019073486,
+    "readyP50": 1114.4000000953674,
+    "readyP95": 1376.2000002861023
+  },
+  "mobile": {
+    "width": 390,
+    "count": 10,
+    "homeP50": 96.90000009536745,
+    "homeP95": 349,
+    "readyP50": 1114.5,
+    "readyP95": 1357.3000001907349
+  },
+  "oneFullDownload": true,
+  "noOverflow": true
+}

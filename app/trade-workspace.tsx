@@ -122,15 +122,15 @@ function fetchHistoryInBackground(url: string, signal: AbortSignal, fetcher: typ
   return task;
 }
 
-export default function TradeWorkspace(props: { user: AccountUser; requestedAccountId?:string }) {
+export default function TradeWorkspace(props: { user: AccountUser; requestedAccountId?:string;initialRecord?:any;initialPreferences?:any;loadingFallback?:React.ReactNode }) {
  const demo=useDemoRuntime();const fetcher=useMemo(()=>createSessionScope(props.user.sessionId,demo?.fetcher||fetch).fetch,[props.user.sessionId,demo]);
- return <WorkspacePreferences userId={props.user.id} demo={demo} fetcher={fetcher}><TradeWorkspaceContent {...props}/></WorkspacePreferences>;
+ return <WorkspacePreferences userId={props.user.id} demo={demo} fetcher={fetcher} initialBootstrap={props.initialPreferences} legacyColor={props.initialRecord?.dataset?.settings?.holdingsColorScheme}><TradeWorkspaceContent {...props}/></WorkspacePreferences>;
 }
-export function TradeWorkspaceContent({ user, requestedAccountId }: { user: AccountUser; requestedAccountId?:string }) {
+export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord, loadingFallback }: { user: AccountUser; requestedAccountId?:string;initialRecord?:any;loadingFallback?:React.ReactNode }) {
   const demo=useDemoRuntime();
   const workspaceNow=useWorkspaceClock();
   const sessionScope = useMemo(() => createSessionScope(user.sessionId, demo?.fetcher || fetch), [user.sessionId,demo]);
-  const {preferences,update: updatePreferences}=useWorkspacePreferences();
+  const {preferences,configured,ready:preferencesReady,update: updatePreferences}=useWorkspacePreferences();
   const valuationCurrency=preferences.valuationCurrency;
   const [online,setOnline]=useState(true);
   useEffect(()=>{const update=()=>setOnline(navigator.onLine);update();window.addEventListener("online",update);window.addEventListener("offline",update);return()=>{window.removeEventListener("online",update);window.removeEventListener("offline",update);};},[]);
@@ -143,6 +143,9 @@ export function TradeWorkspaceContent({ user, requestedAccountId }: { user: Acco
   const setData=useCallback((next:React.SetStateAction<Dataset>)=>{if(!demo&&typeof navigator!=='undefined'&&navigator.onLine===false)return;setDataInternal(next);},[demo]);
   const [storageReady, setStorageReady] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
+  const colorMigrated=useRef(false);
+  useEffect(()=>{const color=data.settings?.holdingsColorScheme;if(!demo&&storageReady&&preferencesReady&&!colorMigrated.current&&!configured?.includes("holdingsColorScheme")&&["green-up","red-up"].includes(color||"")){colorMigrated.current=true;void updatePreferences({holdingsColorScheme:color}).catch(()=>{colorMigrated.current=false;});}},[data.settings?.holdingsColorScheme,demo,storageReady,preferencesReady,configured,updatePreferences]);
+  useEffect(()=>{if(storageReady&&cloudReady&&!demo){performance.mark("tg-full-ledger-ready");if(document.documentElement){document.documentElement.dataset.tgFullLedgerReady=String(performance.now());document.documentElement.dataset.tgRecordDownloads=String(performance.getEntriesByType("resource").filter(e=>new URL(e.name,location.href).pathname==="/api/trade-records").length);}}},[storageReady,cloudReady,demo]);
   const [recordAccounts, setRecordAccounts] = useState<RecordAccount[]>([]);
   const [activeRecordAccountId, setActiveRecordAccountId] = useState(DEFAULT_RECORD_ACCOUNT_ID);
   const performanceResource = useMemo(()=>createPerformanceHistoryResource({
@@ -207,9 +210,12 @@ export function TradeWorkspaceContent({ user, requestedAccountId }: { user: Acco
     sessionScope.activate();
     const restore = async () => {
       try {
+        let payload=initialRecord;
+        if(!payload){
         const response = await sessionScope.fetch(`/api/trade-records${requestedAccountId ? `?accountId=${encodeURIComponent(requestedAccountId)}` : ''}`, { cache: "no-store" });
-        const payload = await response.json();
+        payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "帳本讀取失敗");
+        }
         if (!active) return;
         if(!payload.account){setNoLedger(true);setRecordAccounts([]);setStorageReady(true);setCloudReady(true);setSaveState('尚無帳本');return;}
         setNoLedger(false);
@@ -233,7 +239,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId }: { user: Acco
     };
     void restore();
     return () => { active = false; sessionScope.stop(); };
-  }, [loadDataset, sessionScope,requestedAccountId,demo]);
+  }, [loadDataset, sessionScope,requestedAccountId,demo,initialRecord]);
 
   const persistCompleteSnapshot = useCallback((force = false, label = "自動") => saveQueueRef.current(async () => {
     if(demo){demo.update(latestSaveRef.current.dataset);setSaveState('當次練習已更新・離開後重置');return;}
@@ -723,6 +729,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId }: { user: Acco
   const navigationTab = tab === "positions" ? "overview" : ["cycles", "strategies", "training"].includes(tab) ? "cycles" : ["trades", "tests"].includes(tab) ? "trades" : tab;
 
   if (sessionEnded) return <main className="auth-page"><section className="auth-panel"><h1>請重新登入</h1><p>登入已到期或帳號已變更。尚未儲存的修改只保留於當頁，請先匯出再重新登入。</p><button onClick={exportJson}>匯出當頁 JSON</button><a href="/login?error=expired">使用 Google 重新登入</a></section></main>;
+  if(!storageReady&&loadingFallback)return loadingFallback;
   return <ValuationProvider rate={fxStale?null:fxRate} resource={performanceResource}><div className="shell trading-workbench">
     <a className="skip-link" href="#workspace-main">跳至主要內容</a>
     <PerformancePreload data={data} resource={performanceResource} enabled={storageReady && !noLedger && !sessionEnded}/>
@@ -747,7 +754,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId }: { user: Acco
       <div id="workspace-content" aria-busy={!storageReady}>
 
       {noLedger && tab!=="ledgers" ? <section className="panel ledger-empty"><h2>建立你的第一份帳本</h2><p>從空白帳本開始，或從回收筒還原。</p><button className="primary" onClick={()=>changePage("ledgers")}>建立／還原帳本</button></section> : !storageReady ? <div className="workspace-loading" role="status"><span/><span/><span/><p>正在載入交易紀錄…</p></div> : <>
-      {!demo&&onboardingOpen&&tab!=="today"&&<ProductOnboarding onFinish={finishOnboarding}/>}
+      {!demo&&onboardingOpen&&tab!=="today"&&<ProductOnboarding multipleLedgers={user.isOwner} onFinish={finishOnboarding}/>}
       {tab === "today" && <TodayWorkspace brief={coachBrief} positionRows={todayPositionRows} cycles={report.cycles} reviews={cycleReviews} totalEquityUsd={currentEquity.totalUsd} qualityPct={report.qualityPct} onboardingOpen={onboardingOpen} experiment={activeExperiment} experimentResult={activeExperimentResult} experimentSuggestion={activeExperiment ? null : coachFindings[0] || null} onGuide={() => setOnboardingOpen(true)} onGuideFinish={finishOnboarding} onStartExperiment={startCoachExperiment} onCompleteExperiment={completeCoachExperiment} onAction={changePage} onPosition={(positionId) => setSelectedPositionId(positionId)} onCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
       {(tab === "overview" || tab === "positions") && !data.fills.length && <section className="panel ledger-empty"><h2>{data.cashActivities?.length?'資金已就緒，開始記錄交易':'先登錄資金，建立你的帳本'}</h2><p>入金建立資金基準，成交則記錄實際股數與價格。也可以匯入現有交易紀錄。</p><div className="actions"><button className="primary" onClick={()=>setCashEditor(null)}>新增資金</button><button className="ghost" onClick={openEntry}>新增交易</button>{!demo&&<button className="ghost" disabled={!online} onClick={()=>inputRef.current?.click()}>匯入資料</button>}</div></section>}
       {(tab === "overview" || tab === "positions") && <>
@@ -790,7 +797,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId }: { user: Acco
       {tab === "entry" && (data.entryDraft ? <TradeRegistration key={activeRecordAccountId} userId={user.id} ledgerVersion={recordVersionRef.current} demo={!!demo} now={workspaceNow} data={data} quotes={quotes} fetcher={sessionScope.fetch} onSimpleChange={(draft:any)=>setData(current=>({...current,simpleEntryDraft:draft}))} onSimpleSubmit={submitSimpleEntry} onFullChange={(patch:any) => setData((current) => current.entryDraft?.id === data.entryDraft?.id ? ({ ...current, entryDraft: { ...current.entryDraft, ...patch } }) : current)} onFullSubmit={submitEntry} onBack={() => changePage("overview")}/> : <div className="panel"><p>這個帳號沒有待填草稿。</p><button className="primary" onClick={openEntry}>開始登錄成交</button></div>)}
       {tab === "performance" && <PerformanceWorkspace key={activeRecordAccountId} data={{fills:data.fills,cashActivities:data.cashActivities}} resource={performanceResource}/>}
       {tab === "trades" && <><div className="ledger-switch" role="group" aria-label="帳本內容"><button type="button" aria-pressed={ledgerTab === "fills"} onClick={() => setLedgerTab("fills")}>成交紀錄 <span>{data.fills.length}</span></button><button type="button" aria-pressed={ledgerTab === "cash"} onClick={() => setLedgerTab("cash")}>資金活動 <span>{(data.cashActivities || []).length}</span></button></div>{ledgerTab === "fills" ? <section className="panel"><div className="panel-head"><div><h2>個人成交帳本</h2></div><span className="muted">依成交時間排序</span></div><ul className="mobile-only mobile-record-list" aria-label="成交紀錄">{[...data.fills].sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).map(fill=><li key={fill.id}><header><b>{fill.symbol}・{fill.side==='BUY'?'買進':'賣出'}</b><b>{fill.quantity} 股</b></header><small>{fill.timestamp.slice(0,10)}</small><p>成交價 {money(fill.price,fill.currency)}</p><details><summary>明細與操作</summary><dl><dt>市場／帳戶</dt><dd>{fill.market}・{data.accounts.find(a=>a.id===fill.accountId)?.name||fill.accountId}</dd><dt>成交時間</dt><dd>{fill.timestamp}<small>{simpleTimeLabel((fill as any).timeSource)}</small></dd><dt>費用</dt><dd>{money(fill.fee,fill.currency)}</dd></dl><button className="ghost danger" onClick={()=>{if(confirm(`刪除 ${fill.symbol} ${fill.quantity} 股成交紀錄？`))deleteFill(fill.id);}}>刪除</button></details></li>)}</ul><div className="table-wrap desktop-only" tabIndex={0} role="region" aria-label="資料表，可捲動"><table className="fills-table"><thead><tr><th>日期</th><th>標的</th><th>方向</th><th>數量</th><th>價格</th><th>費用</th><th>操作</th></tr></thead><tbody>{[...data.fills].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((fill) => <tr key={fill.id}><td>{(fill as any).tradeDate||fill.timestamp.slice(0, 10)}<small className="block">{simpleTimeLabel((fill as any).timeSource)}</small></td><td><b>{fill.symbol}</b><small className="block">{fill.market}</small></td><td><span className={`side ${fill.side.toLowerCase()}`}>{fill.side === "BUY" ? "買進" : "賣出"}</span></td><td>{fill.quantity}</td><td>{money(fill.price, fill.currency)}</td><td>{money(fill.fee, fill.currency)}</td><td><button className="danger" onClick={() => deleteFill(fill.id)}>刪除</button></td></tr>)}</tbody></table></div></section> : <CashLedger activities={data.cashActivities || []} accounts={data.accounts} onAdd={()=>setCashEditor(null)} onEdit={setCashEditor} onDelete={row=>saveCashRows({...latestSaveRef.current.dataset,cashActivities:(latestSaveRef.current.dataset.cashActivities||[]).filter(a=>a.id!==row.id)})} onRestore={row=>saveCashRows(updateCashActivity(latestSaveRef.current.dataset,row) as Dataset)}/>}</>}
-      {tab === "cycles" && <><WeeklyCyclePanel stats={weeklyCycleSummaries} cycles={report.cycles}/><CycleTable cycles={report.cycles} title="全部交易閉環" historyState={cycleHistoryState} onRefresh={() => setCycleHistoryRefresh((value) => value + 1)} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/></>}
+      {tab === "cycles" && <>{!demo&&!user.isOwner&&<p className="muted">已完成交易閉環：{report.cycles.length}／500 組</p>}<WeeklyCyclePanel stats={weeklyCycleSummaries} cycles={report.cycles}/><CycleTable cycles={report.cycles} title="全部交易閉環" historyState={cycleHistoryState} onRefresh={() => setCycleHistoryRefresh((value) => value + 1)} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/></>}
       {tab === "strategies" && <StrategyWorkspace strategies={data.strategies || []} assignments={data.strategyAssignments || {}} cycles={report.cycles} fxRate={fxRate} entryContexts={data.entryContexts||{}} onStrategiesChange={saveStrategies} onDirtyChange={dirty=>{strategyDirtyRef.current=dirty;}} onSelectCycle={setSelectedCycleId}/>}
       {tab === "training" && <TrainingWorkspace key={activeRecordAccountId} accountId={activeRecordAccountId} dataset={data} fetchHistory={sessionScope.fetch} cycles={report.cycles} marketBars={data.marketBars} reviews={cycleReviews} fxRate={fxRate} strategies={data.strategies || []} strategyAssignments={data.strategyAssignments || {}} entryContexts={data.entryContexts || {}} onSelectCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
       {tab === "tests" && <section className="split tests"><CycleRebuildHistory records={(data as any).cycleRebuildHistory||[]}/><article className="panel"><h2>目前資料檢查</h2>{report.issues.length ? <div className="test-list">{report.issues.map((issue: any, index: number) => <div key={`${issue.code}-${index}`}><span className={`test-result ${issue.level === "error" ? "fail" : "warn-dot"}`}>{issue.level === "error" ? "失敗" : "警告"}</span><b>{issue.code}</b><small>{issue.message}</small></div>)}</div> : <Empty text="沒有發現資料問題"/>}</article><article className="panel"><h2>核心計算測試</h2>{tests.some((test:any)=>!test.passed)&&<div className="test-list" role="alert">{tests.filter((test:any)=>!test.passed).map((test:any)=><div key={test.name}><span className="test-result fail">失敗</span><b>{test.name}</b><small>{test.detail}</small></div>)}</div>}<details><summary>已通過 {tests.filter((test:any)=>test.passed).length}／{tests.length} 項</summary><div className="test-list">{tests.filter((test:any)=>test.passed).map((test: any) => <div key={test.name}><span className="test-result pass">通過</span><b>{test.name}</b><small>{test.detail || "通過"}</small></div>)}</div></details></article></section>}

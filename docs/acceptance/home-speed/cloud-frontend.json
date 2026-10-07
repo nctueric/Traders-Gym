@@ -1,0 +1,22 @@
+{
+  "environment": "Complete isolated Cloudflare application; browser warm; synthetic load fixture; viewport emulation only",
+  "desktop": {
+    "width": 1440,
+    "count": 10,
+    "assetsP50": 168,
+    "assetsP95": 200,
+    "readyP50": 745.1999998092651,
+    "readyP95": 1196.8000001907349
+  },
+  "mobile": {
+    "width": 390,
+    "count": 10,
+    "assetsP50": 156,
+    "assetsP95": 220,
+    "readyP50": 728.9000000953674,
+    "readyP95": 794.2999997138977
+  },
+  "oneFullDownload": true,
+  "noOverflow": true,
+  "metric": "Element Timing buffered text renderTime for SSR asset value; full-ready mark after workspace initialization. Navigation start excludes credential submission; fixture is more compressible than real varied history."
+}

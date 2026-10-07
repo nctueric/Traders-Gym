@@ -1,3 +1,4 @@
+import {runWeeklyMemberBackups} from '../lib/member-weekly-backups.mjs';
 import {maintainSnapshotHistory} from "../lib/snapshot-retention.mjs";
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
@@ -6,7 +7,8 @@ import handler from "vinext/server/app-router-entry";
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
-  SNAPSHOTS?: {delete(key:string):Promise<void>};
+  SNAPSHOTS?: {delete(key:string):Promise<void>;get(key:string):Promise<unknown>;put(key:string,value:string,options:unknown):Promise<unknown>};
+  MEMBER_WEEKLY_BACKUPS?: string;
   SNAPSHOT_RETENTION_ENABLED?: string;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -29,8 +31,11 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
-  async scheduled(_event: unknown, env: Env, ctx: ExecutionContext) {
-    if(env.SNAPSHOT_RETENTION_ENABLED === 'true') ctx.waitUntil(maintainSnapshotHistory(env.DB,env.SNAPSHOTS));
+  async scheduled(event: {scheduledTime:number}, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil((async()=>{
+      if(env.MEMBER_WEEKLY_BACKUPS==='true')await runWeeklyMemberBackups(env.DB,env.SNAPSHOTS,{now:new Date(event.scheduledTime)});
+      if(env.SNAPSHOT_RETENTION_ENABLED==='true' && (env.MEMBER_WEEKLY_BACKUPS!=='true'||new Date(event.scheduledTime).getUTCMinutes()===15))await maintainSnapshotHistory(env.DB,env.SNAPSHOTS);
+    })());
   },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -56,7 +61,7 @@ const worker = {
       }));
     }
     const response = new Response(original.body, original);
-    response.headers.set("Cache-Control", "no-store");
+    if (request.method !== "GET" || !["/api/market/quotes", "/api/market/history"].includes(url.pathname) || !original.ok) response.headers.set("Cache-Control", "no-store");
     response.headers.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");

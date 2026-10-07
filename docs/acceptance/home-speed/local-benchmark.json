@@ -1,0 +1,53 @@
+{
+  "at": "2026-10-07T07:31:56.830Z",
+  "environment": "localhost; actual isolated Miniflare D1/R2, not Taiwan network/production",
+  "samples": 200,
+  "sourceBytes": 7652675,
+  "barCount": 46688,
+  "fillCount": 574,
+  "responseBytes": 4626,
+  "firstRequest": {
+    "auth": 0.5,
+    "d1": 3.43,
+    "summary": 0.13,
+    "serialize": 0.05,
+    "total": 4.1,
+    "http": 6.436083000000053
+  },
+  "metrics": {
+    "auth": {
+      "p50": 0.08,
+      "p95": 0.11,
+      "max": 0.5
+    },
+    "d1": {
+      "p50": 2.18,
+      "p95": 2.72,
+      "max": 8.17
+    },
+    "summary": {
+      "p50": 0.04,
+      "p95": 0.06,
+      "max": 0.13
+    },
+    "serialize": {
+      "p50": 0.04,
+      "p95": 0.05,
+      "max": 0.06
+    },
+    "total": {
+      "p50": 2.35,
+      "p95": 2.93,
+      "max": 8.35
+    },
+    "http": {
+      "p50": 3.992334000000028,
+      "p95": 4.6502080000000205,
+      "max": 9.980375000000095
+    }
+  },
+  "backendP95Pass": true,
+  "ssrAssets": true,
+  "fullSnapshotUnchanged": true,
+  "accountId": "647f6d45-1c54-4379-94cb-cb9dff943cbd"
+}

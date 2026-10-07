@@ -9,9 +9,9 @@ export const ONBOARDING_STEPS = [
   {title:"回到複盤",copy:"以行為分析、策略與閉環交易回顧結果，逐步改善自己的決策。",example:"記錄 → 複盤 → 持續練習"},
 ];
 
-export function ProductOnboarding({ onFinish }: { onFinish: () => void }) {
+export function ProductOnboarding({ onFinish, multipleLedgers=false }: { onFinish: () => void; multipleLedgers?:boolean }) {
   const [step, setStep] = useState(0);
-  const item = ONBOARDING_STEPS[step];
+  const item = step===0&&!multipleLedgers?{title:"使用帳本",copy:"成交、資金與策略統一保存於你的雲端帳本，可在帳本頁更名、匯入及匯出。",example:"從登錄資金開始記錄"}:ONBOARDING_STEPS[step];
   return <aside className="product-onboarding" aria-labelledby="onboarding-title">
     <div className="onboarding-progress" aria-label={`導覽第 ${step + 1} 步，共 ${ONBOARDING_STEPS.length} 步`}><span>{step + 1}/{ONBOARDING_STEPS.length}</span><div>{ONBOARDING_STEPS.map((_, index) => <i key={index} className={index <= step ? "active" : ""}/>)}</div></div>
     <div className="onboarding-copy"><p>新版使用導覽</p><h3 id="onboarding-title">{item.title}</h3><span>{item.copy}</span><b>{item.example}</b></div>

@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-07T08:13:05.440Z",
+  "environment": "temporary Cloudflare APAC D1/R2 Worker; synthetic data only",
+  "origin": "https://traders-gym-backup-qa-20261007.nctueric.workers.dev",
+  "anonymousDenied": true,
+  "memberBackupDenied": true,
+  "singleLedger": true,
+  "verifiedWeeklyBackup": true,
+  "duplicateScheduleSkipped": true,
+  "restoreCAS": true,
+  "restoredCash": 10000,
+  "consistentHome": true,
+  "newestBackupOnly": true,
+  "cycle501Rejected": true,
+  "auditEvents": 2
+}

@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-07T08:17:30.949Z",
+  "tests": {
+    "passed": 488,
+    "failed": 0
+  },
+  "lint": true,
+  "typescript": true,
+  "build": true,
+  "deployDryRun": true,
+  "diffCheck": true,
+  "desktop": true,
+  "mobileViewport": {
+    "width": 390,
+    "height": 844,
+    "overflow": false
+  },
+  "productionMigrationApplied": false,
+  "productionDeployed": false,
+  "githubUpdated": false,
+  "stage": "Local and isolated acceptance before production deployment; current production status is production.json"
+}

@@ -1,0 +1,58 @@
+{
+  "at": "2026-10-07T07:29:15.532Z",
+  "environment": "Independent Cloudflare APAC D1/R2 and complete vinext application; synthetic 7.5MB/574-fill/46688-bar projection; no production ledger",
+  "url": "https://traders-gym-home-speed-isolated-20261007.nctueric.workers.dev",
+  "samples": 200,
+  "firstRequest": {
+    "auth": 0,
+    "d1": 22,
+    "summary": 0,
+    "serialize": 0,
+    "total": 22,
+    "http": 126.18654200000003
+  },
+  "metrics": {
+    "auth": {
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "d1": {
+      "p50": 16,
+      "p95": 22,
+      "max": 76
+    },
+    "summary": {
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "serialize": {
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+    },
+    "total": {
+      "p50": 16,
+      "p95": 22,
+      "max": 76
+    },
+    "http": {
+      "p50": 111.68037499999991,
+      "p95": 124.01329100000112,
+      "max": 169.52679199999966
+    }
+  },
+  "colos": [
+    "SIN"
+  ],
+  "responseBytes": 1548,
+  "sourceBytes": 7521633,
+  "backendP95Pass": true,
+  "anonymousDenied": true,
+  "mutationDenied": true,
+  "ssrAssets": true,
+  "htmlBytes": 13351,
+  "r2VerifiedUnchanged": true,
+  "scope": "Complete isolated application. Server-Timing measures authenticated API hot path; full vinext SSR and checksum-verified R2 snapshot also checked. Not a controlled Taiwan mobile-network benchmark."
+}

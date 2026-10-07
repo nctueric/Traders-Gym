@@ -1,0 +1,7 @@
+{
+  "environment": "isolated local Miniflare D1/R2",
+  "primaryLedger": true,
+  "backupStored": true,
+  "adminEmail": "backup-admin@example.test",
+  "memberEmail": "backup-member@example.test"
+}

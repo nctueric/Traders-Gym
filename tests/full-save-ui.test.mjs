@@ -18,9 +18,9 @@ const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : !tree || typeo
 const find = (tree, fn) => nodes(tree).find(fn);
 
 // Run the real component's hooks and event handlers; no browser, DOM or account writes.
-function harness(initial = source(), values = new Map()) {
+function harness(initial = source(), values = new Map(), initialRecord, loadingFallback) {
   let stored = structuredClone(initial), version = 1, index = 0, dirty = true, tree, serial = 0, onlineMarkets = false, failWrites = false, failLocal = true, connected = true, prefs={...DEFAULT_PREFERENCES}, authFailed=false;
-  const hooks = [], effects = [], timers = new Map(), writes = [], events = new Map();
+  const hooks = [], effects = [], timers = new Map(), writes = [], events = new Map(),reads=[];
   const storage = { getItem: k => values.get(k) || null, setItem: (k,v) => {if(failLocal)throw Error('quota');values.set(k,v);} };
   const timer = (fn, ms) => { const id = ++serial; timers.set(id, { fn, ms }); return id; };
   const window = { setTimeout: timer, clearTimeout: id => timers.delete(id), setInterval: (fn,ms)=>{const id=timer(fn,ms);timers.get(id).interval=true;return id;}, clearInterval: id => timers.delete(id), addEventListener: (name, fn) => events.set(name,fn), removeEventListener: name => events.delete(name), scrollTo() {} };
@@ -32,6 +32,7 @@ function harness(initial = source(), values = new Map()) {
     useEffect(fn,deps) { const i=index++; if (!hooks[i] || deps.some((d,j) => !Object.is(d,hooks[i].deps[j]))) { const previous=hooks[i]; hooks[i]={deps}; effects.push(() => { previous?.cleanup?.(); hooks[i].cleanup=fn(); }); } },
   };
   const fetcher = async (url, options={}) => {
+    if(url.startsWith("/api/trade-records")&&!options.method)reads.push(url);
     const account = { id:"primary", name:"測試帳號", version, updatedAt:stamp };
     const response = (status,payload) => ({ ok:status===200, status, json:async () => payload });
     if (url === "/api/trade-records" && options.method === "PUT") {
@@ -60,9 +61,9 @@ function harness(initial = source(), values = new Map()) {
     }
     return require(id);
   },componentModule,componentModule.exports,window,{getElementById:()=>null,visibilityState:"visible"},storage,fetcher,timer,window.clearTimeout,navigator);
-  function render() { index=0;dirty=false;tree=componentModule.exports.TradeWorkspaceContent({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}}); for(const effect of effects.splice(0)) effect();return tree; }
+  function render() { index=0;dirty=false;tree=componentModule.exports.TradeWorkspaceContent({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"},initialRecord,loadingFallback}); for(const effect of effects.splice(0)) effect();return tree; }
   return {
-    render, get tree(){return tree;},get stored(){return stored;}, writes,events,values,get prefs(){return prefs;},set connected(v){connected=v;events.get(v?"online":"offline")?.();},set authFailed(v){authFailed=v;},
+    render, get tree(){return tree;},get stored(){return stored;}, writes,reads,events,values,get prefs(){return prefs;},set connected(v){connected=v;events.get(v?"online":"offline")?.();},set authFailed(v){authFailed=v;},
     async settle(){ for(let i=0;i<15;i++){if(dirty)render();await new Promise(resolve=>setImmediate(resolve));}return tree; },
     runTimers(ms){ for(const [id,task] of [...timers]) if(task.ms===ms){if(!task.interval)timers.delete(id);task.fn();} },
     remoteUpdate(next){stored=structuredClone(next);version++;},
@@ -198,4 +199,14 @@ test('known offline disables formal mutations and preserves cloud ledger',async 
  const h=harness();t.after(()=>h.close());await h.settle();h.connected=false;await h.settle();
  find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
  assert.equal(find(h.tree,n=>n.type?.name==='TradeRegistration'),undefined);assert.equal(h.writes.length,0);assert.deepEqual(h.stored,source());
+});
+
+test("preverified background record initializes the full workspace without a second ledger download",async()=>{
+ const dataset=source(),h=harness(dataset,new Map(),{account:{id:"primary",name:"測試帳號",version:1,updatedAt:stamp},dataset});
+ await h.settle();assert.equal(h.reads.length,0);assert.deepEqual(h.stored,dataset);assert.equal(h.writes.length,0);h.close();
+});
+
+test("read-only home stays visible while the verified record initializes the calculation workspace",async()=>{
+ const dataset=source(),h=harness(dataset,new Map(),{account:{id:"primary",name:"測試帳號",version:1,updatedAt:stamp},dataset},"唯讀首頁摘要");
+ assert.equal(h.render(),"唯讀首頁摘要");await h.settle();assert.notEqual(h.tree,"唯讀首頁摘要");assert.equal(h.reads.length,0);assert.equal(h.writes.length,0);h.close();
 });

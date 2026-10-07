@@ -26,7 +26,7 @@ Cash editing preserves entered values on save errors. Deletion uses an adjacent 
 
 ## Guest practice
 
-`/demo` runs the existing workspace with a memory storage/fetch boundary. It uses synthetic trades and market data fixed at `2026-09-25T20:00:00.000Z`. Show practice/reset status and the fixed example date. Refresh, exit, or reset returns to the synthetic example. Never present example quotations as live data or use member APIs/storage for guest changes.
+`/demo` loads real public market data before building rolling one-year example trades, using real session dates and raw closes. Show “訪客練習｜真實市場資料・示範交易｜離開後重置”, the USD 50,000 example opening capital and omitted-cost disclosure. Use the real clock, quote source and actual quote times, including delayed/unknown/stale states. Initialization has progress, error and retry states. Guests may register any supported Taiwan/US security. Changes and derived performance caches remain in memory; reload, exit or reset rebuilds the example. Forward only market GET requests without member credentials; all private APIs stay blocked.
 
 ## Theme and responsive behavior
 

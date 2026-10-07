@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-07T07:49:02.303429+00:00",
+  "tests": {
+    "total": 473,
+    "passed": 473,
+    "failed": 0
+  },
+  "lint": "passed",
+  "typescript": "passed",
+  "build": "passed",
+  "deployDryRun": "passed",
+  "gitDiffCheck": "passed",
+  "productionDeployment": "not performed",
+  "productionMigration0011": "not performed",
+  "isolatedResources": "deleted",
+  "remainingAcceptance": "Controlled Taiwan physical-device/mobile-network login-to-assets P50/P95 before production rollout"
+}
