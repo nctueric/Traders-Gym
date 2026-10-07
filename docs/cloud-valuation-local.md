@@ -46,3 +46,7 @@
 截圖：[桌面資產](acceptance/cloud-valuation/desktop.png)、[手機資產](acceptance/cloud-valuation/mobile.png)、[雲端匯入成功](acceptance/cloud-valuation/import-cloud.png)、[台幣績效](acceptance/cloud-valuation/performance.png)、[台幣複盤](acceptance/cloud-valuation/review.png)。
 
 行情完整度仍以供應商實際涵蓋為準。當日新增帳本缺少期間起始估值時，期間報酬顯示「—」，不把當日尚未完成日線當成歷史完整資料。
+
+## 同日正式發布
+
+v2.5.1 已發布至 https://tradergym.app；`0010_cloud_preferences.sql` 已套用。三份正式帳本的版本與 R2 指標和發布前一致，既有登入設定及 Secret 保留。GitHub 程式提交與 CI 驗證完成，詳見 [正式發布核對](releases/v2.5.1-production.json)。前述「尚未執行」描述本機驗收階段的狀態。

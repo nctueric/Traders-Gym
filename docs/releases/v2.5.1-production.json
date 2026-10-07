@@ -1,0 +1,81 @@
+{
+  "at": "2026-10-07T04:17:42.952Z",
+  "origin": "https://tradergym.app",
+  "checks": [
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/login",
+      "status": 200
+    },
+    {
+      "path": "/demo",
+      "status": 200
+    },
+    {
+      "path": "/privacy",
+      "status": 200
+    },
+    {
+      "path": "/api/preferences",
+      "status": 401
+    },
+    {
+      "path": "/api/trade-records",
+      "status": 401
+    },
+    {
+      "path": "/api/ledgers",
+      "status": 401
+    },
+    {
+      "path": "/api/admin/accounts",
+      "status": 401
+    }
+  ],
+  "version": "v2.5.1",
+  "fills": 9,
+  "cycles": 3,
+  "positions": 2,
+  "fillCloseConsistency": true,
+  "quotes": [
+    {
+      "symbol": "AAPL",
+      "price": 333.63,
+      "updatedAt": "2026-10-06T20:00:01.000Z",
+      "source": "Yahoo Finance via MarketDataAdapter"
+    },
+    {
+      "symbol": "2330.TW",
+      "price": 2585,
+      "updatedAt": "2026-10-07T03:56:51.000Z",
+      "source": "Yahoo Finance via MarketDataAdapter"
+    },
+    {
+      "symbol": "USDTWD=X",
+      "price": 31.843,
+      "updatedAt": "2026-10-07T04:17:40.000Z",
+      "source": "Yahoo Finance via MarketDataAdapter"
+    },
+    {
+      "symbol": "NVDA",
+      "price": 239.24,
+      "updatedAt": "2026-10-06T20:00:00.000Z",
+      "source": "Yahoo Finance via MarketDataAdapter"
+    }
+  ],
+  "cacheControl": "public, max-age=15, s-maxage=15",
+  "demoWarnings": [],
+  "workerVersion": "8dfde8e4-ee95-4e61-be8c-4cd98bcdf1b2",
+  "previousWorkerVersion": "412ff28e-e555-42a4-937f-7eea0302a70f",
+  "sourceCommit": "af9322e99717aecd85be0a3c6eba6148b249b85c",
+  "migration": "0010_cloud_preferences.sql",
+  "productionSnapshotsUnchanged": 3,
+  "existingLoginFlagsAndSecretsPreserved": true,
+  "githubCi": "success",
+  "githubCiUrl": "https://github.com/nctueric/Traders-Gym/actions/runs/37570723833",
+  "desktopCurrencySwitch": true,
+  "mobileAssetRow": true
+}
