@@ -46,8 +46,12 @@ D1 保存工作、來源引用、租約與最新備份指標；R2 保存獨立�
 
 ## 2026-10-07 正式發布
 
-已正式發布至 https://tradergym.app，Worker 版本 `31e42ccd-bb46-4b1c-9b6f-63e5f1310173`。0011／0012 已套用；三份既有帳本已備份，ID、版本、R2 指標與 SHA-256 內容校驗碼均保持不變。回填三份首頁摘要，建立一位一般會員的主帳本指標。已啟用 `HOME_VIEW_READS`、`MEMBER_SINGLE_LEDGER`、`MEMBER_WEEKLY_BACKUPS`，登入設定及原有 secret 維持。
+已正式發布至 https://tradergym.app，Worker 版本 `2907699c-fd31-4107-b9a8-5808c103c5f3`。0011／0012 已套用；三份既有帳本已備份，ID、版本、R2 指標與 SHA-256 內容校驗碼均保持不變。回填三份首頁摘要，建立一位一般會員的主帳本指標。已啟用 `HOME_VIEW_READS`、`MEMBER_SINGLE_LEDGER`、`MEMBER_WEEKLY_BACKUPS`，登入設定及原有 secret 維持。
 
 正式網站登入／訪客頁、真實行情、USD／TWD 切換及私人 API 的匿名拒絕檢查通過。備份工作排程每分鐘檢查紐約週五 16:00，到期才執行；首次預定台灣時間 2026-10-10 04:00（夏令時間）。目前尚無每週備份，未提前以未來日期建立正式備份，亦未對真實會員執行還原。管理員還原、500／501 閉環及會員隔離的完整操作驗收沿用上述隔離雲端結果；本次沒有已登入的正式會員工作階段，因此未重新量測正式登入摘要 P95。
 
 [正式 HTTP 檢查](acceptance/member-backups/production-http.json)、[發布紀錄](acceptance/member-backups/production.json)。
+
+正式發布後發現 Node 22 SQLite 對相關子查詢 ORDER BY 的相容性差異，已改用明確選定帳本查詢與更新時間 fallback，仍保持一次 D1 讀取。Node 22 的 24 項相關測試及 488 項完整測試皆通過；正式 D1 已唯讀確認查詢可執行且無效工作階段被拒絕。修正版來源 commit 為 `c30e313`。
+
+修正版 GitHub CI 已通過完整測試、Lint、TypeScript 與建置：[執行紀錄](https://github.com/nctueric/Traders-Gym/actions/runs/37594037958)。啟用後再次觀察到一份帳本透過正式手動儲存正常增加版本，最新 R2 快照校驗通過、三份首頁摘要皆對應目前版本；發布前備份保留於私人目錄。來源不變的核對描述指發布回填與啟用階段，不代表阻止後續會員編輯。

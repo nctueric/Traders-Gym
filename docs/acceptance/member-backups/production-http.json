@@ -1,53 +1,53 @@
 {
-  "checkedAt": "2026-10-07T08:25:22.687Z",
+  "checkedAt": "2026-10-07T08:29:33.271Z",
   "results": [
     {
       "path": "/login",
       "status": 200,
       "bytes": 11037,
-      "elapsedMs": 425,
+      "elapsedMs": 424,
       "cacheControl": "no-store"
     },
     {
       "path": "/demo",
       "status": 200,
       "bytes": 10652,
-      "elapsedMs": 102,
+      "elapsedMs": 108,
       "cacheControl": "no-store"
     },
     {
       "path": "/api/workspace/bootstrap",
       "status": 401,
       "bytes": 24,
-      "elapsedMs": 99,
+      "elapsedMs": 101,
       "cacheControl": "no-store"
     },
     {
       "path": "/api/admin/member-backups",
       "status": 401,
       "bytes": 24,
-      "elapsedMs": 436,
+      "elapsedMs": 427,
       "cacheControl": "no-store"
     },
     {
       "path": "/api/trade-records",
       "status": 401,
       "bytes": 24,
-      "elapsedMs": 83,
+      "elapsedMs": 93,
       "cacheControl": "no-store"
     },
     {
       "path": "/api/preferences",
       "status": 401,
       "bytes": 24,
-      "elapsedMs": 81,
+      "elapsedMs": 88,
       "cacheControl": "no-store"
     },
     {
       "path": "/api/market/quotes?symbols=AAPL,USDTWD%3DX",
       "status": 200,
       "bytes": 636,
-      "elapsedMs": 374,
+      "elapsedMs": 346,
       "cacheControl": "public, max-age=15, s-maxage=15",
       "response": {
         "quotes": [
@@ -61,23 +61,23 @@
             "exchange": "NMS",
             "updatedAt": "2026-10-06T20:00:01.000Z",
             "source": "Yahoo Finance via MarketDataAdapter",
-            "fetchedAt": "2026-10-07T08:25:22.439Z"
+            "fetchedAt": "2026-10-07T08:29:33.054Z"
           },
           {
             "symbol": "USDTWD=X",
-            "price": 31.86,
+            "price": 31.864,
             "previousClose": 31.78,
-            "changePct": 0.0025173064820640523,
+            "changePct": 0.002643171806167466,
             "currency": "TWD",
             "marketState": "UNKNOWN",
             "exchange": "CCY",
-            "updatedAt": "2026-10-07T08:24:45.000Z",
+            "updatedAt": "2026-10-07T08:29:29.000Z",
             "source": "Yahoo Finance via MarketDataAdapter",
-            "fetchedAt": "2026-10-07T08:25:22.439Z"
+            "fetchedAt": "2026-10-07T08:29:33.054Z"
           }
         ],
         "errors": [],
-        "fetchedAt": "2026-10-07T08:25:22.439Z",
+        "fetchedAt": "2026-10-07T08:29:33.054Z",
         "refreshAfterSeconds": 30
       }
     }

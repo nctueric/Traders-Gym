@@ -1,7 +1,7 @@
 {
   "releasedAt": "2026-10-07T08:25:00Z",
   "origin": "https://tradergym.app",
-  "workerVersion": "31e42ccd-bb46-4b1c-9b6f-63e5f1310173",
+  "workerVersion": "2907699c-fd31-4107-b9a8-5808c103c5f3",
   "migrations": [
     "0011_ledger_home_views.sql",
     "0012_safe_smasher.sql"
@@ -26,5 +26,22 @@
   "authenticatedProductionBenchmarkPerformed": false,
   "browserDemoUSDTWDToggle": true,
   "browserErrors": [],
-  "adminUnauthenticatedRedirect": "/login"
+  "adminUnauthenticatedRedirect": "/login",
+  "sourceCommit": "c30e31343b64cddc8709592113a75fd3be9e61db",
+  "node22RelatedTestsPassed": 24,
+  "fullTestsPassed": 488,
+  "productionBootstrapSQLCompiled": true,
+  "previousDeploymentVersion": "31e42ccd-bb46-4b1c-9b6f-63e5f1310173",
+  "githubCodeCI": {
+    "conclusion": "success",
+    "run": "https://github.com/nctueric/Traders-Gym/actions/runs/37594037958",
+    "tests": 488,
+    "lint": true,
+    "typescript": true,
+    "build": true
+  },
+  "postReleaseManualSaveObserved": true,
+  "latestSnapshotChecksumsVerified": true,
+  "latestHomeViewsMatched": 3,
+  "originalLedgersPreservedVerificationScope": "After activation; later member manual saves advanced one ledger normally. Release operations did not write ledger content."
 }
