@@ -5,6 +5,7 @@ import { loadHomeRecord } from '@/lib/home-record-client.mjs';
 import { Brand } from './brand';
 import { homeAmounts } from '@/lib/home-amounts.mjs';
 import { formatCurrency, convertCurrency } from '@/lib/valuation.mjs';
+import { readLedgerRecordCache, writeLedgerRecordCache } from '@/lib/ledger-record-cache.mjs';
 const Workspace = lazy(() => import('./trade-workspace'));
 export function HomePreview({ bootstrap, status }: {
     bootstrap: any;
@@ -38,6 +39,13 @@ export default function FastWorkspace({ bootstrap: initial, requestedAccountId }
         void import('./trade-workspace');
         const hydrate = async () => {
             try {
+                const cached = await readLedgerRecordCache({ userId: bootstrap.user.id, accountId: bootstrap.account.id, version: bootstrap.account.version });
+                if (!active) return;
+                if (cached) {
+                    setStatus('已從裝置快取載入；正在背景確認雲端版本…');
+                    setRecord(cached);
+                    return;
+                }
                 const loaded = await loadHomeRecord(fetch, bootstrap, AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]));
                 if (!active)
                     return;
@@ -48,6 +56,7 @@ export default function FastWorkspace({ bootstrap: initial, requestedAccountId }
                     return;
                 }
                 performance.mark('tg-snapshot-verified');
+                void writeLedgerRecordCache({ userId: bootstrap.user.id, record: loaded.record });
                 setRecord(loaded.record);
             }
             catch (e) {
