@@ -136,7 +136,7 @@ test('unsaved plan reports failure during network failure and retries without du
 });
 
 
-test('reload discards unsynced memory only after explicit departure and shows cloud version without uploading stale content',async t=>{
+test('when device cache is unavailable, reload keeps the cloud version without uploading stale content',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
  navigate(h,"overview");await h.settle();
  const panel=find(h.tree,n=>n.type?.name==='PositionsPanel'),position=panel.props.positions[0];
@@ -146,7 +146,7 @@ test('reload discards unsynced memory only after explicit departure and shows cl
  const restored=harness(source(),h.values);t.after(()=>restored.close());await restored.settle();
  manual(restored).props.onClick();await restored.settle();
  assert.deepEqual(restored.stored.positionPlans,source().positionPlans);
- assert.equal(restored.values.size,0,'failure/reload must not create browser backups');
+ assert.equal(restored.values.size,0,'unavailable device storage must not block the cloud fallback');
  assert.equal(restored.stored.planHistory.filter(p=>p.batchId==='local-reload'&&p.field==='stopLoss').length,0);
 });
 
@@ -157,7 +157,7 @@ test('holdings palette updates cloud preference without modifying ledger',async 
  assert.equal(find(h.tree,n=>n.type?.name==='HoldingsHeatmap').props.colorScheme,'red-up');
 });
 
-test('authentication failure preserves ledger in memory and never writes browser backup',async t=>{
+test('authentication failure preserves the visible ledger and stops cloud writes',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();h.authFailed=true;h.runTimers(30_000);await h.settle();
  assert.ok(JSON.stringify(h.tree).includes('請重新登入'));assert.equal(h.values.size,0);assert.deepEqual(h.stored,source());
  h.runTimers(1000);await h.settle();assert.equal(h.writes.length,0);
@@ -184,7 +184,7 @@ test('simple batch persists atomically to cloud and a second click never appends
  assert.ok(h.writes.length>=1);assert.equal(h.values.size,0);
  manual(h).props.onClick();await h.settle();assert.equal(h.stored.fills.length,2);assert.equal(h.stored.simpleEntryDraft,undefined);
 });
-test('failed simple batch remains in memory and retry saves once without browser persistence',async t=>{
+test('failed simple batch remains in memory and retry saves once when device cache is unavailable',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
  const entry=()=>find(h.tree,n=>n.type?.name==='TradeRegistration');const original=entry().props.data.simpleEntryDraft;
  const batch={...original,date:'2026-08-27',rows:[{...original.rows[0],symbol:'AAA',market:'NASDAQ',quantity:2,price:13}]};
