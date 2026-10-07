@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import {useDemoRuntime} from './demo-context';
+import {useValuation} from './valuation-context';
+import {cycleValue,convertCurrency,historicalFx} from '@/lib/valuation.mjs';
+import {recordDay} from '@/lib/performance-history.mjs';
+import {useWorkspacePreferences} from './workspace-preferences';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildReviewLedgerMetrics, reviewHistoryRequests } from "@/lib/review-ledger.mjs";
 import { reviewCacheKey, scopedReviewMetrics, validReviewCache, REVIEW_CACHE_VERSION } from "@/lib/review-cache.mjs";
@@ -15,7 +18,6 @@ const columns = [
 ] as const;
 type ColumnId = typeof columns[number][0];
 const defaultOrder = columns.map(([id]) => id);
-const orderKey = "traders-gym.review-columns.v1";
 const titles = Object.fromEntries(columns);
 
 const money = (value: number | null, currency = "USD") => value == null || !Number.isFinite(value) ? "—" : new Intl.NumberFormat("zh-TW", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 2 }).format(value);
@@ -24,29 +26,13 @@ const signedPct = (value: number | null) => value == null ? "—" : `${value >= 
 const label = (value: string, entry: boolean) => (entry ? ENTRY_QUALITY_TAGS : PROFIT_EXIT_QUALITY_TAGS).find(tag => tag.value === value)?.label || "未評";
 
 export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, lossSampleCycles, trades, fetchHistory, onSelectCycle }: { accountId?: string; allCycles?: any[]; dataset: any; cycles: any[]; lossSampleCycles: any[]; trades: any[]; fetchHistory: typeof fetch; onSelectCycle: (id: string) => void }) {
-  const demo=useDemoRuntime();
-  const [order, setOrder] = useState<ColumnId[]>(defaultOrder);
+  const {preferences,update}=useWorkspacePreferences();const valuation=useValuation();
+  const order=preferences.reviewColumns as ColumnId[];
   const [dragging, setDragging] = useState<ColumnId | null>(null);
   const [target, setTarget] = useState<ColumnId | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const drag = useRef<{ id: ColumnId; x: number; moved: boolean } | null>(null);
-  useEffect(() => {
-    try {
-      const saved = JSON.parse((demo?.storage||localStorage).getItem(orderKey) || "null");
-      if (Array.isArray(saved)) {
-        const valid = [...new Set(saved.filter((id): id is ColumnId => defaultOrder.includes(id)))];
-        // Hydrate browser-only preferences after SSR without changing server markup.
-        for (const id of defaultOrder) { if (!valid.includes(id)) { const prior = defaultOrder[defaultOrder.indexOf(id)-1]; valid.splice(prior && valid.includes(prior) ? valid.indexOf(prior)+1 : valid.length,0,id); } }
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setOrder(valid);
-      }
-    } catch { /* Unavailable or invalid storage uses the default order. */ }
-  }, [demo?.storage]);
-  function saveOrder(next: ColumnId[], message: string) {
-    setOrder(next);
-    try { (demo?.storage||localStorage).setItem(orderKey, JSON.stringify(next)); setAnnouncement(message); }
-    catch { setAnnouncement(`${message}；瀏覽器無法保存設定，本次頁面仍可使用。`); }
-  }
+  function saveOrder(next:ColumnId[],message:string){void update({reviewColumns:next}).then(()=>setAnnouncement(message)).catch(()=>setAnnouncement('欄位設定尚未儲存，請重試'));}
   function moveColumn(id: ColumnId, destination: ColumnId) {
     if (id === destination) return;
     const next = [...order];
@@ -156,12 +142,15 @@ export function ReviewLedgerTable({ accountId = "", allCycles, dataset, cycles, 
     </th>)}</tr></thead><tbody>
       {[...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate)).map(trade => {
         const m = metrics.rows[trade.cycleId] || {allocation:null,currency:valuationCycles.find(c=>c.id===trade.cycleId)?.currency || "USD"};
+        const cycle=valuationCycles.find(c=>c.id===trade.cycleId);
+        const selectedPnl=cycle?cycleValue(cycle,cycle.pnl,valuation.currency,valuation.fxBars):null;
+        const invested=convertCurrency(m.invested,m.currency,valuation.currency,historicalFx(valuation.fxBars,cycle?.fills?.[0]?.tradeDate||recordDay({timestamp:cycle?.openAt})));
         const cells = {
           cycle: <td key="cycle"><b>{trade.symbol}</b><small>{trade.direction === "SHORT" ? "空" : "多"}・{trade.openDate} → {trade.closeDate}</small></td>,
-          pnl: <td key="pnl" className={m.pnl >= 0 ? "positive" : "negative"}>{money(m.pnl, m.currency)}</td>,
+          pnl: <td key="pnl" className={m.pnl >= 0 ? "positive" : "negative"}>{valuation.format(selectedPnl)}{valuation.currency!==m.currency&&<small>{money(m.pnl,m.currency)} 原幣</small>}</td>,
           return: <td key="return" className={m.returnPct == null ? "" : m.returnPct >= 0 ? "positive" : "negative"}>{signedPct(m.returnPct)}</td>,
           days: <td key="days" title="依個股日 K 日期計數，進出場日皆計入">{m.holdingTradingDays == null ? "—（缺日線資料）" : `${m.holdingTradingDays} 日`}</td>,
-          investment: <td key="investment">{money(m.invested, m.currency)}</td>,
+          investment: <td key="investment">{valuation.format(invested)}{valuation.currency!==m.currency&&<small>{money(m.invested,m.currency)} 原幣</small>}</td>,
           allocation: <td key="allocation" className="allocation-cell" title={m.allocation == null && !calculating ? "估值資料不足，請重試估值" : undefined}><b>{m.allocation != null ? pct(m.allocation) : calculating ? "計算中" : "—"}</b></td>,
           expectancy: <td key="expectancy" className={m.expectancy == null ? "" : m.expectancy >= 0 ? "positive" : "negative"}>{m.expectancy == null ? "—" : `${m.expectancy >= 0 ? "+" : ""}${m.expectancy.toFixed(2)} 倍`}{m.expectancy == null && <small>{metrics.averageLoss == null ? "無虧損樣本" : "計算資料不足"}</small>}</td>,
           entry: <td key="entry">{label(trade.entryQualityTag, true)}</td>,

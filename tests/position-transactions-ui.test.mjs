@@ -30,6 +30,7 @@ function harness() {
     const componentModule = {exports:{}};
     new Function("require","module","exports",compiled)(id => {
       if (id === "react") return react;
+      if(id==='./valuation-context')return {useValuation:()=>({currency:'USD',formatNative:(v,c)=>v==null?'—':`${c} ${v.toFixed(2)}`,rate:32,fxBars:[],format:v=>v==null?'—':`USD ${v.toFixed(2)}`,formatUsd:v=>v==null?'—':`USD ${v.toFixed(2)}`})};
       if (id.startsWith("./")) return load(id.slice(2));
       if (id.startsWith("@/lib/")) return require("../lib/" + id.slice(6));
       return require(id);

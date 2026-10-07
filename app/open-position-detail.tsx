@@ -27,7 +27,7 @@ export function OpenPositionDetail({data,entryContexts,initialEventId,position,p
  function change(patch:any){if(saving||pending)return;setDraft(d=>({...d,...patch}));setStatus('');}
  function applyStandard(){const s=historicalEntryStandard(data,new Date().toISOString());const next=resolveEntryPlan({planModes:{takeProfit:'STANDARD',stopLoss:'STANDARD'}},{after:position,plan,action:'ADD'},s);change({takeProfit:next.takeProfit,stopLoss:next.stopLoss,planModes:next.planModes,standardSnapshot:next.standardSnapshot});}
  async function save(){if(guard.current)return;guard.current=true;setSaving(true);setError('');const batchId=pending||`plan-edit-${crypto.randomUUID()}`;setPending(batchId);
-  try{await onSavePlan(position,{...draft,positionBasis},batchId);setBaseline({...draft});setPending(null);setStatus('計畫已保存至本機快取，雲端於背景同步；同步結果請見頁首。');}
+  try{await onSavePlan(position,{...draft,positionBasis},batchId);setBaseline({...draft});setPending(null);setStatus('計畫已儲存至雲端。');}
   catch(cause){if(!(cause as any)?.submitted)setPending(null);setError(cause instanceof Error?cause.message:'儲存失敗，請重試');}
   finally{guard.current=false;setSaving(false);}
  }

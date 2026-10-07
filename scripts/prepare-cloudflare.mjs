@@ -12,6 +12,7 @@ config.name = "traders-gym";
 config.account_id = accountId;
 // Keep the compatibility date used by the tested build and pinned workerd binary.
 config.workers_dev = true;
+config.ratelimits = [{ name: "MARKET_RATE_LIMITER", namespace_id: "20261007", simple: { limit: 120, period: 60 } }];
 config.preview_urls = false;
 config.d1_databases = [{ binding: "DB", database_name: "traders-gym", database_id: databaseId, migrations_dir: "../../drizzle" }];
 config.r2_buckets = [{ binding: "SNAPSHOTS", bucket_name: bucket }];

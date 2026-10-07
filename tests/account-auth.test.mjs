@@ -1,18 +1,15 @@
+import {memoryObjects} from './cloud-objects.mjs';
 import { requireSitesTrialUser } from "../lib/sites-trial-auth.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { generateKeyPair, SignJWT, exportJWK, createLocalJWKSet } from "jose";
 import { sqliteAdapter } from "../server/sqlite-adapter.mjs";
-import { createLocalRecordStore } from "../server/local-record-store.mjs";
 import { createAccountApi } from "../lib/account-api.mjs";
 import { COOKIE_NAME, OWNER_EMAIL, emptyDataset, requireSession, sessionCookie, sha256, signIn, verifyGoogleCredential, verifyGoogleCsrf } from "../lib/auth-core.mjs";
 import { createSessionScope } from "../lib/account-client.mjs";
-import { readPendingRecord, writeLocalRecord } from "../lib/trade-record-client.mjs";
+import {legacyBrowserRecords} from "../lib/legacy-records.mjs";
 
 function setup(t, options = {}) {
   const sqlite = new DatabaseSync(":memory:"); t.after(() => sqlite.close()); sqlite.exec("PRAGMA foreign_keys = ON");
@@ -22,7 +19,7 @@ function setup(t, options = {}) {
   const original = { ...emptyDataset(), privateEvidence: "owner private evidence", fills: [], futureField: { proof: true } };
   sqlite.prepare("INSERT INTO trade_account_snapshots VALUES (?, ?, ?, ?, ?)").run("primary", "Trader X2", JSON.stringify(original), 37, "2026-09-01T00:00:00Z");
   for (const name of migrations.slice(1)) sqlite.exec(readFileSync(new URL(name, directory), "utf8"));
-  const db = sqliteAdapter(sqlite), api = createAccountApi({ db, clientId: "fixture", ...options });
+  const db = sqliteAdapter(sqlite), api = createAccountApi({ objects:memoryObjects(),db, clientId: "fixture", ...options });
   const login = async (email, sub = email) => {
     const session = await signIn(db, { email, sub, name: email, email_verified: true });
     return { ...session, email };
@@ -138,16 +135,8 @@ test("large R2 JSON commits by pointer, survives reload and detects tampering", 
   blobs.get(row.object_key).text = "{}"; assert.equal((await h.call(owner, "/api/trade-records")).status, 503);
 });
 
-test("local file migration preserves full JSON and original version in an isolated directory", async t => {
-  const dir = await mkdtemp(join(tmpdir(), "tg-accounts-")); t.after(() => rm(dir, { recursive: true, force: true }));
-  const files = createLocalRecordStore(dir), h = setup(t, { files });
-  h.sqlite.prepare("DELETE FROM trade_account_snapshots").run();
-  await files.save({ accountId: "primary", accountName: "Trader", dataset: h.original, baseVersion: 0 }, { initialVersion: 37 });
-  const owner = await h.login(OWNER_EMAIL); const result = await h.call(owner, "/api/trade-records");
-  assert.equal(result.body.account.version, 37); assert.deepEqual(result.body.dataset, h.original);
-  assert.equal((await files.list()).length, 1);
-  assert.equal((await h.call(owner, "/api/trade-records", { accountName: "Trader", dataset: h.original, baseVersion: 37, saveMode: "auto" }, "PUT")).status, 200);
-  assert.equal((await h.call(owner, "/api/admin/accounts")).body.accounts[0].saveMode, "auto");
+test("local file mode is rejected rather than becoming an alternate account store",t=>{
+ assert.throws(()=>setup(t,{files:{read:async()=>null,save:async()=>{throw Error('must not write');}}}),{status:503});
 });
 
 test("session cancellation drops late responses and journals never cross user namespaces", async () => {
@@ -156,11 +145,10 @@ test("session cancellation drops late responses and journals never cross user na
   const request = scope.fetch("/api/trade-records"); scope.stop(); resolve(new Response("{}"));
   await assert.rejects(request, { status: 401 }); await assert.rejects(scope.fetch("/api/trade-records"), { status: 401 });
   const values = new Map(), storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) }, dataset = emptyDataset();
-  writeLocalRecord(storage, "records.user.a", "primary", JSON.stringify({ ...dataset, note: "a private draft" }), JSON.stringify(dataset), 1);
-  assert.deepEqual(readPendingRecord(storage, "records.user.b", "primary", dataset).dataset, dataset);
-  const recovery=readPendingRecord(storage, "records.user.a", "primary", dataset);
-  assert.deepEqual(recovery.dataset,dataset);
-  assert.equal(JSON.parse(JSON.parse(values.get(recovery.recoveryKey)).serialized).note,"a private draft");
+  values.set('trade-review.phase0.v1.user.a.primary.pending',JSON.stringify({serialized:JSON.stringify({...dataset,note:'a private draft'}),baseVersion:1}));
+  storage.length=values.size;storage.key=i=>[...values.keys()][i];
+  assert.equal(legacyBrowserRecords(storage,'a').length,1);
+  assert.equal(legacyBrowserRecords(storage,'b').length,0);
 });
 
 test('history captures upgrade baseline atomically; restore creates a new version and checks CAS', async t => {
@@ -240,7 +228,7 @@ test('Sites trial binds separately and cannot claim primary, bypass identity, or
   await assert.rejects(requireSitesTrialUser(h.db,req('/api/trade-records')), {status:403});
   const user=await requireSitesTrialUser(h.db,req(),{bootstrap:true});
   assert.equal(h.sqlite.prepare('SELECT count(*) AS n FROM system_owner').get().n,0);
-  const api=createAccountApi({db:h.db,clientId:'',trial:true,authenticate:(request,options)=>requireSitesTrialUser(h.db,request,options)});
+  const api=createAccountApi({objects:memoryObjects(),db:h.db,clientId:'',trial:true,authenticate:(request,options)=>requireSitesTrialUser(h.db,request,options)});
   const current=await (await api.handle(req('/api/trade-records'))).json();
   assert.notEqual(current.account.id,'primary');assert.equal(current.dataset.fills.length,0);
   assert.deepEqual(h.sqlite.prepare('SELECT * FROM trade_account_snapshots WHERE account_id=?').get('primary'),original);
@@ -285,20 +273,8 @@ test('old clients cannot empty a populated ledger via background saves',async t=
  assert.equal(after.body.account.version,37);assert.deepEqual(after.body.dataset,populated);
 });
 
-test('local ledger recycle preserves file data and blocks stale writes across delete and restore', async t => {
-  const dir=await mkdtemp(join(tmpdir(),'tg-recycle-'));t.after(()=>rm(dir,{recursive:true,force:true}));
-  const files=createLocalRecordStore(dir),h=setup(t,{files});h.sqlite.prepare('DELETE FROM trade_account_snapshots').run();
-  await files.save({accountId:'primary',accountName:'Local acceptance',dataset:h.original,baseVersion:0},{initialVersion:37});
-  const owner=await h.login(OWNER_EMAIL),loaded=await h.call(owner,'/api/trade-records');assert.equal(loaded.body.account.version,37);
-  const trashed=await h.call(owner,'/api/ledgers',{action:'trash',id:'primary',baseVersion:37});assert.equal(trashed.status,200);
-  assert.equal((await h.call(owner,'/api/trade-records')).body.account,null);
-  assert.equal((await h.call(owner,'/api/trade-records',{accountId:'primary',accountName:'stale',dataset:h.original,baseVersion:37},'PUT')).status,410);
-  assert.deepEqual((await files.read('primary')).dataset,h.original);
-  const restored=await h.call(owner,'/api/ledgers',{action:'restore',id:'primary',baseVersion:trashed.body.account.version});assert.equal(restored.status,200);
-  const again=await h.call(owner,'/api/trade-records');assert.deepEqual(again.body.dataset,h.original);assert.equal(again.body.account.version,39);
-  const edited={...h.original,profile:{...h.original.profile,name:'new edit'}};
-  const saved=await h.call(owner,'/api/trade-records',{accountId:'primary',accountName:'Local acceptance',dataset:edited,baseVersion:39},'PUT');assert.equal(saved.status,200);assert.equal(saved.body.account.version,40);
-  assert.deepEqual((await files.read('primary')).dataset,edited);
+test('retired file storage cannot be selected through ledger recycle APIs',t=>{
+ assert.throws(()=>setup(t,{files:{}}),{status:503});
 });
 
 test('daily policy preview is non-destructive; enabled cleanup preserves current and restore advances version',async t=>{
@@ -315,4 +291,30 @@ test('daily policy preview is non-destructive; enabled cleanup preserves current
  assert.deepEqual(h.sqlite.prepare('SELECT version FROM snapshot_history').all().map(r=>r.version),[39]);
  const after=await h.call(owner,'/api/trade-records');assert.deepEqual(after.body.dataset,before.body.dataset);
  assert.equal((await h.call(owner,'/api/trade-records',{...payload,baseVersion:38},'PUT')).status,409);
+});
+
+test('cloud preferences validate patches, preserve ledger IDs and isolate users and devices',async t=>{
+ const h=setup(t),owner=await h.login(OWNER_EMAIL);
+ await h.call(owner,'/api/admin/accounts',{action:'invite',email:'preferences@gmail.com'});
+ const friend=await h.login('preferences@gmail.com');
+ const initial=await h.call(owner,'/api/preferences');assert.equal(initial.status,200);assert.equal(initial.body.preferences.valuationCurrency,'USD');assert.equal(initial.body.preferences.entryMode,'simple');assert.deepEqual(initial.body.configured,[]);
+ const before=h.sqlite.prepare('SELECT account_id,version,dataset_json FROM trade_account_snapshots ORDER BY account_id').all();
+ const patches=[{valuationCurrency:'TWD'},{entryMode:'full',onboardingDone:true},{holdingsColorScheme:'red-up'}];
+ for(const patch of patches)assert.equal((await h.call(owner,'/api/preferences',patch,'PATCH')).status,200);
+ const another=await h.login(OWNER_EMAIL);const synced=(await h.call(another,'/api/preferences')).body;
+ assert.equal(synced.preferences.valuationCurrency,'TWD');assert.equal(synced.preferences.entryMode,'full');assert.equal(synced.preferences.holdingsColorScheme,'red-up');
+ assert.equal((await h.call(friend,'/api/preferences')).body.preferences.valuationCurrency,'USD');
+ for(const patch of [{userId:friend.userId},{valuationCurrency:'JPY'},{entryMode:'unknown'},{reviewColumns:['cycle']},{onboardingDone:'true'},{}])assert.equal((await h.call(owner,'/api/preferences',patch,'PATCH')).status,400);
+ assert.equal((await h.call(owner,'/api/preferences?userId='+friend.userId)).status,400);assert.equal((await h.call(null,'/api/preferences')).status,401);
+ assert.deepEqual(h.sqlite.prepare('SELECT account_id,version,dataset_json FROM trade_account_snapshots ORDER BY account_id').all(),before);
+ const forged=h.request(owner,'/api/preferences',{valuationCurrency:'USD'},'PATCH');forged.headers.set('Origin','https://evil.example');assert.equal((await h.api.handle(forged)).status,403);
+ await h.call(owner,'/api/auth/logout',{});assert.equal((await h.call(owner,'/api/preferences',{valuationCurrency:'USD'},'PATCH')).status,401);
+});
+
+test('concurrent preference patches retain both fields and revocation during parsing prevents write',async t=>{
+ const h=setup(t),owner=await h.login(OWNER_EMAIL);
+ const results=await Promise.all([h.call(owner,'/api/preferences',{valuationCurrency:'TWD'},'PATCH'),h.call(owner,'/api/preferences',{entryMode:'full'},'PATCH')]);assert.ok(results.every(r=>r.status===200));
+ const value=(await h.call(owner,'/api/preferences')).body.preferences;assert.equal(value.valuationCurrency,'TWD');assert.equal(value.entryMode,'full');
+ const req=h.request(owner,'/api/preferences',{valuationCurrency:'USD'},'PATCH');const read=req.text.bind(req);req.text=async()=>{const body=await read();h.sqlite.prepare('DELETE FROM auth_sessions WHERE id=?').run(owner.sessionId);return body;};
+ assert.equal((await h.api.handle(req)).status,401);assert.equal(JSON.parse(h.sqlite.prepare('SELECT preferences_json FROM member_preferences WHERE user_id=?').get(owner.userId).preferences_json).valuationCurrency,'TWD');
 });

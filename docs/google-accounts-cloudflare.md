@@ -18,11 +18,11 @@
 
 ## 儲存架構
 
-每個 Google `sub` 綁定一個內部 user ID，每位使用者只有一份目前 JSON。雲端 D1 儲存帳號、session hash、邀請、管理紀錄及交易快照版本。小於 1.8 MB 的 JSON 沿用 D1；大型快照以不可變物件寫入私有 R2，成功後才以 CAS 更新 D1 的指標。讀取 R2 時驗證 SHA-256。失敗或衝突不會改寫上一版指標；未被採用的物件保留於私有桶，禁止設定會刪除仍被 D1 引用物件的全桶到期規則。
+每個 Google `sub` 綁定一個內部 user ID，每位使用者只有一份目前 JSON。雲端 D1 儲存帳號、session hash、邀請、管理紀錄及交易快照版本。完整帳本一律以不可變物件寫入私有 R2，成功後才以 CAS 更新 D1 的指標。讀取 R2 時驗證 SHA-256。失敗或衝突不會改寫上一版指標；未被採用的物件保留於私有桶，禁止設定會刪除仍被 D1 引用物件的全桶到期規則。
 
 這項擴充來自實際既有快照：緊湊 JSON 已超過 3 MB，D1 單筆字串／資料列上限為 2 MB。不能刪減行情來遷就容量。[D1 上限](https://developers.cloudflare.com/d1/platform/limits/)、[R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
 
-本機仍使用 `../自動儲存/目前帳號/<id>.json` 與歷史備份；登入資料庫為該資料夾內 `accounts.sqlite`，不與正式 D1 共用。可透過 `LOCAL_RECORD_DIRECTORY` 指向隔離資料夾。備份本機帳號狀態時，停止伺服器後備份整個資料夾，包括 SQLite；不可只複製執行中的單一 SQLite 主檔。
+v2.5.1 起，本機開發使用隔離的 Miniflare D1／R2 模擬綁定，與正式帳本相同儲存流程。`LOCAL_CLOUD_DIRECTORY` 指定模擬資料目錄；`LOCAL_RECORD_DIRECTORY` 僅用於舊本機帳本的唯讀轉移檢查。正式資料不複製到開發模擬資料庫。
 
 ## Cloudflare 部署準備
 

@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+import {useValuation} from "./valuation-context";
+import {cycleValue} from "@/lib/valuation.mjs";
 import { useRef } from "react";
 import { ReviewCommentInput, type CommentHandle } from "./review-comment-input";
 import { analyzeCycle } from "@/lib/review-engine.mjs";
@@ -15,6 +17,7 @@ function money(value: number, currency = "USD") { return new Intl.NumberFormat("
 function localDateTime(value?: string) { return value ? new Date(value).toLocaleString("zh-TW", { hour12: false }) : "尚未設定"; }
 
 export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, planHistory, rapidPairs, decisionLinks, strategies, strategyAssignments, onAssignStrategy, onStrategyCheck, onStageReview, onAddPlanVersion, onReviewChange, onClose }: any) {
+  const valuation=useValuation();
   const comment = useRef<CommentHandle>(null);
   const close = () => { comment.current?.flush(); onClose(); };
   const analysis = analyzeCycle(cycle, marketBars, review);
@@ -28,7 +31,7 @@ export function CycleReviewDialog({ entryContexts, cycle, marketBars, review, pl
         <button type="button" className="close" aria-label="關閉視窗" onClick={close}>×</button>
       </header>
       <section className="review-overview" aria-label="交易摘要與 K 線">
-          <dl className="review-fact-strip"><div><dt>損益</dt><dd className={cycle.pnl >= 0 ? "positive" : "negative"}>{money(cycle.pnl, cycle.currency)}</dd><small>{pct(cycle.returnPct)}</small></div><div><dt>持有</dt><dd>{analysis.holdingHours.toFixed(1)} 小時</dd><small>{analysis.tradingDays == null ? "交易日待行情" : `${analysis.tradingDays} 個交易日`}</small></div><div><dt>MAE／MFE</dt><dd>{pct(cycle.maePct)}／{pct(cycle.mfePct)}</dd><small>{analysis.precision}</small></div><div><dt>R 倍數</dt><dd>{analysis.rMultiple == null ? "—" : `${analysis.rMultiple.toFixed(2)}R`}</dd><small>{analysis.initialRisk == null ? "需事前停損" : `風險 ${money(analysis.initialRisk, cycle.currency)}`}</small></div></dl>
+          <dl className="review-fact-strip"><div><dt>損益</dt><dd className={cycle.pnl >= 0 ? "positive" : "negative"}>{valuation.format(cycleValue(cycle,cycle.pnl,valuation.currency,valuation.fxBars))}</dd><small>{pct(cycle.returnPct)}</small></div><div><dt>持有</dt><dd>{analysis.holdingHours.toFixed(1)} 小時</dd><small>{analysis.tradingDays == null ? "交易日待行情" : `${analysis.tradingDays} 個交易日`}</small></div><div><dt>MAE／MFE</dt><dd>{pct(cycle.maePct)}／{pct(cycle.mfePct)}</dd><small>{analysis.precision}</small></div><div><dt>R 倍數</dt><dd>{analysis.rMultiple == null ? "—" : `${analysis.rMultiple.toFixed(2)}R`}</dd><small>{analysis.initialRisk == null ? "需事前停損" : `風險 ${money(analysis.initialRisk, cycle.currency)}`}</small></div></dl>
           <ReplayBoard cycle={cycle} marketBars={marketBars} planHistory={planHistory} review={review} rapidPairs={rapidPairs} decisionLinks={decisionLinks} strategies={strategies} strategyAssignments={strategyAssignments} entryContexts={entryContexts} onAddPlanVersion={onAddPlanVersion} showPlanEditor={false} showEntryEvidence={false}/>
       </section>
       <section className="review-judgment" aria-labelledby="review-judgment-title">

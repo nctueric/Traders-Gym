@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPerformanceHistory} from '../lib/performance-history.mjs';
-import {createPerformanceHistoryResource,browserPerformanceCache} from '../lib/performance-cache.mjs';
+import {createPerformanceHistoryResource,memoryPerformanceCache} from '../lib/performance-cache.mjs';
 const now=()=>Date.parse('2026-10-06T10:00:00Z');
 const target={symbol:'QQQ',basis:'adjusted',start:'2026-01-01',end:'2026-01-03'};
 const response=(url)=>{const q=new URL(url,'http://test').searchParams;return {ok:true,json:async()=>({priceBasis:q.get('priceBasis'),bars:[{date:q.get('end'),close:100}]})};};
@@ -32,9 +32,9 @@ test('recent week refreshes after six hours, old coverage remains, force refresh
 test('storage errors retain usable prices; account/demo caches are isolated',async()=>{
  const resource=createPerformanceHistoryResource({storage:{read:async()=>null,write:async()=>{throw new Error('quota');}},now,fetcher:async url=>response(url)});
  await resource.load([target]);assert.ok(resource.getSnapshot().history.cache);assert.match(resource.getSnapshot().status,/快取未保存/);
- const entries=new Map(),memory={getItem:k=>entries.get(k),setItem:(k,v)=>entries.set(k,v)};
- const a=browserPerformanceCache('user-a:ledger',memory),b=browserPerformanceCache('user-b:ledger',memory);
+ const a=memoryPerformanceCache('user-a:ledger'),b=memoryPerformanceCache('user-b:ledger');
  await a.write({version:1,entries:{}});assert.equal(await b.read(),null);assert.equal((await a.read()).version,1);
+ const reloaded=memoryPerformanceCache('user-a:ledger');assert.equal(await reloaded.read(),null);
 });
 test('failed ranges retry, concurrency bounded to three, disposed results never publish',async()=>{
  let active=0,max=0;const targets=Array.from({length:6},(_,i)=>({...target,symbol:'S'+i}));

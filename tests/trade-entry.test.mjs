@@ -1,13 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { createEntryDraft, previewEntry, commitEntry, buildEntryEvidence, entryValuation, marketDate, entryEvidenceKey, filterCyclesByEntry, contextsForCycle } from '../lib/trade-entry.mjs';
 import { buildCycles } from '../lib/trade-engine.mjs';
 import { buildCycleReplay } from '../lib/coach-engine.mjs';
 import { publishStrategyVersion, createStrategyAssignment } from '../lib/strategy-engine.mjs';
-import { createLocalRecordStore } from '../server/local-record-store.mjs';
+import {cloudStore} from './cloud-store.mjs';
 import { completeTradeJson } from '../lib/trade-record-store.mjs';
 
 export const now='2026-08-28T18:00:00.000Z';
@@ -106,13 +103,13 @@ test('full closure hides entry fields, while replay and analysis retain per-fill
  assert.equal(filterCyclesByEntry(cycles,{},'', '', 'no').length,0,'missing records do not imply no adds');
 });
 test('draft and committed fields survive auto/manual full JSON writes, store restart, and conflict rejection',async t=>{
- const root=await mkdtemp(join(tmpdir(),'trade-entry-test-'));t.after(()=>rm(root,{recursive:true,force:true}));const store=createLocalRecordStore(root),data=fixture();
+ const {store}=await cloudStore(t),data=fixture();
  data.entryDraft=draft(data,{entrySetup:'BREAKOUT',volumeTags:['RANGE_BREAKOUT'],stopLoss:'95',takeProfit:'150'});data.entryDraft.evidenceKey=entryEvidenceKey(data.entryDraft);
  const payload=(dataset,version,mode)=>({accountId:'test',accountName:'test',dataset,baseVersion:version,saveMode:mode});
- await store.save(payload(data,null,'auto'));const resumed=(await createLocalRecordStore(root).read('test')).dataset;assert.deepEqual(resumed.entryDraft,data.entryDraft);assert.equal(resumed.fills.length,0);assert.equal(buildCycles(resumed).positions.length,0);
+ await store.save(payload(data,null,'auto'));const resumed=(await store.read('test')).dataset;assert.deepEqual(resumed.entryDraft,data.entryDraft);assert.equal(resumed.fills.length,0);assert.equal(buildCycles(resumed).positions.length,0);
  const next=submit(resumed,resumed.entryDraft);assert.equal(next.entryDraft,undefined);await store.save(payload(next,1,'manual'));
- const recovered=(await createLocalRecordStore(root).read('test')).dataset;assert.deepEqual(recovered,JSON.parse(completeTradeJson(next)));assert.equal(recovered.entryContexts.new.planSnapshot.stopLoss,95);assert.equal(recovered.planHistory.length,2);
- await assert.rejects(store.save(payload(data,1,'auto')),/版本/);assert.deepEqual((await store.read('test')).dataset,recovered);
+ const recovered=(await store.read('test')).dataset;assert.deepEqual(recovered,JSON.parse(completeTradeJson(next)));assert.equal(recovered.entryContexts.new.planSnapshot.stopLoss,95);assert.equal(recovered.planHistory.length,2);
+ await assert.rejects(store.save(payload(data,1,'auto')),e=>e.status===409);assert.deepEqual((await store.read('test')).dataset,recovered);
 });
 
 

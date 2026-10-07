@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
 import React from "react";
+import {DEFAULT_PREFERENCES} from "../lib/member-preferences.mjs";
 import { buildTradeSnapshot } from "../lib/trade-snapshot.mjs";
 import { completeTradeJson } from "../lib/trade-record-store.mjs";
 import { previewEntry } from "../lib/trade-entry.mjs";
@@ -18,12 +19,12 @@ const find = (tree, fn) => nodes(tree).find(fn);
 
 // Run the real component's hooks and event handlers; no browser, DOM or account writes.
 function harness(initial = source(), values = new Map()) {
-  let stored = structuredClone(initial), version = 1, index = 0, dirty = true, tree, serial = 0, onlineMarkets = false, failWrites = false, failLocal = false;
+  let stored = structuredClone(initial), version = 1, index = 0, dirty = true, tree, serial = 0, onlineMarkets = false, failWrites = false, failLocal = true, connected = true, prefs={...DEFAULT_PREFERENCES}, authFailed=false;
   const hooks = [], effects = [], timers = new Map(), writes = [], events = new Map();
   const storage = { getItem: k => values.get(k) || null, setItem: (k,v) => {if(failLocal)throw Error('quota');values.set(k,v);} };
   const timer = (fn, ms) => { const id = ++serial; timers.set(id, { fn, ms }); return id; };
   const window = { setTimeout: timer, clearTimeout: id => timers.delete(id), setInterval: (fn,ms)=>{const id=timer(fn,ms);timers.get(id).interval=true;return id;}, clearInterval: id => timers.delete(id), addEventListener: (name, fn) => events.set(name,fn), removeEventListener: name => events.delete(name), scrollTo() {} };
-  const react = { ...React, startTransition: fn => fn(),
+  const react = { ...React, useSyncExternalStore:(_subscribe,get)=>get(), startTransition: fn => fn(),
     useState(initialValue) { const i = index++; if (!(i in hooks)) hooks[i] = typeof initialValue === "function" ? initialValue() : initialValue; return [hooks[i], value => { const next = typeof value === "function" ? value(hooks[i]) : value; if (!Object.is(next,hooks[i])) { hooks[i] = next; dirty = true; } }]; },
     useRef(initialValue) { const i = index++; return hooks[i] ||= { current: initialValue }; },
     useMemo(fn,deps) { const i=index++; if (!hooks[i] || deps.some((d,j) => !Object.is(d,hooks[i].deps[j]))) hooks[i]={ value:fn(), deps }; return hooks[i].value; },
@@ -39,25 +40,29 @@ function harness(initial = source(), values = new Map()) {
       if (payload.baseVersion !== version) return response(409,{});
       stored=payload.dataset;version++;return response(200,{account:{...account,version}});
     }
+    if(url==="/api/auth/session")return response(authFailed?401:200,{user:{id:"fixture-user",sessionId:"fixture-session"}});
     if (url === "/api/ledgers") return response(200,{accounts:[account]});
     if (url === "/api/trade-records") return response(200,{account,dataset:structuredClone(stored),accounts:[account]});
     if (url.startsWith("/api/trade-records?")) return response(200,{account,dataset:structuredClone(stored)});
     if (onlineMarkets && url.startsWith("/api/quotes")) return response(200,{quotes:[{symbol:"AAA",price:15,updatedAt:"2026-08-28T00:00:00Z"}],errors:[]});
     return response(503,{error:"離線測試"});
   };
+  const navigator={get onLine(){return connected;}};
   const componentModule = {exports:{}};
-  new Function("require","module","exports","window","document","localStorage","fetch","setTimeout","clearTimeout",code)(id => {
+  new Function("require","module","exports","window","document","localStorage","fetch","setTimeout","clearTimeout","navigator",code)(id => {
     if (id === "react") return react;
+    if(id==='./workspace-preferences')return {useWorkspacePreferences:()=>({preferences:prefs,update:async patch=>{prefs={...prefs,...patch};dirty=true;}})};
+    if(id==='./workspace-clock')return {useWorkspaceClock:()=>Date.parse(stamp)};
     if (id.startsWith("./")) return new Proxy({}, {get:(_,name) => { const fn=()=>null; Object.defineProperty(fn,"name",{value:name}); return fn; }});
     if (id.startsWith("@/lib/")) {
       const actual=require("../lib/"+id.slice(6));
       return id.endsWith("trade-record-client.mjs") ? {...actual,browserRecordStorage:()=>storage,saveTradeRecord:args=>actual.saveTradeRecord({...args,fetcher})} : actual;
     }
     return require(id);
-  },componentModule,componentModule.exports,window,{getElementById:()=>null,visibilityState:"visible"},storage,fetcher,timer,window.clearTimeout);
-  function render() { index=0;dirty=false;tree=componentModule.exports.default({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}}); for(const effect of effects.splice(0)) effect();return tree; }
+  },componentModule,componentModule.exports,window,{getElementById:()=>null,visibilityState:"visible"},storage,fetcher,timer,window.clearTimeout,navigator);
+  function render() { index=0;dirty=false;tree=componentModule.exports.TradeWorkspaceContent({user:{id:"fixture-user",email:"fixture@example.test",name:"測試帳號",isOwner:true,sessionId:"fixture-session",expiresAt:"2099-01-01T00:00:00Z"}}); for(const effect of effects.splice(0)) effect();return tree; }
   return {
-    render, get tree(){return tree;},get stored(){return stored;}, writes,events,values,
+    render, get tree(){return tree;},get stored(){return stored;}, writes,events,values,get prefs(){return prefs;},set connected(v){connected=v;events.get(v?"online":"offline")?.();},set authFailed(v){authFailed=v;},
     async settle(){ for(let i=0;i<15;i++){if(dirty)render();await new Promise(resolve=>setImmediate(resolve));}return tree; },
     runTimers(ms){ for(const [id,task] of [...timers]) if(task.ms===ms){if(!task.interval)timers.delete(id);task.fn();} },
     remoteUpdate(next){stored=structuredClone(next);version++;},
@@ -82,15 +87,15 @@ test("homepage manual button waits for full write, prevents duplicates, and rest
 });
 
 test("price-only updates and explicit plan saves persist complete snapshots through the same queue", async t => {
-  const h=harness();t.after(()=>h.close());await h.settle();h.runTimers(600_000);await h.settle();
-  h.online=true;h.runTimers(30_000);await h.settle();const before=h.writes.length;h.runTimers(900);await h.settle();assert.equal(h.writes.length,before,"quote changes must wait for ten-minute clock");h.runTimers(600_000);await h.settle();
+  const h=harness();t.after(()=>h.close());await h.settle();h.runTimers(1000);await h.settle();
+  h.online=true;h.runTimers(30_000);await h.settle();const before=h.writes.length;h.runTimers(1000);await h.settle();assert.equal(h.writes.length,before,"quote changes must not write a ledger on every tick");h.runTimers(60_000);await h.settle();
   assert.equal(h.writes.at(-1).saveMode,"auto");assert.equal(h.stored.marketSnapshot.quotes.AAA.price,15);
   assert.equal(h.stored.marketSnapshot.quotes["USDTWD=X"].price,32,"failed refresh must not remove FX");
   navigate(h,"overview");await h.settle();
   const panel=find(h.tree,n=>n.type?.name==="PositionsPanel");
   panel.props.onOpenChart(panel.props.positions[0]);await h.settle();
   await find(h.tree,n=>n.type?.name==="OpenPositionDetail").props.onSavePlan(panel.props.positions[0],{note:"新的持倉計畫"},"test-plan-batch");
-  await h.settle();h.runTimers(600_000);await h.settle();
+  await h.settle();h.runTimers(1000);await h.settle();
   assert.ok(Object.values(h.stored.positionPlans).some(p=>p.note==="新的持倉計畫"));
   assert.deepEqual(h.stored.marketBars,source().marketBars);
   const event={preventDefault(){this.warned=true;}};h.events.get("beforeunload")(event);assert.equal(event.warned,undefined);
@@ -109,7 +114,7 @@ test("new registration page saves a no-impact account draft, commits atomically 
   const entry=()=>find(h.tree,n=>n.type?.name==="TradeRegistration");
   assert.ok(entry(),"workspace page replaces old modal");
   entry().props.onFullChange({symbol:"AAA",quantity:"2",price:"13",timestamp:new Date(Date.now()-60000).toISOString(),entrySetup:"PULLBACK",volumeTags:["SUPPORT_RETEST"],addReason:"RETEST",stopLoss:"10",takeProfit:"18",note:"回測後加碼"});
-  await h.settle();h.runTimers(600_000);await h.settle();
+  await h.settle();h.runTimers(1000);await h.settle();
   assert.equal(h.stored.fills.length,1);assert.equal(h.stored.entryDraft.note,"回測後加碼");
   const current=entry().props,preview=previewEntry(current.data,current.data.entryDraft);
   current.onFullChange({confirmedKey:preview.confirmationKey});await h.settle();entry().props.onFullSubmit();await h.settle();
@@ -120,60 +125,41 @@ test("new registration page saves a no-impact account draft, commits atomically 
   const restarted=harness(JSON.parse(completeTradeJson(h.stored)));t.after(()=>restarted.close());await restarted.settle();manual(restarted).props.onClick();await restarted.settle();assert.deepEqual(restarted.stored.entryContexts,h.stored.entryContexts);
 });
 
-test('cached plan releases form during network failure and retries without duplicate history',async t=>{
+test('unsaved plan reports failure during network failure and retries without duplicate history',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
  navigate(h,"overview");await h.settle();
  const panel=find(h.tree,n=>n.type?.name==='PositionsPanel'),p=panel.props.positions[0];panel.props.onOpenChart(p);await h.settle();
- h.fail=true;await find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(p,{stopLoss:12,takeProfit:20},'retry-batch');await h.settle();assert.ok(!h.stored.planHistory?.some(v=>v.batchId==='retry-batch'));
+ h.fail=true;await assert.rejects(find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(p,{stopLoss:12,takeProfit:20},'retry-batch'));await h.settle();assert.ok(!h.stored.planHistory?.some(v=>v.batchId==='retry-batch'));
  h.fail=false;await find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(p,{stopLoss:12,takeProfit:20},'retry-batch');await h.settle();
  assert.equal(h.stored.planHistory.filter(v=>v.batchId==='retry-batch').length,2);assert.deepEqual(h.stored.fills,source().fills);
 });
 
 
-test('reload archives unsynced plan and shows cloud version without uploading stale content',async t=>{
+test('reload discards unsynced memory only after explicit departure and shows cloud version without uploading stale content',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
  navigate(h,"overview");await h.settle();
  const panel=find(h.tree,n=>n.type?.name==='PositionsPanel'),position=panel.props.positions[0];
  panel.props.onOpenChart(position);await h.settle();h.fail=true;
- await find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(position,{stopLoss:8,note:'cached offline'},'local-reload');
+ await assert.rejects(find(h.tree,n=>n.type?.name==='OpenPositionDetail').props.onSavePlan(position,{stopLoss:8,note:'cached offline'},'local-reload'));
  await h.settle();assert.equal(h.writes.length,0);
  const restored=harness(source(),h.values);t.after(()=>restored.close());await restored.settle();
  manual(restored).props.onClick();await restored.settle();
  assert.deepEqual(restored.stored.positionPlans,source().positionPlans);
- assert.ok([...restored.values].some(([key,value])=>key.includes('.recovery.')&&value.includes('cached offline')));
+ assert.equal(restored.values.size,0,'failure/reload must not create browser backups');
  assert.equal(restored.stored.planHistory.filter(p=>p.batchId==='local-reload'&&p.field==='stopLoss').length,0);
 });
 
-test('holdings palette defaults green-up, updates both displays and restores from cache and cloud',async t=>{
- const h=harness();t.after(()=>h.close());await h.settle();
- navigate(h,"overview");await h.settle();
- const choose=(scope,label)=>find(scope.tree,n=>n.type==='button'&&n.props.children===label);
- assert.equal(choose(h,'綠漲紅跌').props['aria-pressed'],true);
- choose(h,'紅漲綠跌').props.onClick();await h.settle();
- assert.equal(find(h.tree,n=>n.props?.id==='overview-holdings').props['data-holdings-colors'],'red-up');
+test('holdings palette updates cloud preference without modifying ledger',async t=>{
+ const h=harness();t.after(()=>h.close());await h.settle();navigate(h,'overview');
+ find(h.tree,n=>n.type==='button'&&n.props.children==='紅漲綠跌').props.onClick();await h.settle();
+ assert.equal(h.prefs.holdingsColorScheme,'red-up');assert.equal(h.writes.length,0);assert.equal(h.values.size,0);
  assert.equal(find(h.tree,n=>n.type?.name==='HoldingsHeatmap').props.colorScheme,'red-up');
- assert.equal(h.writes.length,0);
- manual(h).props.onClick();await h.settle();
- const restored=harness(h.stored,h.values);t.after(()=>restored.close());await restored.settle();
- manual(restored).props.onClick();await restored.settle();
- assert.equal(restored.stored.settings.holdingsColorScheme,'red-up');
- assert.deepEqual(restored.stored.fills,source().fills);
- const fresh=harness(restored.stored);t.after(()=>fresh.close());await fresh.settle();
- navigate(fresh,"overview");await fresh.settle();
- assert.equal(choose(fresh,'紅漲綠跌').props['aria-pressed'],true);
 });
 
-test('repeated authentication failures and unload cannot overwrite the preserved ledger with cleared UI state', async t => {
- const h=harness();t.after(()=>h.close());await h.settle();
- const oldUnload=h.events.get('pagehide');
- const changed=h.events.get('storage');
- changed({key:'tg.auth.changed',newValue:'another-session'});await h.settle();
- const backups=[...h.values].filter(([key])=>key.endsWith('.pending'));
- assert.ok(backups.length>0);
- for(const [,value] of backups)assert.equal(JSON.parse(JSON.parse(value).serialized).fills.length,1);
- changed({key:'tg.auth.changed',newValue:'another-session'});oldUnload();await h.settle();
- for(const [key,value] of backups)assert.equal(h.values.get(key),value);
- h.runTimers(600_000);await h.settle();assert.equal(h.writes.length,0);
+test('authentication failure preserves ledger in memory and never writes browser backup',async t=>{
+ const h=harness();t.after(()=>h.close());await h.settle();h.authFailed=true;h.runTimers(30_000);await h.settle();
+ assert.ok(JSON.stringify(h.tree).includes('請重新登入'));assert.equal(h.values.size,0);assert.deepEqual(h.stored,source());
+ h.runTimers(1000);await h.settle();assert.equal(h.writes.length,0);
 });
 
 test("returning mobile page reads newer cloud ledger without writing it back", async t => {
@@ -182,10 +168,10 @@ test("returning mobile page reads newer cloud ledger without writing it back", a
  h.remoteUpdate(newer);h.events.get('visibilitychange')();await h.settle();
  assert.ok(JSON.stringify(h.tree).includes('已更新至雲端最新版本'));
  assert.equal(h.writes.length,0);
- assert.ok([...h.values.values()].some(value=>value.includes('雲端最新帳本')));
+ assert.equal(h.values.size,0);assert.equal(h.stored.profile.name,'雲端最新帳本');
 });
 
-test('simple batch persists atomically locally and a second click never appends twice',async t=>{
+test('simple batch persists atomically to cloud and a second click never appends twice',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();
  find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
  const entry=()=>find(h.tree,n=>n.type?.name==='TradeRegistration');
@@ -193,14 +179,23 @@ test('simple batch persists atomically locally and a second click never appends 
  const batch={...original,date:'2026-08-27',rows:[{...original.rows[0],symbol:'AAA',market:'NASDAQ',quantity:2,price:13}]};
  entry().props.onSimpleChange(batch);await h.settle();
  const p=previewSimpleBatch(entry().props.data,batch);const submit=entry().props.onSimpleSubmit;const version=entry().props.ledgerVersion;
- submit(batch,p.confirmationKey,version);assert.throws(()=>submit(batch,p.confirmationKey,version),/草稿/);await h.settle();
- assert.equal(h.writes.length,0);assert.ok([...h.values].some(([key,value])=>key.endsWith('.pending')&&JSON.parse(JSON.parse(value).serialized).fills.length===2));
+ h.runTimers(1000);await h.settle();const first=submit(batch,p.confirmationKey,version);await assert.rejects(submit(batch,p.confirmationKey,version),/草稿/);await first;await h.settle();
+ assert.ok(h.writes.length>=1);assert.equal(h.values.size,0);
  manual(h).props.onClick();await h.settle();assert.equal(h.stored.fills.length,2);assert.equal(h.stored.simpleEntryDraft,undefined);
 });
-test('failed simple batch backup preserves draft and ledger unchanged',async t=>{
+test('failed simple batch remains in memory and retry saves once without browser persistence',async t=>{
  const h=harness();t.after(()=>h.close());await h.settle();find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
  const entry=()=>find(h.tree,n=>n.type?.name==='TradeRegistration');const original=entry().props.data.simpleEntryDraft;
  const batch={...original,date:'2026-08-27',rows:[{...original.rows[0],symbol:'AAA',market:'NASDAQ',quantity:2,price:13}]};
- entry().props.onSimpleChange(batch);await h.settle();const p=previewSimpleBatch(entry().props.data,batch);h.quota=true;
- assert.throws(()=>entry().props.onSimpleSubmit(batch,p.confirmationKey,entry().props.ledgerVersion),/備援/);await h.settle();assert.equal(entry().props.data.fills.length,1);assert.equal(entry().props.data.simpleEntryDraft.rows[0].quantity,2);assert.equal(h.writes.length,0);
+ entry().props.onSimpleChange(batch);await h.settle();const p=previewSimpleBatch(entry().props.data,batch);h.fail=true;
+ await assert.rejects(entry().props.onSimpleSubmit(batch,p.confirmationKey,entry().props.ledgerVersion));await h.settle();
+ assert.equal(entry().props.data.fills.length,2);assert.equal(h.stored.fills.length,1);assert.equal(h.values.size,0);
+ const event={preventDefault(){this.warned=true;}};h.events.get('beforeunload')(event);assert.equal(event.warned,true);
+ h.fail=false;manual(h).props.onClick();await h.settle();assert.equal(h.stored.fills.length,2);assert.equal(h.values.size,0);
+});
+
+test('known offline disables formal mutations and preserves cloud ledger',async t=>{
+ const h=harness();t.after(()=>h.close());await h.settle();h.connected=false;await h.settle();
+ find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
+ assert.equal(find(h.tree,n=>n.type?.name==='TradeRegistration'),undefined);assert.equal(h.writes.length,0);assert.deepEqual(h.stored,source());
 });

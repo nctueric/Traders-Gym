@@ -40,7 +40,7 @@ export async function pageUser(owner = false) {
   }
 }
 export async function accountHandler(request: Request) {
-  if (!env.DB) return json({ error: "帳號服務尚未設定" }, 503);
+  if (!env.DB || !env.SNAPSHOTS) return json({ error: "雲端 D1／R2 帳本儲存綁定尚未設定" }, 503);
   if (env.SITES_TRIAL_AUTH === "true" && env.PERSONAL_PASSWORD_LOGIN !== "true") return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: "", trial: true, authenticate: (request: Request, options: { mutation?: boolean }) => requireSitesTrialUser(env.DB, request, options) }).handle(request);
   const password = env.PERSONAL_PASSWORD_LOGIN === "true" ? passwordAuth() : null;
   return createAccountApi({ db: env.DB, objects: env.SNAPSHOTS, retentionEnabled: env.SNAPSHOT_RETENTION_ENABLED === "true", clientId: String(env.GOOGLE_CLIENT_ID || ""), authenticate: createMixedAuthenticator(env.DB, password),

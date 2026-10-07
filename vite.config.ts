@@ -16,6 +16,7 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  ratelimits: [{ name: "MARKET_RATE_LIMITER", namespace_id: "20261007", simple: { limit: 120, period: 60 as const } }],
   d1_databases: d1
     ? [
         {
@@ -56,7 +57,7 @@ export default defineConfig(async ({ command, mode }) => {
         : {}),
     },
     plugins: [
-      localAccountPlugin({ openGoogleLogin:settings.OPEN_GOOGLE_LOGIN === "true", mailPreview:settings.LOCAL_MAIL_PREVIEW === "true", resendApiKey:settings.RESEND_API_KEY || "", applicationsOpen: settings.APPLICATIONS_OPEN === "true", personalEmail: settings.LOCAL_PERSONAL_EMAIL || "", passwordHash: Buffer.from(settings.LOCAL_PASSWORD_HASH_BASE64 || "", "base64").toString("utf8"), directory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
+      localAccountPlugin({ openGoogleLogin:settings.OPEN_GOOGLE_LOGIN === "true", mailPreview:settings.LOCAL_MAIL_PREVIEW === "true", resendApiKey:settings.RESEND_API_KEY || "", applicationsOpen: settings.APPLICATIONS_OPEN === "true", personalEmail: settings.LOCAL_PERSONAL_EMAIL || "", passwordHash: Buffer.from(settings.LOCAL_PASSWORD_HASH_BASE64 || "", "base64").toString("utf8"), directory: settings.LOCAL_CLOUD_DIRECTORY || fileURLToPath(new URL("./.wrangler/guest-cloud-acceptance/", import.meta.url)), legacyDirectory: settings.LOCAL_RECORD_DIRECTORY || fileURLToPath(new URL("../自動儲存/", import.meta.url)), clientId: googleClientId, migrations: fileURLToPath(new URL("./drizzle/", import.meta.url)) }),
       vinext(),
       sites(),
       cloudflare({

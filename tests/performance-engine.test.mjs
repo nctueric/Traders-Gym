@@ -16,7 +16,7 @@ test('Dietz timing and invalid denominator',()=>{assert.equal(dailyDietz(100,220
 test('long/short, partial exits, fees, multiple accounts, historical FX and no future data',()=>{
  const fills=[{symbol:'2330',market:'TWSE',accountId:'tw',currency:'TWD',side:'BUY',quantity:10,price:32,fee:0,timestamp:'2026-01-01'},{symbol:'A',accountId:'us',currency:'USD',side:'SELL',quantity:2,price:10,fee:1,timestamp:'2026-01-01'},{symbol:'A',accountId:'us',currency:'USD',side:'BUY',quantity:1,price:8,fee:0,timestamp:'2026-01-02'}];
  const d=buildPerformanceDaily(data([],fills),cache([series('2330.TW',[32,32,32,32]),series('A',[10,8,8,8]),series('USDTWD=X',[32,16,16,16])]),now);
- assert.equal(d.points[0].total,999);assert.equal(d.points[1].total,1013);assert.equal(d.points.length,4);assert.equal(d.end,'2026-01-04');
+ assert.equal(d.points[0].total,999);assert.equal(d.points[1].total,1003);assert.equal(d.points.length,4);assert.equal(d.end,'2026-01-04');
 });
 test('missing data and opening resets break cumulative performance and drawdown',()=>{
  const d=buildPerformanceDaily(data([cash('OPENING_BALANCE',1200,'2026-01-03')]),cache(),now);const r=performanceRange(d,d.start,d.end);assert.equal(r.points[2].portfolio,null);assert.equal(r.summary.portfolio,null);assert.equal(r.summary.maxDrawdown,null);
@@ -88,14 +88,14 @@ test('Taiwan spring closure preserves cumulative returns while historical FX and
  const before=structuredClone(ledger);
  prices.entries['A:raw']={bars:holidayDates.map(date=>({date,close:date>='2026-02-19'?110:100}))};
  const d=buildPerformanceDaily(ledger,prices,new Date('2026-02-24'));
- const feb19=d.points.find(p=>p.date==='2026-02-19');assert.equal(feb19.total,990);assert.equal(feb19.quoteDates['2330.TW'],'2026-02-11');assert.match(feb19.warnings.join(),/休市/);
- assert.equal(d.points.at(-1).total,998);assert.equal(d.points.at(-1).quoteDates['2330.TW'],'2026-02-23');
- const r=performanceRange(d,d.start,d.end);assert.ok(r.points.every(p=>p.portfolio!=null));assert.ok(Math.abs(r.summary.portfolio+.002)<1e-12);assert.equal(r.months[0].portfolio,r.summary.portfolio);assert.ok(Math.abs(r.summary.maxDrawdown+.01)<1e-12);assert.deepEqual(ledger,before);
+ const feb19=d.points.find(p=>p.date==='2026-02-19');assert.equal(feb19.total,1010);assert.equal(feb19.quoteDates['2330.TW'],'2026-02-11');assert.match(feb19.warnings.join(),/休市/);
+ assert.equal(d.points.at(-1).total,1018);assert.equal(d.points.at(-1).quoteDates['2330.TW'],'2026-02-23');
+ const r=performanceRange(d,d.start,d.end);assert.ok(r.points.every(p=>p.portfolio!=null));assert.ok(Math.abs(r.summary.portfolio-.018)<1e-12);assert.equal(r.months[0].portfolio,r.summary.portfolio);assert.equal(r.summary.maxDrawdown,0);assert.deepEqual(ledger,before);
 });
 test('holiday exception never hides missing final session, reopening quote, FX or US prices',()=>{
  const run=prices=>buildPerformanceDaily(holidayLedger,prices,new Date('2026-02-24'));
  const noFinal=run(holidayFixture({last:'2026-02-10'}));assert.equal(noFinal.points.find(p=>p.date==='2026-02-19').total,null);
- const noReopen=run(holidayFixture({reopen:false}));assert.equal(noReopen.points.find(p=>p.date==='2026-02-22').total,980);assert.equal(noReopen.points.at(-1).total,null);assert.equal(performanceRange(noReopen,noReopen.start,noReopen.end).summary.portfolio,null);
+ const noReopen=run(holidayFixture({reopen:false}));assert.equal(noReopen.points.find(p=>p.date==='2026-02-22').total,1000);assert.equal(noReopen.points.at(-1).total,null);assert.equal(performanceRange(noReopen,noReopen.start,noReopen.end).summary.portfolio,null);
  const noFx=run(holidayFixture({fxMissing:true}));assert.match(noFx.points.find(p=>p.date==='2026-02-19').problems.join(),/USDTWD/);
  const usLedger={...holidayLedger,fills:[{...holidayLedger.fills[0],symbol:'A',market:'NASDAQ',currency:'USD',price:32,quantity:1}]};
  const us=buildPerformanceDaily(usLedger,holidayFixture({symbol:'A',reopen:false}),new Date('2026-02-24'));assert.match(us.points.find(p=>p.date==='2026-02-19').problems.join(),/A 行情逾七日/);

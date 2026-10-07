@@ -10,7 +10,7 @@ import { createEntryDraft, previewEntry, buildEntryEvidence } from '../lib/trade
 const require=createRequire(import.meta.url);
 const load=(react=React,extras={})=>{
  const cache=new Map();
- function moduleAt(name) {if(cache.has(name))return cache.get(name);const code=ts.transpileModule(readFileSync(new URL('../app/'+name+'.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;const mod={exports:{}};cache.set(name,mod.exports);new Function('require','module','exports','window','document','ResizeObserver','fetch',code)(id=>id==='react'?react:id.startsWith('@/lib/')?require('../lib/'+id.slice(6)):id.startsWith('./')?moduleAt(id.slice(2)):require(id),mod,mod.exports,extras.window,extras.document,extras.ResizeObserver,extras.fetch);return mod.exports;}
+ function moduleAt(name) {if(cache.has(name))return cache.get(name);const code=ts.transpileModule(readFileSync(new URL('../app/'+name+'.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;const mod={exports:{}};cache.set(name,mod.exports);new Function('require','module','exports','window','document','ResizeObserver','fetch',code)(id=>id==='react'?react:id==='./valuation-context'?{useValuation:()=>({formatUsd:v=>v==null?'—':`USD ${v}`})}:id.startsWith('@/lib/')?require('../lib/'+id.slice(6)):id.startsWith('./')?moduleAt(id.slice(2)):require(id),mod,mod.exports,extras.window,extras.document,extras.ResizeObserver,extras.fetch);return mod.exports;}
  return moduleAt('trade-entry-workspace');
 };
 const nodes=tree=>Array.isArray(tree)?tree.flatMap(nodes):!tree||typeof tree!=='object'?[]:[tree,...nodes(tree.props?.children)];

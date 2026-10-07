@@ -1,3 +1,4 @@
+import {memoryObjects} from './cloud-objects.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -13,7 +14,7 @@ function setup(t, options = {}) {
   const sqlite = new DatabaseSync(':memory:'); t.after(() => sqlite.close()); sqlite.exec('PRAGMA foreign_keys=ON');
   const dir = new URL('../drizzle/', import.meta.url); for (const f of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) sqlite.exec(readFileSync(new URL(f, dir), 'utf8'));
   const outbox=[]; const db = sqliteAdapter(sqlite), pwd = createPasswordAuth({ db, email: OWNER_EMAIL, passwordHash }), authenticate = createMixedAuthenticator(db, pwd);
-  const api = createAccountApi({ db, clientId: 'test-client', authenticate, verifyCredential: async value => JSON.parse(value), accessOptions: { password: pwd, ownerEmail: OWNER_EMAIL, applicationsOpen: true, sendMail:async message=>outbox.push(message), ...options } });
+  const api = createAccountApi({ objects:memoryObjects(),db, clientId: 'test-client', authenticate, verifyCredential: async value => JSON.parse(value), accessOptions: { password: pwd, ownerEmail: OWNER_EMAIL, applicationsOpen: true, sendMail:async message=>outbox.push(message), ...options } });
   const req = (path, session = {}, body) => new Request(`https://test.example${path}`, { method: body ? 'POST' : 'GET', headers: { Origin: 'https://test.example', 'Content-Type': 'application/json', Cookie: session.cookie || '', 'x-workspace-session': session.id || '', 'x-application-session': session.id || '' }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const call = async (path, session, body) => { const response = await api.handle(req(path, session, body)); return { status: response.status, data: await response.json(), response }; };
   const google = async (sub = 'applicant', email = 'applicant@gmail.com') => api.handle(new Request('https://test.example/api/auth/google', { method: 'POST', headers: { Cookie: 'g_csrf_token=test', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ g_csrf_token: 'test', credential: JSON.stringify({ sub, email, name: '測試申請人', email_verified: true }) }) }));

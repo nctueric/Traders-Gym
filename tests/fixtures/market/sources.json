@@ -1,0 +1,54 @@
+{
+  "retrievedOn": "2026-10-07",
+  "source": "Yahoo Finance chart API; unmodified provider responses",
+  "fixtures": [
+    {
+      "symbol": "AAPL",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1y",
+      "sha256": "ecd5052f97a74c5bfe42de99e929822382dea771daefb25ec8b30fd43079db61",
+      "rows": 251,
+      "firstTimestamp": 1759843800,
+      "lastTimestamp": 1791293400
+    },
+    {
+      "symbol": "MSFT",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/MSFT?interval=1d&range=1y",
+      "sha256": "30a4300f9505c274dff0ada5d3184dbf50359672d1e9ad2a98842d7961f1b703",
+      "rows": 251,
+      "firstTimestamp": 1759843800,
+      "lastTimestamp": 1791293400
+    },
+    {
+      "symbol": "2330.TW",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/2330.TW?interval=1d&range=1y",
+      "sha256": "3b55a629212a201c095f9ab9b078e38f8deab8520f88391761136dc0fd1ac5a4",
+      "rows": 244,
+      "firstTimestamp": 1759798800,
+      "lastTimestamp": 1791334800
+    },
+    {
+      "symbol": "QQQ",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/QQQ?interval=1d&range=1y",
+      "sha256": "fdb1c1e3f3532bb6da70fe33c3c431b8d79304d034ef91746e98e3c83087259e",
+      "rows": 251,
+      "firstTimestamp": 1759843800,
+      "lastTimestamp": 1791293400
+    },
+    {
+      "symbol": "SPY",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1y",
+      "sha256": "f3d7593781f9d37fe6d59fe127529b907950d5679b34a02e0693912d5900fbb9",
+      "rows": 251,
+      "firstTimestamp": 1759843800,
+      "lastTimestamp": 1791293400
+    },
+    {
+      "symbol": "USDTWD=X",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/USDTWD=X?interval=1d&range=1y",
+      "sha256": "f4aa58a957ee933089d52a0d48fb4df7b404ad335265ef68571564800bcbf10d",
+      "rows": 263,
+      "firstTimestamp": 1759791600,
+      "lastTimestamp": 1791343201
+    }
+  ]
+}

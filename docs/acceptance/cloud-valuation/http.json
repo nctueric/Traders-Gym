@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-07T04:08:03.978Z",
+  "environment": "local D1/R2 emulation only",
+  "passed": 7,
+  "checks": [
+    "Anonymous preference access rejected",
+    "UI-created cash and simple fill restored from verified cloud snapshot",
+    "UI-created currency and entry-mode preferences restored",
+    "User selection rejected",
+    "Independent session sees cloud preference changes",
+    "Full JSON cloud round trip preserves ledger ID and every field",
+    "D1 metadata and actual R2 object checksum and size match"
+  ]
+}

@@ -1,3 +1,4 @@
+import {useValuation} from './valuation-context';
 type EquityComposition = {
   totalUsd: number | null;
   cashUsd: number | null;
@@ -6,9 +7,10 @@ type EquityComposition = {
   hasShortPositions: boolean;
 };
 
-const usd = (value: number | null) => value == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", currencyDisplay: "code", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
 
-export function EquityBreakdown({ equity, compact = false }: { equity: EquityComposition; compact?: boolean }) {
+export function EquityBreakdown({ equity:source,display, compact = false }: { equity: EquityComposition;display?:{total:number|null;cash:number|null;gross:number|null}; compact?: boolean }) {
+  const valuation=useValuation();const usd=display?valuation.format:valuation.formatUsd;
+  const equity=display?{...source,totalUsd:display.total,cashUsd:display.cash,grossPositionValueUsd:display.gross,exposurePct:display.total&&display.total>0&&display.gross!=null?display.gross/display.total:null}:source;
   return <div className="equity-breakdown">
     <dl aria-label="現金、持倉與曝險">
       <div><dt>現金水位</dt><dd className={equity.cashUsd != null && equity.cashUsd < 0 ? "negative" : ""}>{usd(equity.cashUsd)}</dd></div>

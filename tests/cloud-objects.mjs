@@ -1,0 +1,1 @@
+export function memoryObjects(){const blobs=new Map();return {blobs,async put(key,text,options={}){blobs.set(key,{text,...options});return {};},async get(key){const value=blobs.get(key);return value?{text:async()=>value.text,body:value.text,customMetadata:value.customMetadata}:null;},async delete(key){blobs.delete(key);}};}

@@ -62,7 +62,7 @@ test("overview keeps asset history and holdings in accessible disclosures", () =
   const className = node => node.openingElement?.attributes.properties.find(attr => ts.isJsxAttribute(attr) && attr.name.text === "className")?.initializer?.text;
   const metrics = elements.find(node => className(node) === "asset-summary-grid");
   const metadata = elements.find(node => className(node) === "secondary-metrics");
-  const chart = elements.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(source) === "MonthlyAssets");
+  const chart = elements.find(node => ts.isJsxSelfClosingElement(node) && node.tagName.getText(source) === "MonthlyValuation");
   assert.ok(metrics && metadata && chart);
   assert.match(metrics.getText(source), /metrics\.slice\(1,\s*3\)/);
   assert.match(metrics.getText(source), /<EquityBreakdown equity=\{currentEquity\}/);
@@ -70,7 +70,7 @@ test("overview keeps asset history and holdings in accessible disclosures", () =
   assert.equal(chart.parent.parent.pos, metrics.parent.parent.pos);
   assert.equal(metrics.parent.parent.pos, metadata.parent.parent.pos);
   assert.ok(metrics.end < metadata.pos && metadata.end < chart.pos);
-  assert.match(chart.getText(source), /data=\{data\} quotes=\{quotes\} fxRate=\{fxRate\} asOf=\{currentEquity\.asOf\}/);
+  assert.match(chart.getText(source), /data=\{data\} asOf=\{currentEquity\.asOf\} currentTotal=\{selectedTotal\}/);
   assert.doesNotMatch(stylesheet.toString(), /overview-finances|overview-equity|overview-results/);
   const page = source.getFullText();
   for (const id of ["overview-assets", "overview-holdings", "overview-trade-metrics"]) assert.match(page, new RegExp(`id="${id}"`));

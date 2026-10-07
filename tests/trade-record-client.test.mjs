@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { durableTradeJson, validateTradeRecordPayload } from "../lib/trade-record-store.mjs";
-import { canRefreshCloudRecord, createRecordSaveQueue, readPendingRecord, saveTradeRecord, writeLocalRecord } from "../lib/trade-record-client.mjs";
+import { canRefreshCloudRecord, createRecordSaveQueue, saveTradeRecord } from "../lib/trade-record-client.mjs";
 
 const data = () => ({ profile: { name: "帳號" }, accounts: [], fills: [], marketBars: [], settings: {} });
 const response = (status, body) => ({ ok: status >= 200 && status < 300, status, async json() { return body; } });
 const account = version => ({ id: "primary", name: "帳號", version, updatedAt: "2026-08-28T00:00:00Z" });
-function storage() { const map = new Map(); return { map, getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v) }; }
+
 
 test("complete snapshots retain market evidence; emergency journals stay small; limits use UTF8 bytes", () => {
   const d = { ...data(), marketBars: [{ cache: "x".repeat(3_200_000) }], positionPlans: { one: { stopLoss: 5 } }, planHistory: [1], cycleReviews: { one: { entryQualityTag: "IDEAL" } }, strategies: [1], strategyAssignments: { one: 1 }, improvementExperiments: [1], extraUserField: "keep" };
@@ -59,34 +59,14 @@ test("save queue serializes edits and remains usable after a failure", async () 
   await failure; assert.equal(await second, 2); assert.deepEqual(events, [1,2]);
 });
 
-test("login always displays cloud data while pending edits are archived", () => {
-  const local = storage(), base = data(), edited = { ...data(), note: "edited" };
-  assert.equal(writeLocalRecord(local, "records", "primary", durableTradeJson(edited), durableTradeJson(base), 1), true);
-  const recovered = readPendingRecord(local, "records", "primary", base);
-  assert.equal(recovered.archivedPending, true);
-  assert.deepEqual(recovered.dataset, base);
-  assert.equal(local.getItem(recovered.recoveryKey), local.getItem("records.primary.pending"));
-  assert.deepEqual(readPendingRecord(local, "records", "primary", { ...base, other: 1 }).dataset, { ...base, other: 1 });
-  assert.deepEqual(readPendingRecord(local, "records", "primary", edited).dataset, edited);
-  assert.equal(writeLocalRecord({ setItem() { throw Error("quota"); } }, "records", "primary", "x", "y", 1), false);
-});
-
-test("legacy cache is preserved separately, not guessed to be newer", () => {
-  const local = storage(), old = JSON.stringify({ ...data(), note: "unconfirmed" });
-  local.setItem("records.primary", old);
-  const result = readPendingRecord(local, "records", "primary", data());
-  assert.equal(local.getItem(result.legacyRecoveryKey), old);
-  assert.deepEqual(result.dataset, data());
-});
-
 test("manual and auto saving share complete snapshots, and unload is guarded", () => {
   const source = readFileSync(new URL("../app/trade-workspace.tsx", import.meta.url), "utf8");
-  assert.ok(source.includes("window.setInterval(() => backgroundSaveRef.current(), 600_000)"));
+  assert.match(source,/window\.setInterval\(\(\)\s*=>\s*backgroundSaveRef\.current\(\),\s*60_000\)/);
   assert.ok(source.includes('persistCompleteSnapshot(true, "手動")'));
   assert.ok(source.includes("serializeInBackground(captured.dataset)"));
   assert.ok(source.includes("立即儲存"));
   assert.match(source, /beforeunload/);
-  assert.match(source, /writeLocalRecord\(recordStorage\(\)/);
+  assert.doesNotMatch(source, /writeLocalRecord|readPendingRecord|localStorage\.setItem/);
   assert.doesNotMatch(source, /雲端儲存失敗，本機備份仍安全/);
 });
 
@@ -110,19 +90,6 @@ test("aborted upload confirms a committed snapshot without a duplicate write", a
 test("unconfirmed abort retains retryable Chinese error; session errors remain terminal",async()=>{
  await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"test",serialized:JSON.stringify(data()),baseVersion:1,fetcher:async()=>{throw new DOMException("Fetch is aborted","AbortError");}}),e=>e.status===504&&e.retryable&&e.message.includes("尚未確認"));
  await assert.rejects(saveTradeRecord({accountId:"primary",accountName:"test",serialized:JSON.stringify(data()),baseVersion:1,fetcher:async()=>{throw Object.assign(new Error("session ended"),{status:401,retryable:false});}}),e=>e.status===401&&!e.retryable);
-});
-
-test('empty pending journal cannot replace a populated cloud ledger and is quarantined intact', () => {
-  const local=storage(), base={...data(),fills:[{id:'original'}],cashActivities:[{id:'cash'}]};
-  const empty={...data(),fills:[],cashActivities:[]};
-  writeLocalRecord(local,'records','primary',JSON.stringify(empty),JSON.stringify(base),394);
-  const original=local.getItem('records.primary.pending');
-  const result=readPendingRecord(local,'records','primary',base);
-  assert.deepEqual(result.dataset,base);assert.equal(result.archivedPending,true);
-  assert.equal(result.recovered,undefined);assert.equal(local.getItem(result.recoveryKey),original);
-  const blocked=readPendingRecord({getItem:k=>local.getItem(k),setItem(){throw Error('quota');}},'records','primary',base);
-  assert.deepEqual(blocked.dataset,base);assert.equal(blocked.conflict,true);
-  assert.equal(local.getItem('records.primary.pending'),original);
 });
 
 test("cloud refresh accepts clean data but preserves unsynced edits and unknown baselines", () => {

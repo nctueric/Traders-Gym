@@ -58,7 +58,7 @@ test('personal session isolates legacy data, saves D1/R2, restores history, and 
   assert.equal(response.status, 200);
   const large = { ...small, evidence: 'X'.repeat(1900000) };
   response = await h.api.handle(h.request('/api/trade-records', 'PUT', { accountId: current.account.id, accountName: 'test', dataset: large, baseVersion: 2 }, s));
-  assert.equal(response.status, 200); assert.equal(h.blobs.size, 1);
+  assert.equal(response.status, 200); assert.equal(h.blobs.size, 2);
   const readback = await (await h.api.handle(h.request('/api/trade-records', 'GET', undefined, s))).json(); assert.deepEqual(readback.dataset, large);
   const history = await (await h.api.handle(h.request('/api/admin/history', 'GET', undefined, s))).json();
   const old = history.items.find(row => row.version === 2);

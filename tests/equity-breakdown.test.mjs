@@ -81,7 +81,7 @@ const require=createRequire(import.meta.url);
 const source=readFileSync(new URL("../app/equity-breakdown.tsx",import.meta.url),"utf8");
 const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
 const componentModule={exports:{}};
-new Function("require","module","exports",compiled)(require,componentModule,componentModule.exports);
+new Function("require","module","exports",compiled)(id=>id==='./valuation-context'?{useValuation:()=>({currency:'USD',formatUsd:v=>v==null?'—':`USD ${v.toFixed(2)}`,format:v=>v==null?'—':`USD ${v.toFixed(2)}`})}:require(id),componentModule,componentModule.exports);
 const render = e => renderToStaticMarkup(React.createElement(componentModule.exports.EquityBreakdown,{equity:e}));
 test("overview breakdown renders separate USD balances and exposure formula", () => {
   const html=render(equity([fill("AAA","BUY",2,100)]));

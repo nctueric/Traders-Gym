@@ -79,7 +79,7 @@ export const googleLinkChallenges = sqliteTable("google_link_challenges", {
   userId: text("user_id").notNull().references(() => appUsers.id), expiresAt: text("expires_at").notNull(), consumedAt: text("consumed_at"),
 });
 
-export const memberPreferences=sqliteTable("member_preferences",{userId:text("user_id").primaryKey().references(()=>appUsers.id),activeAccountId:text("active_account_id")});
+export const memberPreferences=sqliteTable("member_preferences",{userId:text("user_id").primaryKey().references(()=>appUsers.id),activeAccountId:text("active_account_id"),preferencesJson:text("preferences_json").notNull().default("{}")});
 export const emailCredentials=sqliteTable("email_credentials",{userId:text("user_id").primaryKey().references(()=>appUsers.id),passwordHash:text("password_hash").notNull(),verifiedAt:text("verified_at").notNull(),updatedAt:text("updated_at").notNull()});
 export const emailTokens=sqliteTable("email_tokens",{tokenHash:text("token_hash").primaryKey(),purpose:text("purpose").notNull(),email:text("email").notNull(),name:text("name").notNull().default(""),userId:text("user_id").references(()=>appUsers.id),sessionId:text("session_id"),expiresAt:text("expires_at").notNull(),consumedAt:text("consumed_at"),claimId:text("claim_id"),createdAt:text("created_at").notNull()},table=>[index("email_tokens_expiry").on(table.expiresAt)]);
 export const memberSessionCredentials=sqliteTable("member_session_credentials",{sessionId:text("session_id").primaryKey().references(()=>authSessions.id,{onDelete:"cascade"}),fingerprint:text("fingerprint").notNull()});
