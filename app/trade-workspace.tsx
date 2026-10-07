@@ -56,6 +56,7 @@ import { TodayWorkspace } from "./today-workspace";
 import { CycleReviewDialog } from "./cycle-review-dialog";
 import type { AccountUser } from "./account-server";
 import { createSessionScope } from "@/lib/account-client.mjs";
+import { clearLedgerRecordCache, writeLedgerRecordCache } from "@/lib/ledger-record-cache.mjs";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string; note?: string };
@@ -220,13 +221,14 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
         if(!payload.account){setNoLedger(true);setRecordAccounts([]);setStorageReady(true);setCloudReady(true);setSaveState('尚無帳本');return;}
         setNoLedger(false);
         loadDataset(payload.dataset);
+        if (payload.cacheSource !== 'device') void writeLedgerRecordCache({ userId: user.id, record: payload });
         setStorageConflict(false);
         lastSavedSnapshotRef.current=payload.dataset;
         setRecordAccounts(payload.accounts || [payload.account]);
         setActiveRecordAccountId(payload.account.id);
         recordVersionRef.current = payload.account.version;
-        lastSavedJsonRef.current = completeTradeJson(normalizeStrategyDataset(payload.dataset));
-        setSaveState(`已載入雲端紀錄・${localDateTime(payload.account.updatedAt)}・v${payload.account.version}`);
+        lastSavedJsonRef.current = payload.cachePending ? payload.cacheBaselineJson : completeTradeJson(normalizeStrategyDataset(payload.dataset));
+        setSaveState(`${payload.cacheSource === 'device' ? '已從裝置快取載入；正在背景確認雲端版本' : '已載入雲端紀錄'}・${localDateTime(payload.account.updatedAt)}・v${payload.account.version}`);
         setMessage(demo?"已載入示範交易；真實市場資料可能延遲。":"已載入你的交易帳本。");
         setCloudReady(true);
         setStorageReady(true);
@@ -239,7 +241,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     };
     void restore();
     return () => { active = false; sessionScope.stop(); };
-  }, [loadDataset, sessionScope,requestedAccountId,demo,initialRecord]);
+  }, [loadDataset, sessionScope,requestedAccountId,demo,initialRecord,user.id]);
 
   const persistCompleteSnapshot = useCallback((force = false, label = "自動") => saveQueueRef.current(async () => {
     if(demo){demo.update(latestSaveRef.current.dataset);setSaveState('當次練習已更新・離開後重置');return;}
@@ -277,10 +279,11 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
       latestSaveRef.current = pending;
     }
     setRecordAccounts(current => [saved.account, ...current.filter(account => account.id !== saved.account.id)]);
+    void writeLedgerRecordCache({ userId: user.id, record: { account: saved.account, accounts: [saved.account, ...recordAccounts.filter(account => account.id !== saved.account.id)], dataset: JSON.parse(saved.serialized) } });
     const newerEdits = pending.dataset !== captured.dataset && !saved.dataset;
     setSaveState(`雲端已儲存（${label}）・${new Date(saved.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}・v${saved.account.version}${newerEdits ? "；較新資料待背景儲存" : ""}`);
     return saved;
-  }), [activeRecordAccountId, activeRecordAccountName, loadDataset, storageConflict, sessionScope,demo,noLedger]);
+  }), [activeRecordAccountId, activeRecordAccountName, loadDataset, storageConflict, sessionScope,demo,noLedger,user.id,recordAccounts]);
 
   const handleSaveError = useCallback((error: any) => {
     if (sessionInvalidatedRef.current) return;
@@ -321,6 +324,14 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
 
   const backgroundSaveRef = useRef(() => {});
   useEffect(() => { backgroundSaveRef.current = () => { void persistCompleteSnapshot().catch(handleSaveError); }; }, [persistCompleteSnapshot, handleSaveError]);
+  useEffect(() => {
+    if (demo || noLedger || !storageReady || !cloudReady || storageConflict) return;
+    const account = recordAccounts.find(item => item.id === activeRecordAccountId);
+    if (!account || !lastSavedJsonRef.current) return;
+    const pending = !canRefreshCloudRecord(durableJson, lastSavedJsonRef.current);
+    const timer = window.setTimeout(() => { void writeLedgerRecordCache({ userId: user.id, record: { account: { ...account, version: recordVersionRef.current ?? account.version }, accounts: recordAccounts, dataset: completeSnapshot }, pending, baselineJson: lastSavedJsonRef.current }); }, 150);
+    return () => window.clearTimeout(timer);
+  }, [demo, noLedger, storageReady, cloudReady, storageConflict, recordAccounts, activeRecordAccountId, durableJson, completeSnapshot, user.id]);
   useEffect(() => {
     if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online))return;
     const timer=setTimeout(()=>backgroundSaveRef.current(),1000);return()=>clearTimeout(timer);
@@ -400,8 +411,8 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     window.addEventListener("focus", refresh);
     window.addEventListener("pageshow", refresh);
     window.addEventListener("visibilitychange", refresh, true);
-    const timer = window.setInterval(refresh, 60_000);
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("pageshow", refresh); window.removeEventListener("visibilitychange", refresh, true); };
+    const initial = window.setTimeout(refresh, 0), timer = window.setInterval(refresh, 60_000);
+    return () => { active = false; window.clearTimeout(initial); window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("pageshow", refresh); window.removeEventListener("visibilitychange", refresh, true); };
   }, [demo, noLedger, storageReady, cloudReady, storageConflict, activeRecordAccountId, sessionScope, loadDataset, handleSaveError]);
   const calculationData = useMemo(() => ({ fills: data.fills, marketBars: data.marketBars }), [data.fills, data.marketBars]);
   const report = useMemo(() => summarize(calculationData), [calculationData]);
@@ -584,6 +595,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
         await persistCompleteSnapshot(true,"登出前");
       }
       await sessionScope.fetch("/api/auth/logout", { method: "POST" });
+      await clearLedgerRecordCache(user.id);
       sessionScope.stop();
       setSessionEnded(true);
       window.location.replace(user.authProvider === "sites" ? "/signout-with-chatgpt?return_to=%2Flogin" : "/login");
