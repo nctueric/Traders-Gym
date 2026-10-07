@@ -80,6 +80,13 @@ test("expanded position follows stable cycle ID when quote ranking changes", () 
   assert.equal(find(updated,n=>n.props?.["aria-label"] === "OTHER 交易紀錄 2 筆").props["aria-expanded"],false);
 });
 
+test("desktop position value keeps the native currency visible beside the selected valuation", () => {
+  const h=harness(), Panel=h.load("trade-workspace").PositionsPanel;
+  const twd={...position(),id:"cycle-tw",symbol:"2330",market:"TWSE",currency:"TWD",quantity:2,averageCost:100};
+  const html=renderToStaticMarkup(h.render(Panel,{...propsFor(twd),positions:[twd],accounts:[{id:"a",name:"台股",currency:"TWD"}],quotes:{"2330.TW":{price:160,changePct:0.01}}}));
+  assert.match(html,/TWD(?:&nbsp;|\s)320\.0 原幣/);
+});
+
 test("ledger K-line action forwards exact cycle and fill event without changing source", () => {
   const h=harness(), Component=h.load("position-transactions").PositionTransactions.type,p=position();
   const before=JSON.stringify(p),calls=[];
