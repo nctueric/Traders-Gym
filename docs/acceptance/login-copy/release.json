@@ -1,0 +1,19 @@
+{
+  "workerVersion": "88a93c12-ff89-4d2c-b3c8-e198a60b689f",
+  "origin": "https://tradergym.app/login",
+  "removedMembershipRow": true,
+  "guestEntryLabel": "訪客登入",
+  "guestTarget": "/demo",
+  "lint": true,
+  "typescript": true,
+  "build": true,
+  "deployDryRun": true,
+  "productionHTMLVerified": true,
+  "desktopVerified": true,
+  "mobileViewport": {
+    "width": 390,
+    "height": 844,
+    "scrollWidth": 390
+  },
+  "browserErrors": []
+}

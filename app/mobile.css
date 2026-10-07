@@ -211,7 +211,7 @@
  .cash-editor>.primary{margin-top:12px}.cash-preview{padding:12px 0}.mobile-record-list header{align-items:baseline;gap:4px 8px}
  .ledger-manager .ledger-actions-menu{margin-top:0}.ledger-list li{padding:12px 0;gap:8px}.ledger-create{margin-block:16px;gap:8px}
  .backup-tools{margin-top:16px;padding-top:12px}.backup-tools .actions{grid-template-columns:repeat(2,minmax(0,1fr))}.backup-tools .actions .primary{grid-column:1/-1}
- .auth-panel .auth-header{margin-bottom:16px}.auth-panel .login-membership{padding-top:16px;margin-top:16px}.auth-panel .demo-entry{padding:14px 0}.auth-panel .auth-footer{gap:12px}
+ .auth-panel .auth-header{margin-bottom:16px}.auth-panel .demo-entry{padding:14px 0}.auth-panel .auth-footer{gap:12px}
  .admin-tabs{display:flex;overflow-x:auto;flex-wrap:nowrap;gap:4px;max-width:100%}.admin-tabs button{flex-shrink:0;min-height:44px}.admin-toolbar{gap:8px;flex-wrap:wrap}
  .admin-shell .table-wrap{max-width:100%;overflow:auto}.admin-shell :is(input,select){min-width:0;max-width:100%}.admin-shell .panel{padding:12px}
  .demo-banner{padding:8px 0;margin-bottom:8px;gap:4px 12px;font-size:.875rem}.demo-banner>div{gap:2px}.demo-banner button,.demo-banner a{font-size:.875rem;min-height:44px}

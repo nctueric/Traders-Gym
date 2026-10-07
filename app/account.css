@@ -103,8 +103,7 @@
 .tg-login .mail-choice:hover,.tg-login .mail-choice[aria-expanded=true]{color:var(--green);text-decoration:underline;text-underline-offset:4px}
 .tg-login .mail-choice:focus-visible{outline:3px solid var(--green);outline-offset:3px}
 .mail-login{padding:4px 0 20px}.mail-login .password-login-form{margin:16px 0 10px}.mail-login>a{font-size:14px}
-.login-membership{border-top:1px solid var(--line);padding-top:22px;margin-top:28px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:14px}
-.login-membership p{font-size:14px;margin:0}.demo-entry{display:grid;gap:6px;padding:20px 0;text-decoration:none;font-weight:650}.demo-entry span{font-weight:400;font-size:13px;color:var(--muted)}
+.demo-entry{display:grid;gap:6px;padding:20px 0;text-decoration:none;font-weight:650}.demo-entry span{font-weight:400;font-size:13px;color:var(--muted)}
 .auth-footer{display:flex;flex-wrap:wrap;gap:16px;border-top:1px solid var(--line);padding-top:18px;font-size:13px}.auth-footer details{flex:1}.auth-footer summary{cursor:pointer;color:var(--muted)}.auth-footer p{font-size:13px;line-height:1.7}
 .settings-panel h2{margin-top:28px;font-size:20px}.settings-panel>.google-link-form,.settings-panel>section{border-top:1px solid var(--line);padding-top:24px}
 .workspace-tools{position:relative}.workspace-tools summary{padding:11px 12px;cursor:pointer;font-size:14px;color:var(--muted);border-radius:8px}.workspace-tools>div{position:absolute;right:0;top:100%;z-index:30;min-width:190px;display:grid;gap:8px;padding:12px;background:var(--card);border:1px solid var(--line);box-shadow:0 8px 24px #0002;border-radius:8px}
