@@ -318,7 +318,11 @@ test('cloud preferences validate patches, preserve ledger IDs and isolate users 
  const before=h.sqlite.prepare('SELECT account_id,version,dataset_json FROM trade_account_snapshots ORDER BY account_id').all();
  const patches=[{valuationCurrency:'TWD'},{entryMode:'full',onboardingDone:true},{holdingsColorScheme:'red-up'}];
  for(const patch of patches)assert.equal((await h.call(owner,'/api/preferences',patch,'PATCH')).status,200);
+ const rotation={benchmark:'QQQ',interval:'daily',themes:['SMH','AIQ'],tail:24,preview:false};
+ assert.equal((await h.call(owner,'/api/preferences',{rotation},'PATCH')).status,200);
  const another=await h.login(OWNER_EMAIL);const synced=(await h.call(another,'/api/preferences')).body;
+ assert.deepEqual(synced.preferences.rotation,rotation);assert.deepEqual((await h.call(friend,'/api/preferences')).body.preferences.rotation.themes,[]);
+ assert.equal((await h.call(owner,'/api/preferences',{rotation:{...rotation,themes:['AAPL']}},'PATCH')).status,400);
  assert.equal(synced.preferences.valuationCurrency,'TWD');assert.equal(synced.preferences.entryMode,'full');assert.equal(synced.preferences.holdingsColorScheme,'red-up');
  assert.equal((await h.call(friend,'/api/preferences')).body.preferences.valuationCurrency,'USD');
  for(const patch of [{userId:friend.userId},{valuationCurrency:'JPY'},{entryMode:'unknown'},{reviewColumns:['cycle']},{onboardingDone:'true'},{}])assert.equal((await h.call(owner,'/api/preferences',patch,'PATCH')).status,400);

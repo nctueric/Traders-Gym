@@ -61,7 +61,7 @@
  .mobile-position-list{border-top:1px solid var(--line)}
  .mobile-position-list>header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0}
  .mobile-position-list h3{margin:0}.mobile-position{border-top:1px solid var(--line);padding:14px 0}
- .mobile-position>header{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mobile-position>header>b{font-size:1rem;overflow-wrap:anywhere}
+ .mobile-position>header{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mobile-position>header>b{font-size:1rem;overflow-wrap:anywhere}.mobile-position-holding-days{margin-left:3px;color:var(--muted);font-size:.875rem;font-weight:500;white-space:nowrap}
  .mobile-position .position-account{font-size:.875rem;color:var(--muted);flex-basis:100%;overflow-wrap:anywhere}
  .mobile-position .direction{font-size:.875rem}.mobile-position .position-alert{font-size:.875rem;color:var(--red)}
  .mobile-position-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:8px 0}
@@ -167,6 +167,7 @@
  .position-value-line{grid-row:2;display:flex;align-items:baseline;gap:8px;font-size:1rem;font-weight:600;font-variant-numeric:tabular-nums}.position-value-line>.fit-number{flex:1;min-width:0}.position-value-line>span:last-child{white-space:nowrap;color:var(--muted)}
  .mobile-position>.mobile-position-values{grid-row:3;grid-column:1;margin:4px 0}.mobile-position-values dd{text-align:left}
  .mobile-position-values dd>.fit-number{display:inline-block;max-width:100%;vertical-align:bottom}
+ .mobile-position-values>div.mobile-position-pnl dd{display:flex;flex-direction:column;align-items:flex-start;gap:1px}.mobile-position-values>div.mobile-position-pnl dd>.fit-number{display:block}.mobile-position-values>div.mobile-position-pnl dd>small{display:block;margin:0}
  .mobile-position-values>div.mobile-position-excursion{grid-column:1/-1;padding-top:6px}.mobile-position-excursion>dd{margin-top:5px}.mobile-position-excursion .position-excursion-gauge{width:100%;min-width:0;margin:0}.mobile-position-excursion .position-excursion-values b{font-size:.875rem}.mobile-position-excursion .position-excursion-values small,.mobile-position-excursion .position-excursion-status{font-size:.75rem}
  .mobile-position .position-inline-details{grid-row:4;grid-column:1;min-width:0;margin:0}
  .mobile-position .position-inline-details>summary{display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:8px;list-style:none;box-sizing:border-box}

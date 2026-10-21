@@ -273,7 +273,9 @@ test("mobile holdings use identical position calculations and preserve chart tar
   const rows=positionRows([p],{ORCL:{price:110,previousClose:108,changePct:2/108}}, {},10000,32,[{symbol:"ORCL",date:"2026-08-03",high:120,low:90}],"2026-08-05T12:00:00Z");
   const calls=[], tree=h.render(MobilePositionList,{rows,accountNames:{a:"測試帳戶"},onOpenChart:x=>calls.push(x)});
   const html=renderToStaticMarkup(tree);
-  for(const value of ["測試帳戶","6 股","660.0","60.0","+10.0%","6.6%","持倉明細","持有天數","4 天","MAE","-10.0%","MFE","+20.0%"] ) assert.ok(html.includes(value),value);
+  for(const value of ["測試帳戶","6 股","660.0","60.0","+10.0%","6.6%","持倉明細","（4 天）","MAE","-10.0%","MFE","+20.0%"] ) assert.ok(html.includes(value),value);
+  assert.doesNotMatch(html,/<dt>持有天數<\/dt>/);
+  assert.equal(nodes(tree).filter(n=>n.props?.className==='mobile-position-pnl').length,2);
   assert.doesNotMatch(html,/距停損|預估停損風險|即時風險報酬比/);
   find(tree,n=>n.type==='button'&&n.props['aria-label']==='ORCL 交易計畫與 K 線').props.onClick();
   assert.equal(calls[0],p);

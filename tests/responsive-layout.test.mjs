@@ -8,9 +8,10 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 const postcss = createRequire(require.resolve("vite"))("postcss");
 const stylesheet = postcss.parse(readFileSync(new URL("../app/globals.css", import.meta.url), "utf8"));
-function stylesAt(selector, width) {
+const mobileStylesheet = postcss.parse(readFileSync(new URL("../app/mobile.css", import.meta.url), "utf8"));
+function stylesFrom(sheet, selector, width) {
   const styles = {};
-  stylesheet.walkRules((rule) => {
+  sheet.walkRules((rule) => {
     if (!rule.selectors.includes(selector)) return;
     for (let parent = rule.parent; parent; parent = parent.parent) {
       if (parent.type !== "atrule" || parent.name !== "media") continue;
@@ -22,6 +23,8 @@ function stylesAt(selector, width) {
   });
   return styles;
 }
+function stylesAt(selector, width) { return stylesFrom(stylesheet, selector, width); }
+function mobileStylesAt(selector, width) { return stylesFrom(mobileStylesheet, selector, width); }
 
 
 test("desktop uses all available width with bounded gutters and three primary metrics", () => {
@@ -84,6 +87,14 @@ test("overview keeps asset history and holdings in accessible disclosures", () =
 
 test("desktop holdings hide the redundant calendar-day caption", () => {
   assert.equal(stylesAt(".positions-table > tbody > tr:not(.position-ledger-row) > td:nth-child(6) > small.block", 1440).display, "none");
+});
+
+test("mobile holdings keep holding days compact and stack profit values", () => {
+  assert.equal(mobileStylesAt(".mobile-position-holding-days", 390)["white-space"], "nowrap");
+  assert.equal(mobileStylesAt(".mobile-position-values>div.mobile-position-pnl dd", 390).display, "flex");
+  assert.equal(mobileStylesAt(".mobile-position-values>div.mobile-position-pnl dd", 390)["flex-direction"], "column");
+  assert.equal(mobileStylesAt(".mobile-position-values>div.mobile-position-pnl dd>small", 390).display, "block");
+  assert.equal(mobileStylesAt(".mobile-position-values>div.mobile-position-pnl dd>small", 390).margin, "0");
 });
 
 test("essential CSS text never drops below 12px and reduced motion is supported", () => {
