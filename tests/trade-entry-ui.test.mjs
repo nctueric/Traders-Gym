@@ -48,7 +48,7 @@ test('add inherits strategy and separate checks; exit hides entry checks and pla
 });
 test('live refresh stays in memory, ignores aborted symbol response and pauses hidden pages',async()=>{
  const h=harness(props());let tree=h.render();h.run(400);assert.equal(h.requests.length,3);
- const old=h.requests.slice();find(tree,n=>n.type==='input'&&n.props.placeholder==='2330 / AAPL').props.onChange({target:{value:'BBB'}});h.render();assert.ok(old.every(r=>r.options.signal.aborted));h.current.onChange({market:'NASDAQ',marketConfirmed:true});h.render();h.run(400);
+ const old=h.requests.slice();find(tree,n=>n.type?.name==='SymbolInput').props.onCommit('BBB');h.render();assert.ok(old.every(r=>r.options.signal.aborted));h.current.onChange({market:'NASDAQ',marketConfirmed:true});h.render();h.run(400);
  for(const r of old)r.resolve({ok:true,json:async()=>({bars:[{symbol:'AAA',date:'2026-09-01'}],quotes:[{symbol:'AAA',price:1}]})});
  const fresh=h.requests.slice(3);for(const r of fresh)r.resolve({ok:true,json:async()=>({bars:[{symbol:'BBB',date:'2026-09-01'}],quotes:[{symbol:'BBB',price:2}]})});
  await new Promise(resolve=>setImmediate(resolve));h.render();assert.equal(h.current.draft.evidenceBars,undefined);assert.equal(h.current.draft.quoteSnapshot,undefined);assert.equal(h.current.draft.price,'100');

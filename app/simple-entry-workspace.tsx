@@ -3,6 +3,7 @@
 import {useWorkspacePreferences} from './workspace-preferences';
 import {useRef,useState} from 'react';
 import {EntrySettlement} from './entry-settlement';
+import {SymbolInput} from './symbol-input';
 import {TradeEntryWorkspace} from './trade-entry-workspace';
 import {InfoPopover} from './info-popover';
 import {ACTION_LABELS,marketDate,marketCurrency} from '@/lib/trade-entry.mjs';
@@ -28,7 +29,7 @@ function SimpleEntry({data,batch,onChange,onSubmit,quotes,fetcher,now,ledgerVers
  <div className="simple-entry-rows">{effective.rows.map((row:any,index:number)=>{
  const currency=row.market?marketCurrency(row.market):'待確認';
  return <fieldset className="simple-entry-row" key={row.id}><legend>第 {index+1} 筆成交</legend>
- <label>標的<input autoComplete="off" aria-label={`第 ${index+1} 筆標的`} placeholder="2330 / AAPL" value={row.symbol} onChange={e=>rowChange(row.id,{symbol:e.target.value.toUpperCase(),market:'',accountId:row.accountManual?row.accountId:'',settlement:undefined,needsReview:!!row.price})}/></label>
+<label htmlFor={`simple-symbol-${row.id}`}>標的<SymbolInput id={`simple-symbol-${row.id}`} key={batch.id+':'+row.id} aria-label={`第 ${index+1} 筆標的`} placeholder="2330 / AAPL" value={row.symbol} onCommit={symbol=>rowChange(row.id,{symbol,market:'',accountId:row.accountManual?row.accountId:'',settlement:undefined,needsReview:!!row.price})}/></label>
  <label>買賣<select value={row.side} onChange={e=>rowChange(row.id,{side:e.target.value,needsReview:!!row.settlement?.total})}><option value="BUY">買進／回補</option><option value="SELL">賣出／放空</option></select></label>
  <EntrySettlement data={data} value={row} onChange={(patch:any)=>rowChange(row.id,patch)} quotes={quotes} fetcher={fetcher} now={now} onAccountSave={onAccountSave}/>
  <label>成交日期（{currency==='TWD'?'台北':'紐約'}）<input type="date" value={row.date||''} max={row.market?marketDate(now||new Date().toISOString(),row.market):undefined} onChange={e=>rowChange(row.id,{date:e.target.value,dateManual:true})}/></label>

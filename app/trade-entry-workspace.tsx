@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import {EntrySettlement} from "./entry-settlement";
+import {SymbolInput} from "./symbol-input";
 
 import {useValuation} from './valuation-context';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -107,7 +108,7 @@ export function TradeEntryWorkspace({data,draft:incomingDraft,quotes,onChange,on
   catch(cause){setError(cause instanceof Error?cause.message:'登錄失敗，請重試');guard.current=false;setSubmitting(false);}
  };
  return <InfoPopoverGroup><section className="trade-entry-workspace entry-v2"><form noValidate onSubmit={e=>{e.preventDefault();void submit();}}>
- <div className="entry-context-bar"><label>標的<input autoComplete="off" value={draft.symbol} placeholder="2330 / AAPL" onChange={e=>reset({symbol:e.target.value.toUpperCase(),market:'',marketConfirmed:false,accountId:draft.accountManual?draft.accountId:'',settlement:undefined,needsReview:!!draft.price})}/></label><EntrySettlement data={data} value={{...draft,market:marketResolved?draft.market:''}} onChange={(patch:any)=>basic({...patch,...(patch.market?{marketConfirmed:true}:{})})} quotes={{...quotes,...market.quotes}} fetcher={fetcher} now={now} onAccountSave={onAccountSave}/>{draft.needsReview&&<label><input type="checkbox" checked={false} onChange={()=>basic({needsReview:false})}/>標的已變更，確認成交金額與計畫正確</label>}<div className="entry-live-quote"><span>最新價格</span><b>{quote?`${quote.currency} ${number(quote.price,4)}`:'—'}</b></div></div>
+ <div className="entry-context-bar"><label htmlFor="full-entry-symbol">標的<SymbolInput id="full-entry-symbol" key={draft.id} value={draft.symbol} placeholder="2330 / AAPL" onCommit={symbol=>reset({symbol,market:'',marketConfirmed:false,accountId:draft.accountManual?draft.accountId:'',settlement:undefined,needsReview:!!draft.price})}/></label><EntrySettlement data={data} value={{...draft,market:marketResolved?draft.market:''}} onChange={(patch:any)=>basic({...patch,...(patch.market?{marketConfirmed:true}:{})})} quotes={{...quotes,...market.quotes}} fetcher={fetcher} now={now} onAccountSave={onAccountSave}/>{draft.needsReview&&<label><input type="checkbox" checked={false} onChange={()=>basic({needsReview:false})}/>標的已變更，確認成交金額與計畫正確</label>}<div className="entry-live-quote"><span>最新價格</span><b>{quote?`${quote.currency} ${number(quote.price,4)}`:'—'}</b></div></div>
  <div className="entry-ticket-grid"><EntryMarketChart key={`${draft.accountId}:${draft.market}:${market.symbol}`} market={market} draft={effective} preview={preview} data={data}/><div className="entry-ticket-form">
  <TradeSection title="成交資料" help={<p>只登錄已發生的成交；成交價不會隨行情自動改寫。買賣方向與 FIFO 庫存決定操作。</p>}><TradeFillFields value={draft} currency={unit} onChange={basic} onSideChange={side=>reset({side})} errors={fieldError}/></TradeSection>
  <TradeSection title="策略確認" help={<p>進場確認市場與進場條件；減碼和平倉確認出場條件。反手分別保存原部位出場及新部位進場。加碼不覆寫原始開倉紀錄。</p>}>
