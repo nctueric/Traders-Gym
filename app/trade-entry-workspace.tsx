@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import {EntrySettlement} from "./entry-settlement";
 
 import {useValuation} from './valuation-context';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -75,10 +76,11 @@ export function EntryContextEvidence({contexts={},cycleId,fills=[],selectedFillI
  </div></details>;})}</section>;
 }
 
-export function TradeEntryWorkspace({data,draft:incomingDraft,quotes,onChange,onSubmit}: {data:any;draft:any;quotes:Record<string,any>;onChange:(patch:any)=>void;onSubmit:(entry?:any)=>void|Promise<void>;onBack:()=>void}) {
+export function TradeEntryWorkspace({data,draft:incomingDraft,quotes,onChange,onSubmit,fetcher=fetch,now,onAccountSave}: {fetcher?:typeof fetch;now?:string;onAccountSave?:(account:any)=>Promise<void>;data:any;draft:any;quotes:Record<string,any>;onChange:(patch:any)=>void;onSubmit:(entry?:any)=>void|Promise<void>;onBack:()=>void}) {
  const {formatUsd:usd}=useValuation();
- const market=useEntryMarket(incomingDraft,data,quotes);
- const knownMarket=resolveSymbolMarket(data,incomingDraft.symbol,data.accounts.find((a:any)=>a.id===incomingDraft.accountId)?.currency,{...quotes,...market.quotes});
+ const resolvedBeforeLookup=!!incomingDraft.marketConfirmed||!!resolveSymbolMarket(data,incomingDraft.symbol,undefined,quotes);
+ const market=useEntryMarket({...incomingDraft,symbol:resolvedBeforeLookup?incomingDraft.symbol:''},data,quotes);
+ const knownMarket=resolveSymbolMarket(data,incomingDraft.symbol,undefined,{...quotes,...market.quotes});
  const draft=useMemo(()=>({...incomingDraft,market:incomingDraft.marketConfirmed?incomingDraft.market:(knownMarket||incomingDraft.market)}),[incomingDraft,knownMarket]);
  const marketResolved=!!knownMarket||!!incomingDraft.marketConfirmed;
  const rawPreview=useMemo(()=>previewEntry(data,draft),[data,draft]);
@@ -97,7 +99,7 @@ export function TradeEntryWorkspace({data,draft:incomingDraft,quotes,onChange,on
  const strategyConfirmed=!strategyTransaction.warnings.length||draft.strategyExceptionKey===strategyTransaction.confirmationKey;
  const confirmed=!!preview.confirmationKey&&draft.confirmedKey===preview.confirmationKey;
  const quote=market.quotes?.[toProviderSymbol(market.symbol,draft.market)];
- const unit=marketCurrency(draft.market);
+ const unit=marketResolved?marketCurrency(draft.market):'待確認';
  const fieldError=(label:string)=>{const key=({標的:'symbol',股數:'quantity',成交價:'price'} as Record<string,string>)[label];return key&&draft[key]===''?undefined:preview.errors.find((message:string)=>message.includes(label));};
  const submit=async()=>{
   if(guard.current)return;guard.current=true;setSubmitting(true);
@@ -105,7 +107,7 @@ export function TradeEntryWorkspace({data,draft:incomingDraft,quotes,onChange,on
   catch(cause){setError(cause instanceof Error?cause.message:'登錄失敗，請重試');guard.current=false;setSubmitting(false);}
  };
  return <InfoPopoverGroup><section className="trade-entry-workspace entry-v2"><form noValidate onSubmit={e=>{e.preventDefault();void submit();}}>
- <div className="entry-context-bar"><label>標的<input autoComplete="off" aria-invalid={!!fieldError('標的')} value={draft.symbol} onChange={e=>reset({symbol:e.target.value.toUpperCase(),marketConfirmed:false,market:resolveSymbolMarket(data,e.target.value,data.accounts.find((a:any)=>a.id===draft.accountId)?.currency,market.quotes)||draft.market})} placeholder="例：NVTS"/>{fieldError('標的')&&<small className="entry-warning">{fieldError('標的')}</small>}</label><details className="entry-market-setting" open={!!draft.symbol&&!marketResolved}><summary>{marketResolved?`市場設定 · ${draft.market}`:'請確認標的市場'}</summary><label>市場<select value={marketResolved?draft.market:''} onChange={e=>reset({market:e.target.value,marketConfirmed:true})}><option value="">選擇交易所</option>{['NASDAQ','NYSE','AMEX','TWSE','TPEX'].map(m=><option key={m}>{m}</option>)}</select></label></details><label>交易帳戶<select value={draft.accountId} onChange={e=>{const a=data.accounts.find((a:any)=>a.id===e.target.value);reset({accountId:a.id,marketConfirmed:false,market:a.currency==='TWD'?'TWSE':'NASDAQ'});}}>{data.accounts.map((a:any)=><option key={a.id} value={a.id}>{a.name}・{a.currency}</option>)}</select>{fieldError('帳戶')&&<small className="entry-warning">{fieldError('帳戶')}</small>}</label><div className="entry-live-quote"><span>最新價格</span><b>{quote?`${quote.currency} ${number(quote.price,4)}`:'—'}</b>{quote?.updatedAt&&<small>{new Date(quote.updatedAt).toLocaleTimeString('zh-TW')}</small>}</div></div>
+ <div className="entry-context-bar"><label>標的<input autoComplete="off" value={draft.symbol} placeholder="2330 / AAPL" onChange={e=>reset({symbol:e.target.value.toUpperCase(),market:'',marketConfirmed:false,accountId:draft.accountManual?draft.accountId:'',settlement:undefined,needsReview:!!draft.price})}/></label><EntrySettlement data={data} value={{...draft,market:marketResolved?draft.market:''}} onChange={(patch:any)=>basic({...patch,...(patch.market?{marketConfirmed:true}:{})})} quotes={{...quotes,...market.quotes}} fetcher={fetcher} now={now} onAccountSave={onAccountSave}/>{draft.needsReview&&<label><input type="checkbox" checked={false} onChange={()=>basic({needsReview:false})}/>標的已變更，確認成交金額與計畫正確</label>}<div className="entry-live-quote"><span>最新價格</span><b>{quote?`${quote.currency} ${number(quote.price,4)}`:'—'}</b></div></div>
  <div className="entry-ticket-grid"><EntryMarketChart key={`${draft.accountId}:${draft.market}:${market.symbol}`} market={market} draft={effective} preview={preview} data={data}/><div className="entry-ticket-form">
  <TradeSection title="成交資料" help={<p>只登錄已發生的成交；成交價不會隨行情自動改寫。買賣方向與 FIFO 庫存決定操作。</p>}><TradeFillFields value={draft} currency={unit} onChange={basic} onSideChange={side=>reset({side})} errors={fieldError}/></TradeSection>
  <TradeSection title="策略確認" help={<p>進場確認市場與進場條件；減碼和平倉確認出場條件。反手分別保存原部位出場及新部位進場。加碼不覆寫原始開倉紀錄。</p>}>
