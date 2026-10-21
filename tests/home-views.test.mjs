@@ -19,7 +19,7 @@ test('home projections match native equity and FIFO costs in USD/TWD, shorts and
  assert.deepEqual(home.assetByCurrency,equity.assetByCurrency);assert.deepEqual(home.cashByCurrency,equity.cashByCurrency);
  assert.equal(homeAmounts(home,'USD',Date.parse(stamp)).total,equity.totalUsd);assert.equal(homeAmounts(home,'USD',Date.parse(stamp)).gross,equity.grossPositionValueUsd);
  assert.equal(homeAmounts(home,'TWD',Date.parse(stamp)).total,equity.totalUsd*32);assert.equal(home.positions.find(p=>p.symbol==='2330').unrealized,200);
- assert.equal(homeAmounts(home,'USD',Date.parse(stamp)+121000).total,null);
+ const stale=homeAmounts(home,'USD',Date.parse(stamp)+121000);assert.equal(stale.total,equity.totalUsd);assert.equal(stale.fx,32);assert.equal(stale.fxStale,true);
  delete data.marketSnapshot.quotes.AAPL;assert.equal(homeAmounts(buildHomeView(data),'USD').total,null);
  const pure={...emptyDataset(),cashActivities:[{id:'cash',type:'DEPOSIT',currency:'USD',amount:100,timestamp:stamp}]};assert.equal(homeAmounts(buildHomeView(pure),'USD').total,100);assert.equal(homeAmounts(buildHomeView(pure),'TWD').total,null);
 });
@@ -43,7 +43,7 @@ test('missing/stale/corrupt views and rollback flag preserve the complete-load p
 test('view failure rolls back the ledger pointer, conflicts cannot replace the current view',async t=>{
  const h=await harness(t);await save(h);const before=h.sqlite.prepare('SELECT * FROM trade_account_snapshots').get(),view=h.sqlite.prepare('SELECT * FROM ledger_home_views').get();
  h.sqlite.exec("CREATE TRIGGER reject_view BEFORE UPDATE ON ledger_home_views BEGIN SELECT RAISE(ABORT,'view unavailable');END;");
- await assert.rejects(save(h,fixture(),1));assert.deepEqual(h.sqlite.prepare('SELECT * FROM trade_account_snapshots').get(),before);assert.deepEqual(h.sqlite.prepare('SELECT * FROM ledger_home_views').get(),view);
+ await assert.rejects(save(h,{...fixture(),note:"real edit"},1));assert.deepEqual(h.sqlite.prepare('SELECT * FROM trade_account_snapshots').get(),before);assert.deepEqual(h.sqlite.prepare('SELECT * FROM ledger_home_views').get(),view);
  h.sqlite.exec('DROP TRIGGER reject_view');await assert.rejects(save(h,fixture(),0),e=>e.status===409);assert.deepEqual(h.sqlite.prepare('SELECT * FROM ledger_home_views').get(),view);
 });
 test('backfill checks source integrity, is idempotent and leaves IDs, versions and bytes untouched',async t=>{

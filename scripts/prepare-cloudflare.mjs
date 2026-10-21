@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 const args = Object.fromEntries(process.argv.slice(2).map(value => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; }));
 const databaseId = args["--database-id"], clientId = args["--google-client-id"], bucket = args["--bucket"] || "traders-gym-snapshots";
 const personalEmail = args["--personal-email"], accountId = args["--account-id"];
+if (clientId && /(?:^123456789012-|audit|example)/i.test(clientId)) throw new Error("Refusing placeholder Google Client ID for production deployment");
 if (!/^[a-f0-9-]{36}$/i.test(databaseId || "") || databaseId === "00000000-0000-4000-8000-000000000000" || (!personalEmail && !/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId || "")) || (personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail)) || (clientId && !/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket) || !/^[a-f0-9]{32}$/.test(accountId || "")) {
   throw new Error("Provide --account-id=<Cloudflare account> --database-id=<D1 UUID> and --personal-email=<email> and/or --google-client-id=<Web Client ID>");
 }
@@ -16,6 +17,9 @@ config.ratelimits = [{ name: "MARKET_RATE_LIMITER", namespace_id: "20261007", si
 config.preview_urls = false;
 config.d1_databases = [{ binding: "DB", database_name: "traders-gym", database_id: databaseId, migrations_dir: "../../drizzle" }];
 config.r2_buckets = [{ binding: "SNAPSHOTS", bucket_name: bucket }];
+const projectionQueue=args['--projection-queue']||'traders-gym-ledger-projection',snapshotQueue=args['--snapshot-queue']||'traders-gym-ledger-snapshot';
+for(const value of [projectionQueue,snapshotQueue])if(!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(value))throw new Error('Queue name is invalid');
+config.queues={producers:[{binding:'LEDGER_PROJECTION_QUEUE',queue:projectionQueue},{binding:'LEDGER_SNAPSHOT_QUEUE',queue:snapshotQueue}],consumers:[{queue:projectionQueue,max_batch_size:10,max_batch_timeout:1,max_retries:5,dead_letter_queue:'traders-gym-ledger-dlq'},{queue:snapshotQueue,max_batch_size:3,max_batch_timeout:5,max_retries:5,dead_letter_queue:'traders-gym-ledger-dlq'}]};
 const domain = args["--domain"] || "tradergym.app";
 if (domain && domain !== "tradergym.app") throw new Error("Only the configured tradergym.app domain is supported");
 if (args["--applications-open"] && !["true", "false"].includes(args["--applications-open"])) throw new Error("--applications-open must be true or false");
@@ -29,7 +33,7 @@ config.vars.SNAPSHOT_RETENTION_ENABLED=args['--snapshot-retention'] || 'false';
 if(args['--home-view-reads'] && !['true','false'].includes(args['--home-view-reads']))throw new Error('--home-view-reads must be true or false');
 config.vars.HOME_VIEW_READS=args['--home-view-reads'] || 'false';
 for(const [arg,key] of [['--member-single-ledger','MEMBER_SINGLE_LEDGER'],['--member-weekly-backups','MEMBER_WEEKLY_BACKUPS']]){if(args[arg]&&!['true','false'].includes(args[arg]))throw new Error(arg+' must be true or false');config.vars[key]=args[arg]||'false';}
-config.triggers={crons:config.vars.MEMBER_WEEKLY_BACKUPS==='true'?['* * * * *']:config.vars.SNAPSHOT_RETENTION_ENABLED==='true'?['15 * * * *']:[]};
-config.observability = { enabled: false };
+config.triggers={crons:['* * * * *']};
+config.observability = { enabled: true, logs: { enabled: true, invocation_logs: true } };
 await writeFile("dist/server/wrangler.cloudflare.json", JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
 console.log(`Prepared ${resolve("dist/server/wrangler.cloudflare.json")}; no resources created, no deployment performed.`);

@@ -35,17 +35,17 @@ test("manual full snapshot round trip preserves every field and derived assets, 
   assert.deepEqual(JSON.parse(completeTradeJson({ ...loaded, _storage: { ignored: true } })), source);
 });
 
-test("market-only cloud autosaves retain full verified state and reject outdated formats", async t => {
+test("market-only cloud autosaves do not create versions and authored changes retain evidence", async t => {
   const { store } = await cloudStore(t), source = fixture();
   await store.save(payload(source, null));
   const updated = structuredClone(source);
   updated.marketSnapshot.quotes["USDTWD=X"].price = 33;
   await store.save(payload(updated, 1, "auto"));
-  assert.deepEqual((await store.read("test")).dataset, updated);
-  await store.save(payload(updated, 2, "manual"));
+  assert.deepEqual((await store.read("test")).dataset, source);
+  await store.save(payload(updated, 1, "manual"));
   updated.positionPlans.one.note = "新計畫";
-  await store.save(payload(updated, 3, "auto"));
-  await assert.rejects(store.save(payload(JSON.parse(durableTradeJson(updated)), 4)), /舊版儲存格式/);
+  await store.save(payload(updated, 1, "auto"));
+  await assert.rejects(store.save(payload(JSON.parse(durableTradeJson(updated)), 2)), /舊版儲存格式/);
 });
 
 test("legacy backup restores honestly without fabricated market or planning data", () => {

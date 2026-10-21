@@ -10,6 +10,7 @@ import { createAccountApi } from "../lib/account-api.mjs";
 import { COOKIE_NAME, OWNER_EMAIL, emptyDataset, requireSession, sessionCookie, sha256, signIn, verifyGoogleCredential, verifyGoogleCsrf } from "../lib/auth-core.mjs";
 import { createSessionScope } from "../lib/account-client.mjs";
 import {legacyBrowserRecords} from "../lib/legacy-records.mjs";
+import {replaceNormalizedDataset} from "../lib/normalized-ledger.mjs";
 
 function setup(t, options = {}) {
   const sqlite = new DatabaseSync(":memory:"); t.after(() => sqlite.close()); sqlite.exec("PRAGMA foreign_keys = ON");
@@ -19,7 +20,7 @@ function setup(t, options = {}) {
   const original = { ...emptyDataset(), privateEvidence: "owner private evidence", fills: [], futureField: { proof: true } };
   sqlite.prepare("INSERT INTO trade_account_snapshots VALUES (?, ?, ?, ?, ?)").run("primary", "Trader X2", JSON.stringify(original), 37, "2026-09-01T00:00:00Z");
   for (const name of migrations.slice(1)) sqlite.exec(readFileSync(new URL(name, directory), "utf8"));
-  const db = sqliteAdapter(sqlite), api = createAccountApi({ objects:memoryObjects(),db, clientId: "fixture", ...options });
+  const objects=options.objects||memoryObjects(),db = sqliteAdapter(sqlite), api = createAccountApi({ objects,db, clientId: "fixture", ...options });
   const login = async (email, sub = email) => {
     const session = await signIn(db, { email, sub, name: email, email_verified: true });
     return { ...session, email };
@@ -28,7 +29,7 @@ function setup(t, options = {}) {
     method: method || (body ? "POST" : "GET"), headers: { ...(session ? { Cookie: `${COOKIE_NAME}=${session.token}`, "x-workspace-session": session.sessionId } : {}), Origin: "https://app.example", "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const call = async (session, path, body, method) => { const response = await api.handle(request(session, path, body, method)); return { status: response.status, body: await response.json(), response }; };
-  return { sqlite, db, api, original, login, request, call };
+  return { sqlite, db, api, objects, original, login, request, call };
 }
 
 test("migration preserves legacy JSON/version; only verified owner claims primary", async t => {
@@ -88,7 +89,7 @@ test("manual/auto use atomic CAS and report the actual committed save mode", asy
   const write = { accountId: "primary", accountName: "Trader X2", dataset: { ...first.body.dataset, note: "changed" }, baseVersion: 37, saveMode: "manual" };
   assert.equal((await h.call(owner, "/api/trade-records", write, "PUT")).status, 200);
   assert.equal((await h.call(owner, "/api/trade-records", write, "PUT")).status, 409);
-  write.baseVersion = 38; write.saveMode = "auto";
+  write.baseVersion = 38; write.saveMode = "auto"; write.dataset.note="changed again";
   assert.equal((await h.call(owner, "/api/trade-records", write, "PUT")).body.account.version, 39);
   assert.equal((await h.call(owner, "/api/admin/accounts")).body.accounts[0].saveMode, "auto");
 });
@@ -130,9 +131,25 @@ test("large R2 JSON commits by pointer, survives reload and detects tampering", 
   assert.deepEqual((await h.call(owner, "/api/trade-records")).body.dataset, dataset);
   const row = h.sqlite.prepare("SELECT * FROM trade_account_snapshots").get(); assert.equal(row.dataset_json, "{}"); assert.ok(row.object_key.startsWith(`snapshots/${owner.userId}/`));
   objects.put = async () => { throw new Error("R2 unavailable"); };
-  const failed = await h.call(owner, "/api/trade-records", { accountName: "Trader", dataset, baseVersion: 38 }, "PUT"); assert.equal(failed.status, 500);
+  const failed = await h.call(owner, "/api/trade-records", { accountName: "Trader", dataset:{...dataset,note:"new change"}, baseVersion: 38 }, "PUT"); assert.equal(failed.status, 500);
   assert.equal(h.sqlite.prepare("SELECT version FROM trade_account_snapshots").get().version, 38);
   blobs.get(row.object_key).text = "{}"; assert.equal((await h.call(owner, "/api/trade-records")).status, 503);
+});
+
+test("normalized complete reads stream the immutable R2 snapshot without rebuilding it in the Worker",async t=>{
+  let textReads=0,objectGets=0,serialized='',hash='';
+  const objects={async get(){objectGets++;return {body:new Response(serialized).body,text:async()=>{textReads++;return serialized;},customMetadata:{sha256:hash},size:new TextEncoder().encode(serialized).length};},async put(){return {};}};
+  const h=setup(t,{objects}),owner=await h.login(OWNER_EMAIL);
+  await h.call(owner,'/api/trade-records');
+  serialized=JSON.stringify({...h.original,evidence:'x'.repeat(250_000)});hash=await sha256(serialized);
+  const dataset=JSON.parse(serialized),key='snapshots/owner/normalized.json';
+  h.sqlite.prepare('UPDATE trade_account_snapshots SET dataset_json=?,object_key=?,size_bytes=? WHERE account_id=?').run('{}',key,new TextEncoder().encode(serialized).length,'primary');
+  await replaceNormalizedDataset({db:h.db,accountId:'primary',dataset,version:37,storageMode:'normalized'});
+  const streamed=await h.call(owner,'/api/trade-records');
+  assert.equal(streamed.status,200);assert.deepEqual(streamed.body.dataset,dataset);assert.equal(streamed.body.account.storageMode,'normalized');
+  assert.equal(streamed.response.headers.get('x-ledger-snapshot-sha256'),hash);assert.equal(objectGets,1);assert.equal(textReads,0);
+  h.sqlite.prepare("UPDATE normalized_ledger_state SET snapshot_version=36,snapshot_pending=1 WHERE account_id='primary'").run();
+  const pending=await h.call(owner,'/api/trade-records');assert.equal(pending.status,503);assert.equal(pending.response.headers.get('retry-after'),'3');assert.equal(objectGets,1);
 });
 
 test("local file mode is rejected rather than becoming an alternate account store",t=>{
@@ -301,7 +318,11 @@ test('cloud preferences validate patches, preserve ledger IDs and isolate users 
  const before=h.sqlite.prepare('SELECT account_id,version,dataset_json FROM trade_account_snapshots ORDER BY account_id').all();
  const patches=[{valuationCurrency:'TWD'},{entryMode:'full',onboardingDone:true},{holdingsColorScheme:'red-up'}];
  for(const patch of patches)assert.equal((await h.call(owner,'/api/preferences',patch,'PATCH')).status,200);
+ const rotation={benchmark:'QQQ',interval:'daily',themes:['SMH','AIQ'],tail:24,preview:false};
+ assert.equal((await h.call(owner,'/api/preferences',{rotation},'PATCH')).status,200);
  const another=await h.login(OWNER_EMAIL);const synced=(await h.call(another,'/api/preferences')).body;
+ assert.deepEqual(synced.preferences.rotation,rotation);assert.deepEqual((await h.call(friend,'/api/preferences')).body.preferences.rotation.themes,[]);
+ assert.equal((await h.call(owner,'/api/preferences',{rotation:{...rotation,themes:['AAPL']}},'PATCH')).status,400);
  assert.equal(synced.preferences.valuationCurrency,'TWD');assert.equal(synced.preferences.entryMode,'full');assert.equal(synced.preferences.holdingsColorScheme,'red-up');
  assert.equal((await h.call(friend,'/api/preferences')).body.preferences.valuationCurrency,'USD');
  for(const patch of [{userId:friend.userId},{valuationCurrency:'JPY'},{entryMode:'unknown'},{reviewColumns:['cycle']},{onboardingDone:'true'},{}])assert.equal((await h.call(owner,'/api/preferences',patch,'PATCH')).status,400);

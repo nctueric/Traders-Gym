@@ -14,6 +14,14 @@ test('preload shares in-flight work and restored cache without another request',
  const restored=createPerformanceHistoryResource({storage:store,now,fetcher:async()=>{throw new Error('must not fetch');}});
  await restored.load([target]);assert.deepEqual(restored.getSnapshot().history.errors,[]);
 });
+test('verified snapshot seed remains visible when a background refresh fails',async()=>{
+ const store=storage(),resource=createPerformanceHistoryResource({storage:store,now,fetcher:async()=>{throw new Error('offline');}});
+ resource.seed({version:1,entries:{'QQQ:adjusted':{bars:[{date:'2026-01-02',close:99}],coverage:[]}}});
+ assert.equal(resource.getSnapshot().history.cache.entries['QQQ:adjusted'].bars[0].close,99);
+ await resource.load([target]);
+ assert.equal(resource.getSnapshot().history.cache.entries['QQQ:adjusted'].bars[0].close,99);
+ assert.equal(resource.getSnapshot().history.errors.length,1);
+});
 test('successful chunks are checkpointed before a later abort and resumed',async()=>{
  let calls=0,saved;const controller=new AbortController();const long={...target,start:'2024-01-01',end:'2026-01-03'};
  await assert.rejects(loadPerformanceHistory([long],null,async url=>{if(++calls===2){controller.abort();throw new Error('offline');}return response(url);},controller.signal,null,{now:now(),checkpoint:v=>{saved=v;}}));

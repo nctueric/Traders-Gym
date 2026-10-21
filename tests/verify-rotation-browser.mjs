@@ -1,0 +1,28 @@
+const {chromium}=await import(process.env.ROTATION_PLAYWRIGHT_MODULE||'playwright');
+import {mkdir,writeFile} from 'node:fs/promises';
+const root=process.argv[2]||process.cwd();await mkdir(root+'/.impeccable/review/rotation',{recursive:true});
+const browser=await chromium.launch({headless:true,...(process.env.ROTATION_BROWSER?{executablePath:process.env.ROTATION_BROWSER}:{}),args:['--no-sandbox']});
+const page=await browser.newPage({viewport:{width:1440,height:1100},deviceScaleFactor:1});
+const failures=[];page.on('pageerror',e=>failures.push(e.message));
+await page.clock.install({time:new Date('2026-10-21T17:00:00Z')});
+await page.goto('http://127.0.0.1:3108/?all=1');await page.getByRole('heading',{name:'板塊輪動',exact:true}).waitFor();
+await page.screenshot({path:root+'/.impeccable/review/rotation/desktop.png',fullPage:true});
+const visibleRows=await page.locator('.rotation-ranking tbody tr').count();if(visibleRows!==23)throw Error('Expected 23 rows, got '+visibleRows);
+await page.getByRole('button',{name:'SMH 半導體',exact:true}).click();if(!await page.locator('.rotation-reader h2').innerText().then(t=>t.includes('SMH')))throw Error('Selection not linked');
+await page.getByLabel('只看此標的',{exact:true}).check();if(await page.locator('.rotation-ranking tbody tr').count()!==1)throw Error('Isolation failed');await page.getByLabel('只看此標的',{exact:true}).uncheck();
+await page.getByRole('button',{name:'播放歷史',exact:true}).click();await page.clock.runFor(1650);await page.getByRole('button',{name:'暫停',exact:true}).click();
+const replayDate=await page.locator('.rotation-timeline output').innerText();if(await page.getByRole('slider',{name:'回放日期'}).getAttribute('aria-valuetext')!==replayDate)throw Error('Slider missing date announcement');if(replayDate>='2026-10-21')throw Error('Replay did not move');
+const requestCount=async()=>(await (await page.request.get('http://127.0.0.1:3108/fixture/state')).json()).requests;
+const before=await requestCount();await page.clock.runFor(61000);if(await requestCount()!==before)throw Error('Replay polled market');
+await page.getByRole('button',{name:'回到最新',exact:true}).click();await page.waitForResponse(r=>r.url().includes('/api/market/rotation'));
+await page.request.get('http://127.0.0.1:3108/fixture/fail?value=true');await page.getByRole('button',{name:'更新行情',exact:true}).click();await page.getByRole('alert').waitFor();if(await page.locator('.rotation-ranking tbody tr').count()!==23)throw Error('Lost cached data');
+await page.request.get('http://127.0.0.1:3108/fixture/fail?value=false');await page.getByRole('button',{name:'重試',exact:true}).click();await page.getByRole('alert').waitFor({state:'hidden'});
+await page.request.get('http://127.0.0.1:3108/fixture/pref-fail?value=true');await page.getByLabel('歷史尾跡',{exact:true}).selectOption('12');await page.getByRole('button',{name:'重試儲存',exact:true}).waitFor();await page.request.get('http://127.0.0.1:3108/fixture/pref-fail?value=false');await page.getByRole('button',{name:'重試儲存',exact:true}).click();await page.getByRole('button',{name:'重試儲存',exact:true}).waitFor({state:'hidden'});
+await page.getByLabel('觀察週期',{exact:true}).selectOption('daily');if(!await page.locator('.rotation-plot-header h2').innerText().then(t=>t.includes('日線')))throw Error('Daily failed');
+await page.getByLabel('觀察週期',{exact:true}).selectOption('weekly');
+const timings=[];for(let i=0;i<15;i++){const duration=await page.evaluate(async i=>{const start=performance.now();const buttons=document.querySelectorAll('.rotation-symbol');buttons[i%buttons.length].click();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return performance.now()-start;},i);timings.push(duration);}
+await page.setViewportSize({width:390,height:844});await page.screenshot({path:root+'/.impeccable/review/rotation/mobile.png',fullPage:true});
+const mobileGraph=await page.evaluate(()=>{const svg=document.querySelector('.rotation-plot'),label=document.querySelector('.rotation-dot text'),hit=document.querySelector('.rotation-dot circle');return {labelPx:parseFloat(getComputedStyle(label).fontSize)*svg.getBoundingClientRect().width/610,hitPx:hit.getBoundingClientRect().width};});if(mobileGraph.labelPx<12||mobileGraph.hitPx<44)throw Error('Mobile chart too small');
+const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));
+await page.getByRole('button',{name:'展開導覽',exact:true}).click();await page.getByRole('button',{name:'持倉總覽',exact:true}).click();const left=await requestCount();await page.clock.runFor(61000);if(await requestCount()!==left)throw Error('Unmount still polling');
+const results={visibleRows,replayDate,overflow,mobileGraph,timings,failures};await writeFile(root+'/.impeccable/review/rotation/browser-results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));await browser.close();if(overflow.scroll>overflow.width||failures.length)process.exitCode=1;

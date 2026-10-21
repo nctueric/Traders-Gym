@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-12T07:58:05.100Z",
+  "environment": "https://tradergym.app",
+  "fixtureId": "quota-qa-c7eb3f1a6784",
+  "checks": [],
+  "originalLedgersModified": false,
+  "seedRowsWritten": null,
+  "success": false,
+  "error": "Expected values to be strictly equal:\n\n429 !== 200\n",
+  "fixtureRetired": true,
+  "status": "blocked_by_daily_D1_write_limit",
+  "confirmedProviderError": {
+    "code": 7500,
+    "message": "Your account has exceeded D1's free tier daily row write limit"
+  },
+  "originalSnapshotMetadataUnchanged": true,
+  "cloudWriteAcceptanceCompleted": false,
+  "resetAt": "2026-10-13T00:00:00.000Z",
+  "localTestsPassed": 521,
+  "fixturesRetired": true,
+  "deploymentVersion": "e93cd6ad-8290-4b68-8150-bbac0b58126d"
+}

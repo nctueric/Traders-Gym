@@ -167,6 +167,7 @@
  .position-value-line{grid-row:2;display:flex;align-items:baseline;gap:8px;font-size:1rem;font-weight:600;font-variant-numeric:tabular-nums}.position-value-line>.fit-number{flex:1;min-width:0}.position-value-line>span:last-child{white-space:nowrap;color:var(--muted)}
  .mobile-position>.mobile-position-values{grid-row:3;grid-column:1;margin:4px 0}.mobile-position-values dd{text-align:left}
  .mobile-position-values dd>.fit-number{display:inline-block;max-width:100%;vertical-align:bottom}
+ .mobile-position-values>div.mobile-position-excursion{grid-column:1/-1;padding-top:6px}.mobile-position-excursion>dd{margin-top:5px}.mobile-position-excursion .position-excursion-gauge{width:100%;min-width:0;margin:0}.mobile-position-excursion .position-excursion-values b{font-size:.875rem}.mobile-position-excursion .position-excursion-values small,.mobile-position-excursion .position-excursion-status{font-size:.75rem}
  .mobile-position .position-inline-details{grid-row:4;grid-column:1;min-width:0;margin:0}
  .mobile-position .position-inline-details>summary{display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:8px;list-style:none;box-sizing:border-box}
  .position-inline-details>summary::-webkit-details-marker{display:none}.position-inline-details[open]>summary svg{transform:rotate(180deg)}
