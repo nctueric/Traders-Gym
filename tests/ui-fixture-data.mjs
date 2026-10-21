@@ -1,4 +1,5 @@
 import { summarize } from "../lib/trade-engine.mjs";
+import {homeLoadFixture} from './home-load-fixture.mjs';
 import { createStrategy, publishStrategyVersion, createStrategyAssignment } from "../lib/strategy-engine.mjs";
 
 export function fixtureBars(symbol) {
@@ -20,6 +21,13 @@ export function fixtureDataset(scenario = "rich") {
     ], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" },
     positionPlans: {}, cycleReviews: {}, decisionLinks: {}, decisionLinkHistory: [], planHistory: [], improvementExperiments: [], strategies: [], strategyAssignments: {},
   };
+  if(scenario==='entry-load'){
+    const load=homeLoadFixture(new Date().toISOString());
+    const symbols=['AAPL','MSFT',...Array.from({length:30},(_,i)=>`QA${i}`)];
+    load.marketBars=load.marketBars.map((bar,i)=>({...bar,symbol:symbols[i%32],date:new Date(Date.UTC(2022,9,1+Math.floor(i/32))).toISOString().slice(0,10)}));
+    load.fills=load.fills.map((fill,i)=>({...fill,symbol:symbols[i%32]}));
+    return {...dataset,...load,accounts:[{id:'synthetic',name:'大型測試美元帳戶',currency:'USD'}]};
+  }
   if (scenario === "empty") return { ...dataset, cashActivities: [] };
   for (let index = 0; index < 32; index += 1) {
     const symbol = index % 4 === 0 ? "QA2330" : ["QAALPHA", "QABETA", "QAGAMMA"][index % 3];

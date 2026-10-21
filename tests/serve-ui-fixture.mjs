@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import { fixtureDataset, fixtureBars } from "./ui-fixture-data.mjs";
+import {DEFAULT_PREFERENCES} from '../lib/member-preferences.mjs';
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const result = await build({
@@ -32,6 +33,11 @@ const server = createServer(async (request, response) => {
   if(url.pathname==="/api/history" && url.searchParams.has("priceBasis"))performanceRequestCounts.set(scenario,(performanceRequestCounts.get(scenario)||0)+1);
   const state = stateFor(scenario);
   const json = (body, status = 200) => { response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }); response.end(JSON.stringify(body)); };
+  if(url.pathname==='/api/preferences'){
+    state.preferences||={...DEFAULT_PREFERENCES,onboardingDone:true};
+    if(request.method==='PATCH'){const chunks=[];for await(const chunk of request)chunks.push(chunk);Object.assign(state.preferences,JSON.parse(Buffer.concat(chunks).toString()));}
+    return json({preferences:state.preferences,configured:Object.keys(state.preferences)});
+  }
   if (url.pathname === "/api/admin/accounts") return json({accounts:[],invites:[]});
   if (url.pathname === "/api/admin/events") return json({events:[],hasMore:false});
   if (url.pathname === "/api/ledgers") {

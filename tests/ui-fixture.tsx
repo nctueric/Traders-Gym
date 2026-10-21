@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useState,useEffect,useRef} from "react";
 import { createRoot } from "react-dom/client";
 import { AdminWorkspace } from "../app/admin/admin-workspace";
 import TradeWorkspace from "../app/trade-workspace";
@@ -19,8 +19,12 @@ window.fetch = (input, init) => {
   return nativeFetch(url, init);
 };
 function FixturePerformanceStatus(){
+ const tasks=useRef<number[]>([]),[timing,setTiming]=useState('尚未量測'),[draft,setDraft]=useState('尚未檢查');
+ useEffect(()=>{if(!PerformanceObserver.supportedEntryTypes.includes('longtask'))return;const observer=new PerformanceObserver(list=>{for(const entry of list.getEntries())tasks.current.push(entry.duration);});observer.observe({type:'longtask'});return()=>observer.disconnect();},[]);
  const [count,setCount]=useState<number|null>(null);
- return <details style={{position:'fixed',bottom:8,right:8,zIndex:100,background:'var(--card)',padding:8}}><summary>隔離快取驗證</summary><button onClick={async()=>setCount((await(await fetch('/api/qa/performance-count')).json()).requests)}>檢查歷史請求數</button><output aria-label="歷史請求数">{count??'尚未檢查'}</output></details>;
+ return <details style={{position:'fixed',bottom:8,right:8,zIndex:100,background:'var(--card)',padding:8}}><summary>隔離快取驗證</summary><button onClick={async()=>setCount((await(await fetch('/api/qa/performance-count')).json()).requests)}>檢查歷史請求數</button><output aria-label="歷史請求数">{count??'尚未檢查'}</output>
+ <button onClick={()=>{tasks.current=[];setTiming('量測中');}}>開始輸入效能量測</button><button onClick={()=>setTiming(`超過 50ms 工作：${tasks.current.length}；最長 ${Math.round(Math.max(0,...tasks.current))}ms`)}>查看輸入效能</button><output>{timing}</output>
+ <button onClick={()=>{const request=indexedDB.open('tradergym-ledger-cache',1);request.onsuccess=()=>{const db=request.result;const read=db.transaction('records').objectStore('records').get(`fixture-user-${scenario}:qa-main`);read.onsuccess=()=>{setDraft(JSON.stringify(read.result?.record?.dataset?.simpleEntryDraft||null));db.close();};};}}>檢查本機草稿</button><output>{draft}</output></details>;
 }
 function FixtureImport() {
   return <button type="button" className="qa-import" style={{ position: "fixed", bottom: 8, left: 8, zIndex: 100, fontSize: 12 }} onClick={async (event) => {

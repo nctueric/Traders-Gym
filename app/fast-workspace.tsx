@@ -5,7 +5,8 @@ import { loadHomeRecord } from '@/lib/home-record-client.mjs';
 import { Brand } from './brand';
 import { homeAmounts } from '@/lib/home-amounts.mjs';
 import { formatCurrency, convertCurrency } from '@/lib/valuation.mjs';
-import { readLedgerRecordCache,readStaleLedgerRecordCache, writeLedgerRecordCache } from '@/lib/ledger-record-cache.mjs';
+import { readLedgerRecordCache,readStaleLedgerRecordCache } from '@/lib/ledger-record-cache.mjs';
+import {writeLedgerRecordCache} from '@/lib/ledger-cache-client.mjs';
 import {applyNormalizedOperations} from '@/lib/ledger-mutations.mjs';
 const Workspace = lazy(() => import('./trade-workspace'));
 async function readDeviceCache(options: { userId: string; accountId: string; version: number }, timeoutMs = 1500) {

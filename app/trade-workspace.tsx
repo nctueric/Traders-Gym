@@ -63,7 +63,8 @@ import { TodayWorkspace } from "./today-workspace";
 import { CycleReviewDialog } from "./cycle-review-dialog";
 import type { AccountUser } from "./account-server";
 import { createSessionScope } from "@/lib/account-client.mjs";
-import { clearLedgerRecordCache, readLedgerRecordCache, readLedgerRecoveryRecords, writeLedgerRecordCache } from "@/lib/ledger-record-cache.mjs";
+import { readLedgerRecordCache, readLedgerRecoveryRecords } from "@/lib/ledger-record-cache.mjs";
+import { writeLedgerRecordCache,clearLedgerRecordCache } from "@/lib/ledger-cache-client.mjs";
 
 const RotationWorkspace = lazy(() => import('./rotation-workspace'));
 
@@ -558,7 +559,8 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   }, {}), [quotes, report.positions]);
   const totalPnlByCurrency = useMemo(() => addCurrencyValues(report.realizedPnlByCurrency, unrealizedByCurrency), [report.realizedPnlByCurrency, unrealizedByCurrency]);
   const missingPositionQuote = report.positions.some((position:any) => !(quotes[toProviderSymbol(position.symbol,position.market)]?.price > 0));
-  const currentEquity = useMemo(() => {const equity=buildCurrentEquity(data, quotes, fxRate, new Date(workspaceNow));return missingPositionQuote ? {...equity,totalUsd:null,grossPositionValueUsd:null,longPositionValueUsd:null,shortPositionValueUsd:null,exposurePct:null,unpricedPositionCount:Math.max(1,equity.missingSymbols.length)} : equity;}, [data, quotes, fxRate, workspaceNow,missingPositionQuote]);
+  const valuationData = useMemo(() => ({fills:data.fills,cashActivities:data.cashActivities,marketBars:data.marketBars}), [data.fills,data.cashActivities,data.marketBars]);
+  const currentEquity = useMemo(() => {const equity=buildCurrentEquity(valuationData, quotes, fxRate, new Date(workspaceNow));return missingPositionQuote ? {...equity,totalUsd:null,grossPositionValueUsd:null,longPositionValueUsd:null,shortPositionValueUsd:null,exposurePct:null,unpricedPositionCount:Math.max(1,equity.missingSymbols.length)} : equity;}, [valuationData, quotes, fxRate, workspaceNow,missingPositionQuote]);
   const monthKey = currentMonthKey(new Date(workspaceNow));
   const weeklyCycleSummaries = useMemo(() => weeklyCycleStats(report.cycles, fxRate), [report.cycles, fxRate]);
   const rapidRepurchases = useMemo(() => findRapidRepurchases(report.cycles, 3), [report.cycles]);
@@ -779,9 +781,11 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   const selectedUnrealized=missingPositionQuote?null:currencyTotal(unrealizedByCurrency,valuationCurrency,usableFx);
   const selectedPnl=selectedRealized==null||selectedUnrealized==null?null:selectedRealized+selectedUnrealized;
   const displayMoney=(value:number|null)=>formatCurrency(value,valuationCurrency);
-  const ytd=overviewPeriodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,'year');
-  const monthReturn=overviewPeriodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,'month');
-  const weekReturn=overviewPeriodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,'week');
+  const showOverview = tab === 'overview' || tab === 'positions';
+  const [ytd,monthReturn,weekReturn]=useMemo(()=>showOverview
+    ? ['year','month','week'].map(kind=>overviewPeriodValuation(valuationData,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,kind))
+    : Array.from({length:3},()=>({rate:null,profit:null,problems:[]})),
+    [showOverview,valuationData,performanceHistory?.cache,workspaceNow,valuationCurrency,selectedTotal,currentEquity,usableFx]);
   const monthSignal = monthlyReturnSignal(monthReturn.rate);
   const metrics = [
     ["目前總資產", displayMoney(selectedTotal), ""],
