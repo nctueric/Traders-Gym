@@ -106,6 +106,16 @@ test("price-only updates and explicit plan saves persist complete snapshots thro
   const event={preventDefault(){this.warned=true;}};h.events.get("beforeunload")(event);assert.equal(event.warned,undefined);
 });
 
+test("market refresh does not block creating or switching ledgers as an unsynced edit", async t => {
+  const h=harness();t.after(()=>h.close());await h.settle();
+  h.online=true;h.runTimers(30_000);await h.settle();
+  navigate(h,"ledgers");await h.settle();
+  const manager=find(h.tree,n=>n.type?.name==="LedgerManager");
+  assert.ok(manager);
+  await assert.doesNotReject(manager.props.beforeChange());
+  assert.equal(h.writes.length,0,"quote-only changes must not create a ledger version before management actions");
+});
+
 test("failed manual write never reports success or removes the current data", async t => {
   const h=harness();t.after(()=>h.close());await h.settle();find(h.tree,n=>n.type==="button"&&n.props.children==="新增交易").props.onClick();await h.settle();h.fail=true;
   manual(h).props.onClick();await h.settle();assert.equal(manual(h).props.children,"立即儲存");

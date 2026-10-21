@@ -672,7 +672,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     if(!demo&&!online&&activeRecordIncremental){setSaveState('離線修改已保留於此裝置；連線後自動同步');return;}
     try{return await persistCompleteSnapshot(true,label);}catch(error){handleSaveError(error);throw error;}
   }
-  async function beforeLedgerChange(){if(!noLedger){if(!cloudReady||storageConflict)throw new Error("尚有未儲存修改，請先匯出或重新載入雲端後再切換帳本");await persistCompleteSnapshot(true,'帳本管理');if(completeTradeJson(latestSaveRef.current.dataset)!==lastSavedJsonRef.current)throw new Error('仍有未同步修改，請先完成儲存');}}
+  async function beforeLedgerChange(){if(!noLedger){if(!cloudReady||storageConflict)throw new Error("尚有未儲存修改，請先匯出或重新載入雲端後再切換帳本");await persistCompleteSnapshot(true,'帳本管理');if(!canRefreshCloudRecord(latestSaveRef.current.serialized,lastSavedJsonRef.current))throw new Error('仍有未同步修改，請先完成儲存');}}
   function navigateLedger(id?:string){sessionScope.stop();location.assign(id?`/?accountId=${encodeURIComponent(id)}`:'/');}
   async function saveFillEdit(original:Fill,draft:Record<string,string>){
     if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online&&!activeRecordIncremental))throw new Error('帳本尚未就緒，請先處理同步狀態');
