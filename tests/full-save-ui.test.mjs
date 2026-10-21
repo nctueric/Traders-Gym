@@ -1,3 +1,4 @@
+import {applyNormalizedOperations} from '../lib/ledger-mutations.mjs';
 import {previewSimpleBatch} from '../lib/simple-entry.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -35,6 +36,9 @@ function harness(initial = source(), values = new Map(), initialRecord, loadingF
     if(url.startsWith("/api/trade-records")&&!options.method)reads.push(url);
     const account = { id:"primary", name:"測試帳號", version, updatedAt:stamp };
     const response = (status,payload) => ({ ok:status===200, status, json:async () => payload });
+    if(url.endsWith('/mutations')&&options.method==='POST'){
+      const payload=JSON.parse(options.body);writes.push(payload);stored=applyNormalizedOperations(stored,payload.operations);version++;return response(200,{account:{...account,version,storageMode:'normalized'}});
+    }
     if (url === "/api/trade-records" && options.method === "PUT") {
       if (failWrites) return response(503,{error:"測試磁碟不可用"});
       const payload=JSON.parse(options.body); writes.push(payload);
@@ -78,19 +82,19 @@ test("homepage manual button waits for full write, prevents duplicates, and rest
   const h=harness();t.after(()=>h.close());h.render();assert.equal(manual(h).props.disabled,true);
   await h.settle();assert.equal(manual(h).props.disabled,false);
   const click=manual(h).props.onClick;click();click();h.render();assert.equal(manual(h).props.children,"儲存中…");
-  await h.settle();assert.equal(h.writes.length,1);assert.equal(h.writes[0].saveMode,"manual");
+  await h.settle();assert.equal(h.writes.length,0);
   assert.deepEqual(h.stored.marketBars,source().marketBars);
   assert.deepEqual(h.stored.marketSnapshot,source().marketSnapshot);
   assert.deepEqual(h.stored.positionPlans,source().positionPlans);
-  assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("雲端已儲存（手動）")));
+  assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("帳本沒有變更")));
   const restarted=harness(JSON.parse(completeTradeJson(h.stored)));t.after(()=>restarted.close());await restarted.settle();
   manual(restarted).props.onClick();await restarted.settle();assert.deepEqual(restarted.stored,h.stored);
 });
 
 test("price-only updates and explicit plan saves persist complete snapshots through the same queue", async t => {
   const h=harness();t.after(()=>h.close());await h.settle();h.runTimers(1000);await h.settle();
-  h.online=true;h.runTimers(30_000);await h.settle();const before=h.writes.length;h.runTimers(1000);await h.settle();assert.equal(h.writes.length,before,"quote changes must not write a ledger on every tick");h.runTimers(60_000);await h.settle();
-  assert.equal(h.writes.at(-1).saveMode,"auto");assert.equal(h.stored.marketSnapshot.quotes.AAA.price,15);
+  h.online=true;h.runTimers(30_000);await h.settle();const before=h.writes.length;h.runTimers(1000);await h.settle();assert.equal(h.writes.length,before,"quote changes must not write a ledger on every tick");h.runTimers(600_000);await h.settle();
+  assert.equal(h.writes.length,0,"market-only refresh never writes D1");assert.equal(h.stored.marketSnapshot.quotes.AAA.price,source().marketSnapshot.quotes.AAA.price);
   assert.equal(h.stored.marketSnapshot.quotes["USDTWD=X"].price,32,"failed refresh must not remove FX");
   navigate(h,"overview");await h.settle();
   const panel=find(h.tree,n=>n.type?.name==="PositionsPanel");
@@ -103,7 +107,7 @@ test("price-only updates and explicit plan saves persist complete snapshots thro
 });
 
 test("failed manual write never reports success or removes the current data", async t => {
-  const h=harness();t.after(()=>h.close());await h.settle();h.fail=true;
+  const h=harness();t.after(()=>h.close());await h.settle();find(h.tree,n=>n.type==="button"&&n.props.children==="新增交易").props.onClick();await h.settle();h.fail=true;
   manual(h).props.onClick();await h.settle();assert.equal(manual(h).props.children,"立即儲存");
   assert.ok(nodes(h.tree).some(n=>n.props?.role==="status"&&JSON.stringify(n.props.children).includes("等待重試")));
   assert.equal(h.writes.length,0);assert.deepEqual(h.stored,source());
@@ -115,7 +119,7 @@ test("new registration page saves a no-impact account draft, commits atomically 
   const entry=()=>find(h.tree,n=>n.type?.name==="TradeRegistration");
   assert.ok(entry(),"workspace page replaces old modal");
   entry().props.onFullChange({symbol:"AAA",quantity:"2",price:"13",timestamp:new Date(Date.now()-60000).toISOString(),entrySetup:"PULLBACK",volumeTags:["SUPPORT_RETEST"],addReason:"RETEST",stopLoss:"10",takeProfit:"18",note:"回測後加碼"});
-  await h.settle();h.runTimers(1000);await h.settle();
+  await h.settle();h.runTimers(600_000);await h.settle();
   assert.equal(h.stored.fills.length,1);assert.equal(h.stored.entryDraft.note,"回測後加碼");
   const current=entry().props,preview=previewEntry(current.data,current.data.entryDraft);
   current.onFullChange({confirmedKey:preview.confirmationKey});await h.settle();entry().props.onFullSubmit();await h.settle();
@@ -201,6 +205,12 @@ test('known offline disables formal mutations and preserves cloud ledger',async 
  assert.equal(find(h.tree,n=>n.type?.name==='TradeRegistration'),undefined);assert.equal(h.writes.length,0);assert.deepEqual(h.stored,source());
 });
 
+test('normalized ledger keeps offline edits pending for reconnect instead of dropping them',async t=>{
+ const dataset=source(),account={id:'primary',name:'測試帳號',version:1,updatedAt:stamp,storageMode:'normalized'},h=harness(dataset,new Map(),{account,accounts:[account],dataset});t.after(()=>h.close());
+ await h.settle();h.connected=false;await h.settle();find(h.tree,n=>n.type==='button'&&n.props.children==='離線新增交易').props.onClick();await h.settle();
+ const entry=find(h.tree,n=>n.type?.name==='TradeRegistration');assert.ok(entry);entry.props.onFullChange({note:'離線待同步'});await h.settle();assert.equal(find(h.tree,n=>n.type?.name==='TradeRegistration').props.data.entryDraft.note,'離線待同步');assert.equal(h.writes.length,0);
+});
+
 test("preverified background record initializes the full workspace without a second ledger download",async()=>{
  const dataset=source(),h=harness(dataset,new Map(),{account:{id:"primary",name:"測試帳號",version:1,updatedAt:stamp},dataset});
  await h.settle();assert.equal(h.reads.length,0);assert.deepEqual(h.stored,dataset);assert.equal(h.writes.length,0);h.close();
@@ -209,4 +219,12 @@ test("preverified background record initializes the full workspace without a sec
 test("read-only home stays visible while the verified record initializes the calculation workspace",async()=>{
  const dataset=source(),h=harness(dataset,new Map(),{account:{id:"primary",name:"測試帳號",version:1,updatedAt:stamp},dataset},"唯讀首頁摘要");
  assert.equal(h.render(),"唯讀首頁摘要");await h.settle();assert.notEqual(h.tree,"唯讀首頁摘要");assert.equal(h.reads.length,0);assert.equal(h.writes.length,0);h.close();
+});
+
+
+test('current account incremental metadata wins over the stripped ledger directory',async t=>{
+ const dataset=source(),account={id:'primary',name:'測試帳號',version:1,updatedAt:stamp};
+ const h=harness(dataset,new Map(),{account:{...account,storageMode:'normalized'},accounts:[account],dataset});t.after(()=>h.close());await h.settle();
+ find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
+ manual(h).props.onClick();await h.settle();assert.equal(h.writes.length,1);assert.ok(h.writes[0].operations);assert.equal(h.writes[0].dataset,undefined);
 });

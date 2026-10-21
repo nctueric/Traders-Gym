@@ -1,0 +1,9 @@
+{
+  "incrementalCommitRows": 17,
+  "environment": "Local Miniflare D1; synthetic data only",
+  "at": "2026-10-12T08:00:50.175Z",
+  "historicalFills": 600,
+  "previousHistoricalRewriteRows": 3000,
+  "optimizedPlanReplacementRows": 5,
+  "note": "Uses D1 result.meta.rows_written including local engine index maintenance. Previous count covers only fills; replacement includes the plan and state; incrementalCommitRows includes the foreground transaction and audit records, excluding asynchronous snapshot jobs. Production totals must be observed after release."
+}

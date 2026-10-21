@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCurrentEquity, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, cycleRangeScore, positionPortfolioImpactPct } from "../lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildOpenPositionPathMetrics, buildPositionMetrics, buildWeeklyEquitySeries, buildWeeklyPerformance, monthlyAssetChange, monthlyCycleScore, cycleRangeScore, positionPortfolioImpactPct } from "../lib/portfolio-engine.mjs";
 
 test("opening balance prevents earlier closed trades from changing current equity", () => {
   const base = { cashActivities: [{ id: "opening", type: "OPENING_BALANCE", amount: 1000, currency: "USD", timestamp: "2026-08-01T00:00:00Z" }], marketBars: [] };
@@ -132,6 +132,32 @@ test("short position targets calculate signed outcomes from the live price", () 
   const metrics = buildPositionMetrics({ direction: "SHORT", averageCost: 100, quantity: 10, currency: "USD" }, 90, 105, 2_000, 32, 70);
   assert.equal(metrics.takeProfitOutcome, 200);
   assert.equal(metrics.stopOutcome, -150);
+});
+
+test("open position path metrics calculate calendar days and long MAE/MFE through as-of date", () => {
+  const metrics = buildOpenPositionPathMetrics({ symbol: "AAA", direction: "LONG", averageCost: 100, openAt: "2026-08-01T09:00:00Z" }, [
+    { symbol: "AAA", date: "2026-07-31", high: 999, low: 1 },
+    { symbol: "AAA", date: "2026-08-02", high: 112, low: 93 },
+    { symbol: "AAA", date: "2026-08-04", high: 125, low: 88 },
+    { symbol: "AAA", date: "2026-08-06", high: 999, low: 1 },
+  ], "2026-08-05T23:59:59Z");
+  assert.equal(metrics.holdingDays, 4);
+  assert.equal(metrics.maePct, -0.12);
+  assert.equal(metrics.mfePct, 0.25);
+  assert.equal(metrics.excursionBarCount, 2);
+});
+
+test("open position path metrics invert short excursions and preserve missing history", () => {
+  const short = buildOpenPositionPathMetrics({ symbol: "AAA", direction: "SHORT", averageCost: 100, openAt: "2026-08-01" }, [
+    { symbol: "AAA", date: "2026-08-03", high: 115, low: 80 },
+  ], "2026-08-04");
+  assert.equal(short.holdingDays, 3);
+  assert.equal(short.maePct, -0.15);
+  assert.equal(short.mfePct, 0.2);
+  const missing = buildOpenPositionPathMetrics({ symbol: "AAA", direction: "LONG", averageCost: 100, openAt: "2026-08-01" }, [], "2026-08-04");
+  assert.equal(missing.maePct, null);
+  assert.equal(missing.mfePct, null);
+  assert.equal(missing.excursionBarCount, 0);
 });
 
 test("planned price outcomes are measured against total open-position value", () => {

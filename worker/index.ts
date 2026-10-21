@@ -1,5 +1,7 @@
+import {d1LimitError} from '../lib/storage-retry.mjs';
 import {runWeeklyMemberBackups} from '../lib/member-weekly-backups.mjs';
 import {maintainSnapshotHistory} from "../lib/snapshot-retention.mjs";
+import {backfillNormalizedLedgers,processLedgerJob,recoverPendingLedgerJobs} from '../lib/normalized-ledger.mjs';
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
@@ -10,6 +12,8 @@ interface Env {
   SNAPSHOTS?: {delete(key:string):Promise<void>;get(key:string):Promise<unknown>;put(key:string,value:string,options:unknown):Promise<unknown>};
   MEMBER_WEEKLY_BACKUPS?: string;
   SNAPSHOT_RETENTION_ENABLED?: string;
+  LEDGER_PROJECTION_QUEUE?: {send(value:unknown):Promise<void>};
+  LEDGER_SNAPSHOT_QUEUE?: {send(value:unknown):Promise<void>};
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -31,8 +35,16 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  async queue(batch: {messages:Array<{body:unknown;ack():void;retry(options?:{delaySeconds?:number}):void}>}, env: Env) {
+    for(const message of batch.messages){
+      try{const started=performance.now(),result=await processLedgerJob({db:env.DB,objects:env.SNAPSHOTS,job:message.body});console.log('normalized-ledger-job',JSON.stringify({...result,durationMs:Number((performance.now()-started).toFixed(2))}));message.ack();}
+      catch(error){console.error('normalized-ledger-job-failed',error);message.retry({delaySeconds:d1LimitError(error)?3600:60});}
+    }
+  },
   async scheduled(event: {scheduledTime:number}, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async()=>{
+      await backfillNormalizedLedgers({db:env.DB,objects:env.SNAPSHOTS,limit:1});
+      await recoverPendingLedgerJobs({db:env.DB,projectionQueue:env.LEDGER_PROJECTION_QUEUE,snapshotQueue:env.LEDGER_SNAPSHOT_QUEUE});
       if(env.MEMBER_WEEKLY_BACKUPS==='true')await runWeeklyMemberBackups(env.DB,env.SNAPSHOTS,{now:new Date(event.scheduledTime)});
       if(env.SNAPSHOT_RETENTION_ENABLED==='true' && (env.MEMBER_WEEKLY_BACKUPS!=='true'||new Date(event.scheduledTime).getUTCMinutes()===15))await maintainSnapshotHistory(env.DB,env.SNAPSHOTS);
     })());

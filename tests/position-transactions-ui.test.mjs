@@ -25,7 +25,7 @@ function harness() {
     if (cache.has(name)) return cache.get(name);
     const file = new URL("../app/" + name + ".tsx", import.meta.url);
     let source = readFileSync(file, "utf8");
-    if (name === "trade-workspace") source += "\nexport { PositionsPanel, TradeMetrics, CycleTable, MobilePositionList, positionRows };";
+    if (name === "trade-workspace") source += "\nexport { PositionsPanel, TradeMetrics, CycleTable, MobilePositionList, PositionExcursionGauge, positionExcursionGaugeModel, positionRows };";
     const compiled = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
     const componentModule = {exports:{}};
     new Function("require","module","exports",compiled)(id => {
@@ -56,7 +56,7 @@ test("position disclosure toggles once, survives quote rerenders and retains gro
   let tree=h.render(Panel,props);
   const toggle=find(tree,node=>node.props?.className === "position-ledger-toggle");
   assert.equal(toggle.props["aria-expanded"],false);
-  assert.match(renderToStaticMarkup(tree),/colSpan="13"|colspan="13"/);
+  assert.match(renderToStaticMarkup(tree),/colSpan="12"|colspan="12"/);
   toggle.props.onClick();
   tree=h.render(Panel,{...props,quotes:{ORCL:{price:105}}});
   assert.equal(find(tree,node=>node.props?.className === "position-ledger-toggle").props["aria-expanded"],true);
@@ -219,6 +219,39 @@ test("holdings prices are read-only and retain the K-line entry",()=>{
  assert.match(renderToStaticMarkup(updated),/90.0/);assert.match(renderToStaticMarkup(updated),/150.0/);
 });
 
+test("holdings table separates profit and plan groups and shows open-position path metrics",()=>{
+ const h=harness(),Panel=h.load("trade-workspace").PositionsPanel,p=position();
+ const tree=h.render(Panel,{...propsFor(p),quotes:{ORCL:{price:110,previousClose:108,changePct:2/108}},marketBars:[{symbol:"ORCL",date:"2026-08-03",high:120,low:90}],asOf:"2026-08-05T12:00:00Z"});
+ const html=renderToStaticMarkup(tree);
+ assert.match(html,/position-group-pnl[^>]*>損益/);
+ assert.match(html,/position-group-plan[^>]*>交易計畫與風險/);
+ for(const value of ["持有天數","4 天","MAE","-10.0%","MFE","+20.0%"] ) assert.ok(html.includes(value),value);
+ assert.doesNotMatch(html,/距停損|預估停損風險|即時風險報酬比/);
+});
+
+test("position excursion gauge normalizes current return and clamps overflow",()=>{
+ const {positionExcursionGaugeModel}=harness().load("trade-workspace");
+ const inside=positionExcursionGaugeModel(-0.1,0.2,0.1);
+ assert.equal(inside.hasRange,true);assert.equal(inside.hasCurrent,true);
+ assert.ok(Math.abs(inside.zeroPosition-1/3)<1e-12);assert.ok(Math.abs(inside.markerPosition-2/3)<1e-12);assert.equal(inside.overflow,"none");
+ const left=positionExcursionGaugeModel(-0.1,0.2,-0.2);assert.equal(left.markerPosition,0);assert.equal(left.overflow,"left");
+ const right=positionExcursionGaugeModel(-0.1,0.2,0.3);assert.equal(right.markerPosition,1);assert.equal(right.overflow,"right");
+ const flat=positionExcursionGaugeModel(0.05,0.05,0.05);assert.equal(flat.flatRange,true);assert.equal(flat.markerPosition,0.5);
+ const missing=positionExcursionGaugeModel(null,0.2,0.1);assert.equal(missing.hasRange,false);assert.equal(missing.hasCurrent,false);
+});
+
+test("position excursion gauge exposes values, current return and missing state accessibly",()=>{
+ const h=harness(),Gauge=h.load("trade-workspace").PositionExcursionGauge;
+ const html=renderToStaticMarkup(h.render(Gauge,{maePct:-0.1,mfePct:0.2,currentPct:0.1,hasHistory:true}));
+ assert.match(html,/role="img"/);assert.match(html,/aria-label="MAE -10\.0%，MFE \+20\.0%，即時損益 \+10\.0%，位於歷史區間內"/);
+ assert.match(html,/position-excursion-marker holding-gain overflow-none/);assert.match(html,/--excursion-current:66\.666/);
+ assert.doesNotMatch(html,/<small class="position-excursion-status">位於歷史區間內<\/small>/);
+ const overflow=renderToStaticMarkup(h.render(Gauge,{maePct:-0.1,mfePct:0.2,currentPct:0.3,hasHistory:true}));
+ assert.match(overflow,/高於 MFE/);assert.match(overflow,/overflow-right/);
+ const empty=renderToStaticMarkup(h.render(Gauge,{maePct:-0.1,mfePct:0.2,currentPct:0.1,hasHistory:false}));
+ assert.match(empty,/position-excursion-gauge is-empty/);assert.match(empty,/缺少行情/);assert.doesNotMatch(empty,/position-excursion-marker/);
+});
+
 
 test("cycle table defaults to latest exit and all data headers toggle sorting",()=>{
  const h=harness(),Table=h.load('trade-workspace').CycleTable,props={cycles:metricProps().cycles,title:'全部交易閉環'};
@@ -237,10 +270,11 @@ test("cycle table defaults to latest exit and all data headers toggle sorting",(
 
 test("mobile holdings use identical position calculations and preserve chart target", () => {
   const h=harness(), {MobilePositionList,positionRows}=h.load("trade-workspace"),p=position();
-  const rows=positionRows([p],{ORCL:{price:110,previousClose:108,changePct:2/108}}, {},10000,32);
+  const rows=positionRows([p],{ORCL:{price:110,previousClose:108,changePct:2/108}}, {},10000,32,[{symbol:"ORCL",date:"2026-08-03",high:120,low:90}],"2026-08-05T12:00:00Z");
   const calls=[], tree=h.render(MobilePositionList,{rows,accountNames:{a:"測試帳戶"},onOpenChart:x=>calls.push(x)});
   const html=renderToStaticMarkup(tree);
-  for(const value of ["測試帳戶","6 股","660.0","60.0","+10.0%","6.6%","持倉明細"]) assert.ok(html.includes(value),value);
+  for(const value of ["測試帳戶","6 股","660.0","60.0","+10.0%","6.6%","持倉明細","持有天數","4 天","MAE","-10.0%","MFE","+20.0%"] ) assert.ok(html.includes(value),value);
+  assert.doesNotMatch(html,/距停損|預估停損風險|即時風險報酬比/);
   find(tree,n=>n.type==='button'&&n.props['aria-label']==='ORCL 交易計畫與 K 線').props.onClick();
   assert.equal(calls[0],p);
   const missing=renderToStaticMarkup(h.render(MobilePositionList,{rows:positionRows([p],{}, {},10000,32),accountNames:{},onOpenChart(){}}));

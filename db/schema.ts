@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const appUsers = sqliteTable("app_users", {
   id: text("id").primaryKey(), googleSub: text("google_sub").unique(), email: text("email").notNull().unique(),
@@ -116,3 +116,45 @@ export const ledgerRecoveryEvents = sqliteTable('ledger_recovery_events', {
  backupWeek: text('backup_week').notNull(), sourceVersion: integer('source_version').notNull(), beforeVersion: integer('before_version').notNull(),
  afterVersion: integer('after_version'), result: text('result').notNull(), createdAt: text('created_at').notNull(),
 });
+
+// Normalized ledger storage keeps user-authored records in D1. Large,
+// refreshable market evidence remains in immutable R2 snapshots.
+export const normalizedLedgerState = sqliteTable('normalized_ledger_state', {
+ accountId:text('account_id').primaryKey().references(()=>tradeAccountSnapshots.accountId,{onDelete:'cascade'}),
+ storageMode:text('storage_mode').notNull().default('shadow'), normalizedVersion:integer('normalized_version').notNull(),
+ projectionVersion:integer('projection_version').notNull().default(0), snapshotVersion:integer('snapshot_version').notNull().default(0),
+ projectionPending:integer('projection_pending').notNull().default(0), snapshotPending:integer('snapshot_pending').notNull().default(0),
+ lastError:text('last_error'), updatedAt:text('updated_at').notNull(),
+},table=>[index('normalized_ledger_pending').on(table.projectionPending,table.snapshotPending,table.updatedAt)]);
+
+export const ledgerMutations = sqliteTable('ledger_mutations', {
+ accountId:text('account_id').notNull().references(()=>tradeAccountSnapshots.accountId,{onDelete:'cascade'}), mutationId:text('mutation_id').notNull(),
+ baseVersion:integer('base_version').notNull(), committedVersion:integer('committed_version').notNull(), operationsJson:text('operations_json').notNull(),
+ committedAt:text('committed_at').notNull(),
+},table=>[primaryKey({columns:[table.accountId,table.mutationId]}),uniqueIndex('ledger_mutation_version').on(table.accountId,table.committedVersion),index('ledger_mutation_retention').on(table.committedAt)]);
+
+export const ledgerChangeLog = sqliteTable('ledger_change_log', {
+ accountId:text('account_id').notNull().references(()=>tradeAccountSnapshots.accountId,{onDelete:'cascade'}), version:integer('version').notNull(),
+ mutationId:text('mutation_id').notNull(), operationsJson:text('operations_json').notNull(), committedAt:text('committed_at').notNull(),
+},table=>[primaryKey({columns:[table.accountId,table.version]}),index('ledger_change_retention').on(table.committedAt)]);
+
+export const ledgerDocuments=sqliteTable('ledger_documents',{
+ accountId:text('account_id').notNull().references(()=>tradeAccountSnapshots.accountId,{onDelete:'cascade'}),section:text('section').notNull(),payloadJson:text('payload_json').notNull(),updatedVersion:integer('updated_version').notNull(),
+},table=>[primaryKey({columns:[table.accountId,table.section]})]);
+
+const ledgerEntityTable=(name:string)=>sqliteTable(name,{
+ accountId:text('account_id').notNull().references(()=>tradeAccountSnapshots.accountId,{onDelete:'cascade'}),entityId:text('entity_id').notNull(),ordinal:integer('ordinal'),sortKey:text('sort_key'),symbol:text('symbol'),payloadJson:text('payload_json').notNull(),updatedVersion:integer('updated_version').notNull(),
+},table=>[primaryKey({columns:[table.accountId,table.entityId]}),index(`${name}_account_order`).on(table.accountId,table.ordinal),index(`${name}_account_sort`).on(table.accountId,table.sortKey)]);
+
+export const ledgerAccounts=ledgerEntityTable('ledger_accounts');
+export const ledgerFills=ledgerEntityTable('ledger_fills');
+export const ledgerCashActivities=ledgerEntityTable('ledger_cash_activities');
+export const ledgerPositionPlans=ledgerEntityTable('ledger_position_plans');
+export const ledgerPlanHistory=ledgerEntityTable('ledger_plan_history');
+export const ledgerCycleReviews=ledgerEntityTable('ledger_cycle_reviews');
+export const ledgerDecisionLinks=ledgerEntityTable('ledger_decision_links');
+export const ledgerDecisionLinkHistory=ledgerEntityTable('ledger_decision_link_history');
+export const ledgerImprovementExperiments=ledgerEntityTable('ledger_improvement_experiments');
+export const ledgerStrategies=ledgerEntityTable('ledger_strategies');
+export const ledgerStrategyAssignments=ledgerEntityTable('ledger_strategy_assignments');
+export const ledgerEntryContexts=ledgerEntityTable('ledger_entry_contexts');
