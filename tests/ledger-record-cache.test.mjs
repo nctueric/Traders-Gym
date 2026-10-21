@@ -31,7 +31,8 @@ test('pending cache carries a verified cloud baseline for background save recove
 test('fast workspace uses the exact-version cache and full workspace revalidates immediately', () => {
   const fast = readFileSync(new URL('../app/fast-workspace.tsx', import.meta.url), 'utf8');
   const workspace = readFileSync(new URL('../app/trade-workspace.tsx', import.meta.url), 'utf8');
-  assert.match(fast, /readLedgerRecordCache\(\{ userId: bootstrap\.user\.id, accountId: bootstrap\.account\.id, version: bootstrap\.account\.version \}\)/);
+  assert.match(fast, /readDeviceCache\(\{ userId: bootstrap\.user\.id, accountId: bootstrap\.account\.id, version: bootstrap\.account\.version \}\)/);
+  assert.match(fast, /Promise\.race\([\s\S]*readLedgerRecordCache\(options\)[\s\S]*timeoutMs/);
   assert.match(fast, /if \(cached\)[\s\S]*setRecord\(cached\);[\s\S]*return;/);
   assert.match(workspace, /window\.setTimeout\(refresh, 0\)/);
   assert.match(workspace, /writeLedgerRecordCache\([\s\S]*saved\.account/);

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+import {BACKGROUND_SAVE_MS,storageRetryDelay} from '@/lib/storage-retry.mjs';
 import { FitNumber, MobileDetails } from "./mobile-ui";
 import { ProductOnboarding } from "./product-onboarding";
 import { CashLedger,CashEditor } from './cash-ledger';
@@ -30,18 +31,19 @@ import { createEntryDraft, commitEntry } from "@/lib/trade-entry.mjs";
 import { WorkspacePreferences,useWorkspacePreferences } from "./workspace-preferences";
 import {ValuationProvider,ValuationControl,useValuation} from "./valuation-context";
 import {cycleValue,currencyTotal,formatCurrency} from "@/lib/valuation.mjs";
-import {periodValuation,realizedValue,cycleGroupValuation} from "@/lib/valuation-reports.mjs";
+import {overviewPeriodValuation,realizedValue,cycleGroupValuation} from "@/lib/valuation-reports.mjs";
 import {LegacyRecords} from "./legacy-records";
-import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState,useSyncExternalStore } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState,useSyncExternalStore, type CSSProperties } from "react";
 import { runSelfTests, summarize } from "@/lib/trade-engine.mjs";
 import { isQuoteStale, mergeMarketBars, QUOTE_REFRESH_MS, toProviderSymbol, USDTWD_SYMBOL } from "@/lib/quote-engine.mjs";
 import { classifyCashActivities, importTradingViewCsv, preserveExistingCashOnFillImport } from "@/lib/trader-x2-importer.mjs";
-import { buildCurrentEquity, buildPositionMetrics, cycleRangeScore, positionPortfolioImpactPct } from "@/lib/portfolio-engine.mjs";
+import { buildCurrentEquity, buildOpenPositionPathMetrics, buildPositionMetrics, cycleRangeScore, positionPortfolioImpactPct } from "@/lib/portfolio-engine.mjs";
 import { findRapidRepurchases, weeklyCycleStats } from "@/lib/review-engine.mjs";
 import { completeTradeJson, DEFAULT_RECORD_ACCOUNT_ID, durableTradeJson } from "@/lib/trade-record-store.mjs";
 import { buildTradeSnapshot, mergeSnapshotEvidence, restoreMarketSnapshot } from "@/lib/trade-snapshot.mjs";
 import { canRefreshCloudRecord, createRecordSaveQueue, saveTradeRecord } from "@/lib/trade-record-client.mjs";
 import { serializeInBackground } from "@/lib/background-serializer.mjs";
+import { compactCloudSnapshot } from "@/lib/cloud-snapshot.mjs";
 import { buildCoachFindings, createExperimentFromFinding, detectBehaviorEvents, evaluateExperiment, openPositionWindowDates, replayWindowDates } from "@/lib/coach-engine.mjs";
 import { buildCoachBrief } from "@/lib/coach-brief.mjs";
 import { createStrategyAssignment, normalizeStrategyDataset, updateStrategyCheck, updateStrategyStageReview } from "@/lib/strategy-engine.mjs";
@@ -51,12 +53,12 @@ import { updateQualityRating } from "@/lib/quality-rating.mjs";
 import { DialogFrame, OverviewDisclosure } from "./workspace-ui";
 import { PositionTransactions } from "./position-transactions";
 import { EquityBreakdown } from "./equity-breakdown";
-import {MonthlyValuation} from "./monthly-valuation";
+import { MonthlyAssets } from "./monthly-assets";
 import { TodayWorkspace } from "./today-workspace";
 import { CycleReviewDialog } from "./cycle-review-dialog";
 import type { AccountUser } from "./account-server";
 import { createSessionScope } from "@/lib/account-client.mjs";
-import { clearLedgerRecordCache, writeLedgerRecordCache } from "@/lib/ledger-record-cache.mjs";
+import { clearLedgerRecordCache, readLedgerRecordCache, readLedgerRecoveryRecords, writeLedgerRecordCache } from "@/lib/ledger-record-cache.mjs";
 
 type Fill = { id: string; accountId: string; symbol: string; market: string; currency: string; side: "BUY" | "SELL"; quantity: number; price: number; fee: number; timestamp: string; note?: string };
 type CashActivity = { id: string; type: string; amount: number; timestamp: string; accountId: string | null; currency: string | null; requiresReview?: boolean; source?: string; note?: string };
@@ -68,10 +70,10 @@ type DecisionLinkEvent = { pairKey: string; linked: boolean; updatedAt: string }
 type PlanVersion = { id: string; cycleId?: string; accountId: string; symbol: string; field: "stopLoss" | "takeProfit" | "invalidation"; value: number | string | null; reason?: string; effectiveAt?: string | null; createdAt: string; source?: string };
 type ImprovementExperiment = { id: string; findingType: string; title: string; trigger: string; action: string; metric: string; target: string; startDate: string; endDate: string; status: "ACTIVE" | "COMPLETED"; baseline?: { sampleCount: number; violationCount: number; impactUsd: number }; evidenceCycleIds?: string[]; createdAt: string; updatedAt?: string; resultNote?: string };
 type Dataset = { demoWarnings?: string[]; simpleEntryDraft?: any; entryDraft?: any; entryContexts?: Record<string, any>; marketSnapshot?: any; version: string; profile: { name: string; baseCurrency: string; costMethod: string }; accounts: { id: string; name: string; currency: string }[]; fills: Fill[]; cashActivities?: CashActivity[]; marketBars: Record<string, unknown>[]; settings: { quoteProvider: string; benchmarkSymbol?: string; holdingsColorScheme?: "green-up" | "red-up" }; positionPlans?: Record<string, PositionPlan>; cycleReviews?: Record<string, CycleReview>; decisionLinks?: Record<string, DecisionLink>; decisionLinkHistory?: DecisionLinkEvent[]; planHistory?: PlanVersion[]; improvementExperiments?: ImprovementExperiment[]; strategies?: any[]; strategyAssignments?: Record<string, any>; source?: { fileName?: string; format?: string } };
-type Quote = { symbol: string; price: number; previousClose: number | null; changePct: number | null; currency: string; marketState: string; updatedAt: string | null; source: string };
+type Quote = { symbol: string; price: number; previousClose: number | null; changePct: number | null; currency: string; marketState: string; updatedAt: string | null; fetchedAt?: string | null; source: string };
 type HistoryBar = { symbol: string; date: string; close: number; open?: number; high?: number; low?: number; volume?: number | null };
 type PendingImport = { dataset: Dataset; fileName: string; kind: "JSON" | "TradingView CSV"; duplicateCount: number; warnings: string[] };
-type RecordAccount = { id: string; name: string; version: number; updatedAt: string };
+type RecordAccount = { id: string; name: string; version: number; updatedAt: string; storageMode?:'shadow'|'normalized'; projectionVersion?:number; snapshotVersion?:number; syncStatus?:'ready'|'updating' };
 
 const emptyData: Dataset = { version: "0.1.0", profile: { name: "我的交易帳本", baseCurrency: "USD", costMethod: "FIFO" }, accounts: [{ id: "main", name: "主要帳戶", currency: "USD" }], fills: [], cashActivities: [], marketBars: [], settings: { quoteProvider: "json", benchmarkSymbol: "SPY" }, positionPlans: {}, cycleReviews: {}, decisionLinks: {}, decisionLinkHistory: [], planHistory: [], improvementExperiments: [], strategies: [], strategyAssignments: {} };
 function pct(value: number | null) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`; }
@@ -141,7 +143,8 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   const [sessionEnded, setSessionEnded] = useState(false);
   const sessionInvalidatedRef = useRef(false);
   const [data, setDataInternal] = useState<Dataset>(emptyData);
-  const setData=useCallback((next:React.SetStateAction<Dataset>)=>{if(!demo&&typeof navigator!=='undefined'&&navigator.onLine===false)return;setDataInternal(next);},[demo]);
+  const incrementalStorageRef=useRef(false);
+  const setData=useCallback((next:React.SetStateAction<Dataset>)=>{if(!demo&&typeof navigator!=='undefined'&&navigator.onLine===false&&!incrementalStorageRef.current)return;setDataInternal(next);},[demo]);
   const [storageReady, setStorageReady] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const colorMigrated=useRef(false);
@@ -188,9 +191,13 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   const saveQueueRef = useRef(createRecordSaveQueue());
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retryCountRef = useRef(0);
+  const quotaPauseRef = useRef<{code:string;retryAt:string}|null>(null);
+  const [logoutChoice,setLogoutChoice]=useState(false);
   const [saveRetry, setSaveRetry] = useState(0);
   const [storageConflict, setStorageConflict] = useState(false);
   const activeRecordAccountName = recordAccounts.find((account) => account.id === activeRecordAccountId)?.name || data.profile.name || "主要交易帳號";
+  const activeRecordIncremental = recordAccounts.find((account:any) => account.id === activeRecordAccountId)?.storageMode === 'normalized';
+  incrementalStorageRef.current=activeRecordIncremental;
   const durableJson = useMemo(() => durableDatasetJson(data), [data]);
   const completeSnapshot = useMemo(() => buildTradeSnapshot(data, { quotes, lastQuoteAt, benchmarkBars, benchmarkSymbol: benchmarkDataSymbol }) as Dataset, [data, quotes, lastQuoteAt, benchmarkBars, benchmarkDataSymbol]);
   const latestSaveRef = useRef({ accountId: activeRecordAccountId, serialized: durableJson, dataset: completeSnapshot });
@@ -219,16 +226,19 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
         }
         if (!active) return;
         if(!payload.account){setNoLedger(true);setRecordAccounts([]);setStorageReady(true);setCloudReady(true);setSaveState('尚無帳本');return;}
+        if(!payload.cachePending){const cached=await readLedgerRecordCache({userId:user.id,accountId:payload.account.id,version:payload.account.version});if(!active)return;if(cached?.cachePending)payload=cached;}
         setNoLedger(false);
         loadDataset(payload.dataset);
         if (payload.cacheSource !== 'device') void writeLedgerRecordCache({ userId: user.id, record: payload });
-        setStorageConflict(false);
+        setStorageConflict(Boolean(payload.cacheConflict));
+        quotaPauseRef.current=payload.cacheRetryCode==='D1_DAILY_LIMIT'&&Date.parse(payload.cacheRetryAt)>Date.now()?{code:payload.cacheRetryCode,retryAt:payload.cacheRetryAt}:null;
         lastSavedSnapshotRef.current=payload.dataset;
-        setRecordAccounts(payload.accounts || [payload.account]);
+        setRecordAccounts([payload.account,...(payload.accounts||[]).filter((account:RecordAccount)=>account.id!==payload.account.id)]);
         setActiveRecordAccountId(payload.account.id);
         recordVersionRef.current = payload.account.version;
         lastSavedJsonRef.current = payload.cachePending ? payload.cacheBaselineJson : completeTradeJson(normalizeStrategyDataset(payload.dataset));
         setSaveState(`${payload.cacheSource === 'device' ? '已從裝置快取載入；正在背景確認雲端版本' : '已載入雲端紀錄'}・${localDateTime(payload.account.updatedAt)}・v${payload.account.version}`);
+        if(payload.cacheConflict)setSaveState('本機有未同步修改，雲端版本已更新；已保留本機資料，請匯出後核對版本');
         setMessage(demo?"已載入示範交易；真實市場資料可能延遲。":"已載入你的交易帳本。");
         setCloudReady(true);
         setStorageReady(true);
@@ -250,21 +260,28 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     if (storageConflict) throw Object.assign(new Error("尚有版本衝突，請先匯出備份並確認版本"), { status: 409, retryable: false });
     const captured = latestSaveRef.current;
     if (captured.accountId !== activeRecordAccountId) return;
-    const serialized = await serializeInBackground(captured.dataset);
+    const serialized = await serializeInBackground(compactCloudSnapshot(captured.dataset, performanceResource.getSnapshot().history?.cache));
     sessionScope.assertActive();
     if (latestSaveRef.current.accountId !== captured.accountId) return;
-    if(!navigator.onLine)throw new Error("目前離線，尚未儲存；當頁修改仍保留，可匯出或稍後重試");
-    if (!force && serialized === lastSavedJsonRef.current && recordVersionRef.current != null) {
+    if(!force && !navigator.onLine)throw new Error("目前離線，尚未儲存；當頁修改仍保留，可匯出或稍後重試");
+    if (canRefreshCloudRecord(serialized,lastSavedJsonRef.current) && recordVersionRef.current != null) {
       lastSavedSnapshotRef.current = captured.dataset;
+      if(force)setSaveState('帳本沒有變更，無需重複儲存');
       return;
     }
+    const account=recordAccounts.find(item=>item.id===captured.accountId);
+    const backedUp=account&&await writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current??account.version},accounts:recordAccounts,dataset:captured.dataset},pending:true,baselineJson:lastSavedJsonRef.current,...(quotaPauseRef.current?{retryAt:quotaPauseRef.current.retryAt,retryCode:quotaPauseRef.current.code}:{})});
+    if(!backedUp)setSaveState('本機備援失敗，請勿關閉頁面，請匯出 JSON');
+    if(quotaPauseRef.current&&Date.parse(quotaPauseRef.current.retryAt)>Date.now())throw Object.assign(new Error('D1 額度暫停，等待額度重置'),{status:429,...quotaPauseRef.current});
+    quotaPauseRef.current=null;
     setSaveState(`正在${label}儲存至雲端…`);
-    const saved = await saveTradeRecord({ accountId: captured.accountId, accountName: activeRecordAccountName, serialized, baseVersion: recordVersionRef.current, baselineJson: lastSavedJsonRef.current, saveMode: force ? "manual" : "auto", fetcher: sessionScope.fetch });
+    const saved = await saveTradeRecord({ accountId: captured.accountId, accountName: activeRecordAccountName, serialized, baseVersion: recordVersionRef.current, baselineJson: lastSavedJsonRef.current, saveMode: force ? "manual" : "auto", incremental:activeRecordIncremental, fetcher: sessionScope.fetch });
     sessionScope.assertActive();
     if (latestSaveRef.current.accountId !== captured.accountId) return;
     if (saved.dataset && durableDatasetJson(saved.dataset) !== captured.serialized && latestSaveRef.current.serialized !== captured.serialized) {
       throw Object.assign(new Error("同步期間又有當頁修改；已停止覆寫，請先匯出備份再確認版本"), { status: 409, retryable: false });
     }
+    if(saved.unchanged){lastSavedJsonRef.current=saved.serialized;setSaveState('帳本沒有變更，無需重複儲存');return;}
     recordVersionRef.current = saved.account.version;
     lastSavedJsonRef.current = saved.serialized;
     lastSavedSnapshotRef.current = captured.dataset;
@@ -279,11 +296,12 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
       latestSaveRef.current = pending;
     }
     setRecordAccounts(current => [saved.account, ...current.filter(account => account.id !== saved.account.id)]);
-    void writeLedgerRecordCache({ userId: user.id, record: { account: saved.account, accounts: [saved.account, ...recordAccounts.filter(account => account.id !== saved.account.id)], dataset: JSON.parse(saved.serialized) } });
-    const newerEdits = pending.dataset !== captured.dataset && !saved.dataset;
-    setSaveState(`雲端已儲存（${label}）・${new Date(saved.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}・v${saved.account.version}${newerEdits ? "；較新資料待背景儲存" : ""}`);
+    const newerEdits = !canRefreshCloudRecord(completeTradeJson(pending.dataset),saved.serialized);
+    const cached=await writeLedgerRecordCache({userId:user.id,record:{account:saved.account,accounts:[saved.account,...recordAccounts.filter(account=>account.id!==saved.account.id)],dataset:newerEdits?pending.dataset:JSON.parse(saved.serialized)},pending:newerEdits,baselineJson:saved.serialized,acknowledgedJson:JSON.stringify(captured.dataset)});
+    if(!cached){setSaveState('雲端已儲存；較新修改的本機備援失敗，請匯出 JSON');return saved;}
+    setSaveState(`雲端已儲存（${label}）・${new Date(saved.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}・v${saved.account.version}${saved.sync?.status==='updating'?'；摘要與復原快照背景更新中':newerEdits ? "；較新資料待背景儲存" : ""}`);
     return saved;
-  }), [activeRecordAccountId, activeRecordAccountName, loadDataset, storageConflict, sessionScope,demo,noLedger,user.id,recordAccounts]);
+  }), [activeRecordAccountId, activeRecordAccountName, activeRecordIncremental, loadDataset, storageConflict, sessionScope,demo,noLedger,user.id,recordAccounts,performanceResource]);
 
   const handleSaveError = useCallback((error: any) => {
     if (sessionInvalidatedRef.current) return;
@@ -294,11 +312,14 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     if(error?.status===410){setCloudReady(false);setStorageConflict(true);clearTimeout(retryTimerRef.current);setSaveState('帳本已移至回收筒，已停止背景同步。請管理帳本以還原或切換。');return;}
     const retryable = error?.retryable !== false;
     if (error?.status === 409) setStorageConflict(true);
-    const delay = Math.min(30_000, 5_000 * 2 ** retryCountRef.current++);
-    setSaveState(`${retryable ? "等待重試" : "儲存失敗"}：${error instanceof Error ? error.message : "未知錯誤"}；修改只保留於當頁，請勿重整，可匯出 JSON${retryable ? `；${delay / 1000} 秒後重試` : ""}`);
+    if(error?.code==='D1_DAILY_LIMIT')quotaPauseRef.current={code:error.code,retryAt:error.retryAt};
+    const delay = storageRetryDelay(error,retryCountRef.current++);
+    const current=latestSaveRef.current,account=recordAccounts.find(item=>item.id===current.accountId);
+    if(account)void writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current??account.version},accounts:recordAccounts,dataset:current.dataset},pending:true,baselineJson:lastSavedJsonRef.current,retryAt:error?.retryAt,retryCode:error?.code}).then(ok=>{if(ok)setSaveState(`已保存本機・待雲端同步：${error.message}${error?.retryAt?`；${localDateTime(error.retryAt)} 後重試`:''}`);});
+    setSaveState(`${retryable ? "等待重試" : "儲存失敗"}：${error instanceof Error ? error.message : "未知錯誤"}；修改只保留於當頁，請勿重整，可匯出 JSON${retryable ? `；${Math.ceil(delay / 1000)} 秒後重試` : ""}`);
     clearTimeout(retryTimerRef.current);
     if (retryable) retryTimerRef.current = setTimeout(() => setSaveRetry(current => current + 1), delay);
-  }, [sessionScope]);
+  }, [sessionScope,recordAccounts,user.id]);
 
   async function manualSave() {
     if (!storageReady || !cloudReady || storageConflict || manualSavingRef.current) return;
@@ -315,7 +336,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
           snapshot.accounts.some((account: any) => account.currency === "TWD") && !market.quotes[USDTWD_SYMBOL] ? "匯率" : "",
           !market.benchmarkBars.length ? "基準 ETF 行情" : "",
         ].filter(Boolean);
-        setMessage(missing.length ? `已保存所有已載入資料；尚未取得${missing.join("、")}，取得後會自動補存。` : "完整快照已寫入，包含交易、計畫、策略、評分、資金及已載入行情。重新開啟時先還原快照，再背景更新。");
+        setMessage(saved.sync?.status==='updating'?'核心交易資料已保存；首頁摘要與完整復原快照正在背景更新。':missing.length ? `已保存所有已載入資料；尚未取得${missing.join("、")}，取得後會自動補存。` : "完整快照已寫入，包含交易、計畫、策略、評分、資金及已載入行情。重新開啟時先還原快照，再背景更新。");
       }
     }
     catch (error) { handleSaveError(error); }
@@ -325,26 +346,22 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   const backgroundSaveRef = useRef(() => {});
   useEffect(() => { backgroundSaveRef.current = () => { void persistCompleteSnapshot().catch(handleSaveError); }; }, [persistCompleteSnapshot, handleSaveError]);
   useEffect(() => {
-    if (demo || noLedger || !storageReady || !cloudReady || storageConflict) return;
+    if (demo || noLedger || !storageReady || !cloudReady) return;
     const account = recordAccounts.find(item => item.id === activeRecordAccountId);
     if (!account || !lastSavedJsonRef.current) return;
     const pending = !canRefreshCloudRecord(durableJson, lastSavedJsonRef.current);
-    const timer = window.setTimeout(() => { void writeLedgerRecordCache({ userId: user.id, record: { account: { ...account, version: recordVersionRef.current ?? account.version }, accounts: recordAccounts, dataset: completeSnapshot }, pending, baselineJson: lastSavedJsonRef.current }); }, 150);
+    const timer = window.setTimeout(() => { void writeLedgerRecordCache({ localEdit:true, userId: user.id, record: { account: { ...account, version: recordVersionRef.current ?? account.version }, accounts: recordAccounts, dataset: completeSnapshot }, pending, baselineJson: lastSavedJsonRef.current,...(quotaPauseRef.current?{retryAt:quotaPauseRef.current.retryAt,retryCode:quotaPauseRef.current.code}:{}) }).then(ok=>{if(pending)setSaveState(ok?'已保存本機・待雲端同步':'本機備援失敗；請勿關閉頁面，可匯出 JSON');}); }, 150);
     return () => window.clearTimeout(timer);
   }, [demo, noLedger, storageReady, cloudReady, storageConflict, recordAccounts, activeRecordAccountId, durableJson, completeSnapshot, user.id]);
-  useEffect(() => {
-    if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online))return;
-    const timer=setTimeout(()=>backgroundSaveRef.current(),1000);return()=>clearTimeout(timer);
-  },[durableJson,storageReady,cloudReady,storageConflict,noLedger,demo,online]);
-  useEffect(()=>{if(!demo&&storageReady&&cloudReady&&online&&!storageConflict){const timer=window.setInterval(()=>backgroundSaveRef.current(),60_000);return()=>window.clearInterval(timer);}},[demo,storageReady,cloudReady,online,storageConflict]);
+  useEffect(()=>{if(!demo&&storageReady&&cloudReady&&online&&!storageConflict){const timer=window.setInterval(()=>{if(!quotaPauseRef.current||Date.parse(quotaPauseRef.current.retryAt)<=Date.now())backgroundSaveRef.current();},BACKGROUND_SAVE_MS);return()=>window.clearInterval(timer);}},[demo,storageReady,cloudReady,online,storageConflict]);
   useEffect(()=>{if(saveRetry&&storageReady&&cloudReady&&!storageConflict&&online)backgroundSaveRef.current();},[saveRetry,storageReady,cloudReady,storageConflict,online]);
   useEffect(()=>{if(!demo&&!noLedger&&storageReady)setOnboardingOpen(!preferences.onboardingDone);},[demo,noLedger,storageReady,preferences.onboardingDone]);
   useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
   useEffect(() => {
     if(demo)return;
-    const retry = () => setSaveRetry(current => current + 1);
-    const beforeUnload=(event:BeforeUnloadEvent)=>{if(!canRefreshCloudRecord(latestSaveRef.current.serialized,lastSavedJsonRef.current)){event.preventDefault();event.returnValue="";}};
+    const retry = () => {if(!quotaPauseRef.current||Date.parse(quotaPauseRef.current.retryAt)<=Date.now())setSaveRetry(current => current + 1);};
+    const beforeUnload=(event:BeforeUnloadEvent)=>{if(!sessionInvalidatedRef.current&&!canRefreshCloudRecord(latestSaveRef.current.serialized,lastSavedJsonRef.current)){event.preventDefault();event.returnValue="";}};
     window.addEventListener("online",retry);window.addEventListener("beforeunload",beforeUnload);
     return()=>{window.removeEventListener("online",retry);window.removeEventListener("beforeunload",beforeUnload);};
   },[demo]);
@@ -367,7 +384,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   // Returning mobile tabs may retain the whole page for days. Revalidate the
   // ledger as well as the session, without replacing unsynced work.
   useEffect(() => {
-    if (demo || noLedger || !storageReady || !cloudReady || storageConflict) return;
+    if (demo || noLedger || !storageReady || !cloudReady) return;
     let active = true, checking = false;
     const editing = () => strategyDirtyRef.current || Boolean(document.activeElement?.matches('input,textarea,select,[contenteditable="true"]'));
     const refresh = () => {
@@ -400,7 +417,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
         lastSavedSnapshotRef.current = incoming;
         latestSaveRef.current = { accountId: captured.accountId, serialized, dataset: incoming };
         loadDataset(incoming);
-        setRecordAccounts(payload.accounts || [payload.account]);
+        setRecordAccounts([payload.account,...(payload.accounts||[]).filter((account:RecordAccount)=>account.id!==payload.account.id)]);
         setSaveState(`已更新至雲端最新版本・v${payload.account.version}`);
       }).catch(error => {
         if (!active) return;
@@ -522,7 +539,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   }, [cycleHistoryKey, cycleHistoryRefresh, storageReady, activeRecordAccountId, sessionScope,setData]);
 
   const fxQuote = quotes[USDTWD_SYMBOL];
-  const fxStale = !fxQuote || isQuoteStale(fxQuote.updatedAt, Date.parse(workspaceNow));
+  const fxStale = !fxQuote || (isQuoteStale(fxQuote.updatedAt, Date.parse(workspaceNow)) && isQuoteStale(fxQuote.fetchedAt, Date.parse(workspaceNow)));
   const fxRate = fxQuote?.price > 0 ? fxQuote.price : null; // Saved FX remains usable, with its stale/as-of label.
   const unrealizedByCurrency = useMemo(() => report.positions.reduce<Record<string, number>>((result: Record<string, number>, position: any) => {
     const quote = quotes[toProviderSymbol(position.symbol, position.market)];
@@ -586,30 +603,38 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   }
 
   function exportJson() { if(!demo&&!canRefreshCloudRecord(latestSaveRef.current.serialized,lastSavedJsonRef.current)&&!confirm("此匯出包含尚未儲存至雲端的當頁修改，仍要下載？"))return; const url = URL.createObjectURL(new Blob([JSON.stringify(completeSnapshot, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `trade-review-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setMessage("JSON 備份已下載。"); }
+  async function exportRecoveryCopies(){
+    const copies=await readLedgerRecoveryRecords(user.id,activeRecordAccountId);
+    if(!copies.length){setMessage('沒有其他本機復原副本');return;}
+    for(const [index,copy] of copies.entries()){const url=URL.createObjectURL(new Blob([JSON.stringify(copy.dataset,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`ledger-recovery-${index+1}.json`;link.click();URL.revokeObjectURL(url);}
+  }
   function finishOnboarding() { setOnboardingOpen(false);void updatePreferences({onboardingDone:true}).catch(()=>{}); }
-  async function logout(discard=false) {
+  async function logout(discard=false,keepLocal=false) {
     if(demo){location.assign("/login");return;}
     try {
-      if (!discard&&!canRefreshCloudRecord(latestSaveRef.current.serialized,lastSavedJsonRef.current)) {
-        if(!cloudReady||storageConflict)throw new Error("尚有未儲存修改，請先匯出或選擇放棄當頁修改");
-        await persistCompleteSnapshot(true,"登出前");
+      if (!discard&&!keepLocal&&!canRefreshCloudRecord(latestSaveRef.current.serialized,lastSavedJsonRef.current)) {setLogoutChoice(true);return;}
+      if(keepLocal){
+        const current=latestSaveRef.current,account=recordAccounts.find(item=>item.id===current.accountId);
+        const ok=account&&await writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current??account.version},accounts:recordAccounts,dataset:current.dataset},pending:true,baselineJson:lastSavedJsonRef.current});
+        if(!ok)throw new Error('本機備援失敗；請先匯出 JSON，尚未登出');
       }
       await sessionScope.fetch("/api/auth/logout", { method: "POST" });
-      await clearLedgerRecordCache(user.id);
+      if(discard)await clearLedgerRecordCache(user.id,activeRecordAccountId);
+      sessionInvalidatedRef.current=true;
       sessionScope.stop();
       setSessionEnded(true);
       window.location.replace(user.authProvider === "sites" ? "/signout-with-chatgpt?return_to=%2Flogin" : "/login");
     } catch (error) { handleSaveError(error); }
   }
   function openEntry() {
-    if(!demo&&!online)return;
+    if(!demo&&!online&&!activeRecordIncremental)return;
     setData((current) => ({ ...current, simpleEntryDraft:current.simpleEntryDraft||createSimpleDraft(current.accounts,demo?.now()), entryDraft:current.entryDraft||{ ...createEntryDraft(current.accounts,demo?.now()), quoteSnapshot: { quotes, capturedAt: new Date().toISOString() } } }));
     changePage("entry");
   }
   async function submitSimpleEntry(batch:any,key:string) {
     // The confirmation key checks the ledger content. Our own draft autosave may advance
     // the cloud version without changing trades; final PUT still enforces server CAS.
-    if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online))throw new Error('帳本尚未就緒，請先處理同步狀態');
+    if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online&&!activeRecordIncremental))throw new Error('帳本尚未就緒，請先處理同步狀態');
     const current=latestSaveRef.current.dataset;
     if(current.simpleEntryDraft?.id!==batch.id)throw new Error('草稿已變更，請重新確認');
     const next=commitSimpleBatch(current,batch,key,demo?.now()) as Dataset;
@@ -620,6 +645,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     const count=next.fills.length-current.fills.length;
     setSaveState(demo?`已登錄 ${count} 筆・當次訪客練習`:`已登錄 ${count} 筆・正在儲存至雲端`);
     setMessage(`已登錄 ${count} 筆成交；策略與計畫可稍後補充。`);
+    if(!demo&&!online&&activeRecordIncremental){setSaveState('離線修改已保留於此裝置；連線後自動同步');changePage('overview');return;}
     try{await persistCompleteSnapshot(true,'成交');changePage('overview');}catch(error){handleSaveError(error);throw error;}
   }
   async function submitEntry(submittedEntry?: any) {
@@ -632,12 +658,13 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     changePage("overview");
   }
   async function saveCashRows(next:Dataset) {
-    if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online))throw new Error('帳本尚未就緒，請先處理同步狀態');
+    if(!storageReady||!cloudReady||storageConflict||noLedger||(!demo&&!online&&!activeRecordIncremental))throw new Error('帳本尚未就緒，請先處理同步狀態');
     await commitDataset(next,"資金");
   }
   async function commitDataset(next:Dataset,label:string){
-    if(!demo&&(!online||sessionEnded||storageConflict))throw new Error("離線、登入失效或版本衝突，修改尚未儲存");
+    if(!demo&&(sessionEnded||storageConflict||(!online&&!activeRecordIncremental)))throw new Error("離線、登入失效或版本衝突，修改尚未儲存");
     latestSaveRef.current={accountId:activeRecordAccountId,dataset:next,serialized:durableDatasetJson(next)};setData(next);
+    if(!demo&&!online&&activeRecordIncremental){setSaveState('離線修改已保留於此裝置；連線後自動同步');return;}
     try{return await persistCompleteSnapshot(true,label);}catch(error){handleSaveError(error);throw error;}
   }
   async function beforeLedgerChange(){if(!noLedger){if(!cloudReady||storageConflict)throw new Error("尚有未儲存修改，請先匯出或重新載入雲端後再切換帳本");await persistCompleteSnapshot(true,'帳本管理');if(completeTradeJson(latestSaveRef.current.dataset)!==lastSavedJsonRef.current)throw new Error('仍有未同步修改，請先完成儲存');}}
@@ -711,17 +738,21 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
   }
   const {history:performanceHistory}=useSyncExternalStore(performanceResource.subscribe,performanceResource.getSnapshot,performanceResource.getSnapshot);
   const fxBars=performanceHistory?.cache?.entries?.['USDTWD=X:raw']?.bars||[];
-  const usableFx=fxStale?null:fxRate;
+  // A stale market timestamp is still a valid last-known FX rate. This is
+  // especially important outside trading hours, when the provider can return
+  // the same timestamp on every refresh. Keep the warning, but only suppress
+  // valuation when no valid rate exists at all.
+  const usableFx=fxRate;
   const selectedCash=currencyTotal(currentEquity.cashByCurrency,valuationCurrency,usableFx);
   const selectedGross=missingPositionQuote?null:currencyTotal(addCurrencyValues(currentEquity.longValueByCurrency as Record<string,number>,currentEquity.shortValueByCurrency as Record<string,number>) as Record<string,number>,valuationCurrency,usableFx);
   const selectedTotal=missingPositionQuote?null:currencyTotal(currentEquity.assetByCurrency,valuationCurrency,usableFx);
-  const selectedRealized=realizedValue(report.cycles,valuationCurrency,fxBars);
+  const selectedRealized=realizedValue(report.cycles,valuationCurrency,fxBars)??currencyTotal(report.realizedPnlByCurrency as Record<string,number>,valuationCurrency,usableFx);
   const selectedUnrealized=missingPositionQuote?null:currencyTotal(unrealizedByCurrency,valuationCurrency,usableFx);
   const selectedPnl=selectedRealized==null||selectedUnrealized==null?null:selectedRealized+selectedUnrealized;
   const displayMoney=(value:number|null)=>formatCurrency(value,valuationCurrency);
-  const ytd=periodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,'year');
-  const monthReturn=periodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,'month');
-  const weekReturn=periodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,'week');
+  const ytd=overviewPeriodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,'year');
+  const monthReturn=overviewPeriodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,'month');
+  const weekReturn=overviewPeriodValuation(data,performanceHistory?.cache,new Date(workspaceNow),valuationCurrency,selectedTotal,currentEquity,usableFx,'week');
   const monthSignal = monthlyReturnSignal(monthReturn.rate);
   const metrics = [
     ["目前總資產", displayMoney(selectedTotal), ""],
@@ -742,15 +773,17 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
 
   if (sessionEnded) return <main className="auth-page"><section className="auth-panel"><h1>請重新登入</h1><p>登入已到期或帳號已變更。尚未儲存的修改只保留於當頁，請先匯出再重新登入。</p><button onClick={exportJson}>匯出當頁 JSON</button><a href="/login?error=expired">使用 Google 重新登入</a></section></main>;
   if(!storageReady&&loadingFallback)return loadingFallback;
-  return <ValuationProvider rate={fxStale?null:fxRate} resource={performanceResource}><div className="shell trading-workbench">
+  return <ValuationProvider rate={fxRate} resource={performanceResource}><div className="shell trading-workbench">
     <a className="skip-link" href="#workspace-main">跳至主要內容</a>
     <PerformancePreload data={data} resource={performanceResource} enabled={storageReady && !noLedger && !sessionEnded}/>
+    {logoutChoice&&<section role="dialog" aria-modal="true" aria-label="未同步修改" className="panel"><h2>尚有未同步修改</h2><p>可以保留本機資料，待相同帳號下次登入後同步。</p><button onClick={()=>setLogoutChoice(false)}>取消</button><button onClick={()=>void logout(false,true)}>保留本機並登出</button><button onClick={()=>{if(confirm('確定放棄未同步修改？'))void logout(true);}}>放棄修改並登出</button></section>}
     <WorkspaceNavigation user={user} demo={!!demo} active={navigationTab} title={title} open={navOpen} onToggle={()=>setNavOpen(v=>!v)} onNavigate={changePage} onLogout={()=>void logout()}/>
     <main className="content" id="workspace-main" tabIndex={-1}>
       <header className="topbar"><div><h1>{title}</h1><div className="workbench-ledger-status"><div className="ledger-identity">{demo?<span>訪客練習</span>:<button className="text-button" onClick={()=>changePage("ledgers")}>{activeRecordAccountName}</button>}<InfoPopover label="帳本狀態" mobilePresentation="sheet"><p>{storageReady?'計算完成':'正在載入'} · 資料完整度 {report.qualityPct}%</p><p>{saveState}</p><button type="button" className="text-button" onClick={() => changePage("tests")}>查看資料檢查</button></InfoPopover></div><span role="status">{demo?null:<button className={`text-button ${saveFailed?"negative":"muted"}`} title={saveState} onClick={()=>changePage("ledgers")}>{saveFailed||storageConflict?saveState:/正在|重新同步/.test(saveState)?'同步中…':/等待|待背景|將隨/.test(saveState)?'尚未儲存':/已儲存/.test(saveState)?'已同步':/已載入/.test(saveState)?'已載入':saveState}</button>}</span></div></div>{tab!=="ledgers"&&tab!=="entry"&&<button className="primary" disabled={!storageReady||noLedger||(!demo&&!online)} onClick={openEntry}>新增交易</button>}</header>
+      {!demo&&!online&&activeRecordIncremental&&tab!=="ledgers"&&tab!=="entry"&&<button className="primary" onClick={openEntry}>離線新增交易</button>}
       {!demo&&<input ref={inputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={event=>prepareImport(event.target.files?.[0])}/>}
       {demo&&!!data.demoWarnings?.length&&<details className="panel"><summary>部分市場資料未取得</summary>{data.demoWarnings.map((warning:string)=><p key={warning}>{warning}</p>)}</details>}
-      {!["overview","positions"].includes(tab)&&<ValuationControl/>}{!demo&&!online&&<p role="alert">目前離線，正式帳本暫停修改；可匯出當頁資料。</p>}{demo&&<div className="demo-banner"><div><strong>訪客練習｜真實市場資料・示範交易｜離開後重置</strong><span>USD 50,000 示範本金・未模擬交易成本</span></div><button className="ghost" onClick={()=>{if(confirm('重置所有練習，回到原始示範？'))location.reload();}}>重置示範</button></div>}
+      {!["overview","positions"].includes(tab)&&<ValuationControl/>}{!demo&&!online&&<p role="alert">{activeRecordIncremental?'目前離線；修改會保留於此裝置，連線後自動同步。':'目前離線，正式帳本暫停修改；可匯出當頁資料。'}</p>}{demo&&<div className="demo-banner"><div><strong>訪客練習｜真實市場資料・示範交易｜離開後重置</strong><span>USD 50,000 示範本金・未模擬交易成本</span></div><button className="ghost" onClick={()=>{if(confirm('重置所有練習，回到原始示範？'))location.reload();}}>重置示範</button></div>}
 
       {(noticeTone !== "info" || !storageReady) && <div className={`notice notice-${noticeTone}`} role={noticeTone === "error" ? "alert" : "status"}>
         <b>{!storageReady ? "資料載入中" : hasDataErrors ? "資料需要處理" : saveFailed ? "帳號同步需處理" : messageFailed ? "操作未完成" : !data.fills.length ? "尚無成交資料" : report.qualityPct < 100 || report.issues.length ? "資料仍需補齊" : "計算完成"}</b>
@@ -761,7 +794,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
       {storageReady && ["trades", "tests"].includes(tab) && <nav className="workspace-subnav" aria-label="資料工具"><button type="button" aria-current={tab === "trades" ? "page" : undefined} onClick={() => changePage("trades")}>成交與資金</button><button type="button" aria-current={tab === "tests" ? "page" : undefined} onClick={() => changePage("tests")}>資料檢查</button></nav>}
       {tab==="ledgers"&&!demo&&<section className="ledger-backup-page">
         <LedgerManager embedded currentId={activeRecordAccountId} fetcher={sessionScope.fetch} beforeChange={beforeLedgerChange} onChanged={navigateLedger} onClose={()=>changePage("overview")}/>
-        <LegacyRecords userId={user.id} fetcher={sessionScope.fetch} cloudDataset={data}/><section className="backup-tools"><div className="section-title-help"><h2>匯入與備份</h2><InfoPopover label="匯入與備份"><p>帳本統一儲存至雲端；成功回應後才算完成。匯入前可先匯出備份。</p></InfoPopover></div><p role="status">{saveState}</p><div className="actions"><button className="ghost" onClick={()=>{if(confirm('放棄當頁未儲存修改並重新載入雲端？'))location.reload();}}>重新載入雲端</button><button className="ghost" onClick={()=>{if(confirm('放棄當頁未儲存修改並登出？可先匯出 JSON。'))void logout(true);}}>放棄修改並登出</button><button className="primary" disabled={!storageReady||!cloudReady||noLedger||storageConflict||manualSaving} onClick={()=>void manualSave()}>{manualSaving?'儲存中…':'立即儲存'}</button><button className="ghost" disabled={!storageReady||noLedger||!online} onClick={()=>inputRef.current?.click()}>匯入 JSON／CSV</button><button className="ghost" disabled={!storageReady||noLedger} onClick={exportJson}>匯出 JSON 備份</button>{user.isOwner&&<a className="text-button" href="/admin">備份與歷史版本</a>}</div></section>
+        <LegacyRecords userId={user.id} fetcher={sessionScope.fetch} cloudDataset={data}/><section className="backup-tools"><div className="section-title-help"><h2>匯入與備份</h2><InfoPopover label="匯入與備份"><p>帳本統一儲存至雲端；成功回應後才算完成。匯入前可先匯出備份。</p></InfoPopover></div><p role="status">{saveState}</p><div className="actions"><button className="ghost" onClick={()=>{if(confirm('放棄當頁未儲存修改並重新載入雲端？'))location.reload();}}>重新載入雲端</button><button className="ghost" onClick={()=>{if(confirm('放棄當頁未儲存修改並登出？可先匯出 JSON。'))void logout(true);}}>放棄修改並登出</button><button className="primary" disabled={!storageReady||!cloudReady||noLedger||storageConflict||manualSaving} onClick={()=>void manualSave()}>{manualSaving?'儲存中…':'立即儲存'}</button><button className="ghost" disabled={!storageReady||noLedger||!online} onClick={()=>inputRef.current?.click()}>匯入 JSON／CSV</button><button className="ghost" disabled={!storageReady||noLedger} onClick={exportJson}>匯出 JSON 備份</button><button className="ghost" onClick={()=>void exportRecoveryCopies()}>匯出本機復原副本</button>{user.isOwner&&<a className="text-button" href="/admin">備份與歷史版本</a>}</div></section>
       </section>}
       <div id="workspace-content" aria-busy={!storageReady}>
 
@@ -770,7 +803,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
       {tab === "today" && <TodayWorkspace brief={coachBrief} positionRows={todayPositionRows} cycles={report.cycles} reviews={cycleReviews} totalEquityUsd={currentEquity.totalUsd} qualityPct={report.qualityPct} onboardingOpen={onboardingOpen} experiment={activeExperiment} experimentResult={activeExperimentResult} experimentSuggestion={activeExperiment ? null : coachFindings[0] || null} onGuide={() => setOnboardingOpen(true)} onGuideFinish={finishOnboarding} onStartExperiment={startCoachExperiment} onCompleteExperiment={completeCoachExperiment} onAction={changePage} onPosition={(positionId) => setSelectedPositionId(positionId)} onCycle={(cycleId) => setSelectedCycleId(cycleId)}/>}
       {(tab === "overview" || tab === "positions") && !data.fills.length && <section className="panel ledger-empty"><h2>{data.cashActivities?.length?'資金已就緒，開始記錄交易':'先登錄資金，建立你的帳本'}</h2><p>入金建立資金基準，成交則記錄實際股數與價格。也可以匯入現有交易紀錄。</p><div className="actions"><button className="primary" onClick={()=>setCashEditor(null)}>新增資金</button><button className="ghost" onClick={openEntry}>新增交易</button>{!demo&&<button className="ghost" disabled={!online} onClick={()=>inputRef.current?.click()}>匯入資料</button>}</div></section>}
       {(tab === "overview" || tab === "positions") && <>
-        <section className="quote-bar"><div><span className="live-dot"/> <b>持倉報價</b><InfoPopover label="行情更新"><p>來源：{fxQuote?.source || "Yahoo Finance via MarketDataAdapter"}。匯率報價時間：{localDateTime(fxQuote?.updatedAt)}。</p><p>持倉與 USDTWD 每 30 秒更新。來源與各標的實際報價時間沿用既有行情，可能延遲；失敗時保留上次資料並顯示狀態。</p></InfoPopover><small className={/失敗|無法/.test(quoteState) ? "negative" : ""}>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 && !missingPositionQuote && !fxStale && !/失敗|無法/.test(quoteState) ? "good" : "warn"}`} role="status" aria-label={`帳本資料品質 ${report.qualityPct}%${missingPositionQuote || fxStale ? "・行情或匯率待更新" : ""}`} title={`帳本資料品質 ${report.qualityPct}%${missingPositionQuote || fxStale ? "・行情或匯率待更新" : ""}`}/></div><div className="fx-rate" title={fxQuote ? `報價時間：${localDateTime(fxQuote.updatedAt)}` : "尚無匯率資料"}><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "使用上次匯率（待更新）" : "目前匯率" : /失敗|無法/.test(quoteState) ? "缺少匯率" : "正在取得匯率"}</small></div><QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/></section>
+        <section className="quote-bar"><div><span className="live-dot"/> <b>持倉報價</b><InfoPopover label="行情更新"><p>來源：{fxQuote?.source || "Yahoo Finance via MarketDataAdapter"}。匯率報價時間：{localDateTime(fxQuote?.updatedAt)}；最近確認：{localDateTime(fxQuote?.fetchedAt)}。</p><p>持倉與 USDTWD 每 30 秒更新。休市時價格時間不會前進，但成功查詢後仍會標示為最新可用行情；失敗時保留上次資料並顯示狀態。</p></InfoPopover><small className={/失敗|無法/.test(quoteState) ? "negative" : ""}>{quoteState}</small><span className={`data-quality-light ${report.issues.some((issue: any) => issue.level === "error") ? "bad" : report.qualityPct === 100 && !missingPositionQuote && !fxStale && !/失敗|無法/.test(quoteState) ? "good" : "warn"}`} role="status" aria-label={`帳本資料品質 ${report.qualityPct}%${missingPositionQuote || fxStale ? "・行情或匯率待更新" : ""}`} title={`帳本資料品質 ${report.qualityPct}%${missingPositionQuote || fxStale ? "・行情或匯率待更新" : ""}`}/></div><div className="fx-rate" title={fxQuote ? `報價時間：${localDateTime(fxQuote.updatedAt)}；最近確認：${localDateTime(fxQuote.fetchedAt)}` : "尚無匯率資料"}><span>USDTWD</span><b>{fxQuote ? fxQuote.price.toFixed(4) : "—"}</b><small className={fxStale ? "negative" : "positive"}>{fxQuote ? fxStale ? "使用上次匯率（待更新）" : "最新可用匯率" : /失敗|無法/.test(quoteState) ? "缺少匯率" : "正在取得匯率"}</small></div><QuoteRefreshStatus lastQuoteAt={lastQuoteAt}/></section>
         <section className="panel overview-section" id="overview-assets" aria-labelledby="overview-assets-title">
           <header className="overview-section-head"><h2 id="overview-assets-title">資產</h2><ValuationControl/><button className="text-button" onClick={()=>setCashEditor(null)}>新增資金</button></header>
           <InfoPopoverGroup><div className="asset-summary-grid">
@@ -792,7 +825,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
           </div></InfoPopoverGroup>
           <MobileDetails label="帳本摘要"><section className="secondary-metrics" aria-label="帳本與系統摘要">{metrics.slice(3).map(([label, value, hint]) => <div key={String(label)}><span>{label} <b>{value}</b></span><small>{hint}</small></div>)}</section></MobileDetails>
           <OverviewDisclosure key={`assets-${activeRecordAccountId}`} id="overview-monthly-assets" label="逐月資產變化圖">
-            <MonthlyValuation data={data} asOf={currentEquity.asOf} currentTotal={selectedTotal} cycles={report.cycles}/>
+            <MonthlyAssets data={data} quotes={quotes} fxRate={fxRate} asOf={currentEquity.asOf}/>
           </OverviewDisclosure>
         </section>
         <section className="panel overview-section" id="overview-holdings" data-holdings-colors={normalizeHoldingsColorScheme(preferences.holdingsColorScheme)} aria-labelledby="overview-holdings-title">
@@ -801,7 +834,7 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
           }}>{scheme==="green-up"?"綠漲紅跌":"紅漲綠跌"}</button>)}</div></header>
           <div className="holdings-summary-layout"><PositionOverview positions={report.positions} quotes={quotes} plans={data.positionPlans || {}} totalAssetUsd={currentEquity.totalUsd} fxRate={fxRate}/><HoldingsHeatmap colorScheme={normalizeHoldingsColorScheme(preferences.holdingsColorScheme)} rows={todayPositionRows} onOpenChart={openPositionChart}/></div>
           <OverviewDisclosure key={`holdings-${activeRecordAccountId}`} id="overview-position-plans" mobileDefaultOpen label={`全部持倉計畫（${report.positions.length} 個部位）`}>
-            <PositionsPanel positions={report.positions} quotes={quotes} plans={data.positionPlans || {}} accounts={data.accounts} totalAssetUsd={currentEquity.totalUsd} fxRate={fxRate} onOpenChart={openPositionChart}/>
+            <PositionsPanel positions={report.positions} quotes={quotes} plans={data.positionPlans || {}} accounts={data.accounts} marketBars={data.marketBars} asOf={currentEquity.asOf} totalAssetUsd={currentEquity.totalUsd} fxRate={fxRate} onOpenChart={openPositionChart}/>
           </OverviewDisclosure>
         </section>
         <TradeMetrics key={activeRecordAccountId} cycles={report.cycles} monthKey={monthKey} fxRate={fxRate} onSelect={(cycle) => setSelectedCycleId(cycle.id)}/>
@@ -827,11 +860,11 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
 
 type MonthScore = { winningPnlUsd: number | null; losingPnlUsd: number | null; cycles: any[]; averageReturn: number | null; averageWinningReturn: number | null; averageLosingReturn: number | null; averageWinningAmountUsd: number | null; averageLosingAmountUsd: number | null; totalPnlUsd: number | null; winners: number; losers: number; flat: number; winRate: number | null };
 
-function positionRows(positions: any[], quotes: Record<string, Quote>, plans: Record<string, PositionPlan>, totalAssetUsd: number | null, fxRate: number | null) {
+function positionRows(positions: any[], quotes: Record<string, Quote>, plans: Record<string, PositionPlan>, totalAssetUsd: number | null, fxRate: number | null, marketBars: Record<string, unknown>[] = [], asOf?: string) {
   const rows = positions.map((position) => {
     const quote = quotes[toProviderSymbol(position.symbol, position.market)];
     const plan = positionPlanFor(plans, position);
-    const metrics = buildPositionMetrics(position, quote?.price, plan.stopLoss, totalAssetUsd, fxRate, plan.takeProfit);
+    const metrics = { ...buildPositionMetrics(position, quote?.price, plan.stopLoss, totalAssetUsd, fxRate, plan.takeProfit), ...buildOpenPositionPathMetrics(position, marketBars, asOf) };
     return { position, quote, plan, metrics };
   });
   const grossPositionValueUsd = rows.reduce((sum, row) => sum + (row.metrics.marketValueUsd || 0), 0);
@@ -856,6 +889,35 @@ function positionReturnRate(position: { averageCost: number; quantity: number },
 
 function holdingPnlTone(value: number | null | undefined) { return value == null || !Number.isFinite(value) || value === 0 ? "holding-flat" : value > 0 ? "holding-gain" : "holding-loss"; }
 
+function positionExcursionGaugeModel(maePct: number | null, mfePct: number | null, currentPct: number | null) {
+  const mae = Number(maePct), mfe = Number(mfePct), current = Number(currentPct);
+  const hasRange = maePct != null && mfePct != null && Number.isFinite(mae) && Number.isFinite(mfe) && mae <= mfe;
+  if (!hasRange) return { hasRange: false, hasCurrent: false, markerPosition: 0.5, zeroPosition: 0.5, overflow: "none" as const, flatRange: false };
+  const flatRange = mae === mfe;
+  const hasCurrent = currentPct != null && Number.isFinite(current);
+  const rawPosition = flatRange || !hasCurrent ? 0.5 : (current - mae) / (mfe - mae);
+  const markerPosition = Math.max(0, Math.min(1, rawPosition));
+  const zeroPosition = flatRange ? 0.5 : Math.max(0, Math.min(1, (0 - mae) / (mfe - mae)));
+  const overflow = !hasCurrent || flatRange ? "none" : rawPosition < 0 ? "left" : rawPosition > 1 ? "right" : "none";
+  return { hasRange: true, hasCurrent, markerPosition, zeroPosition, overflow, flatRange };
+}
+
+function PositionExcursionGauge({ maePct, mfePct, currentPct, hasHistory }: { maePct: number | null; mfePct: number | null; currentPct: number | null; hasHistory: boolean }) {
+  const model = positionExcursionGaugeModel(hasHistory ? maePct : null, hasHistory ? mfePct : null, currentPct);
+  const rangeState = !model.hasRange ? "缺少行情" : !model.hasCurrent ? "即時損益待更新" : model.flatRange ? "歷史區間無跨度" : model.overflow === "left" ? "低於 MAE" : model.overflow === "right" ? "高於 MFE" : "位於歷史區間內";
+  const label = `MAE ${pct(model.hasRange ? maePct : null)}，MFE ${pct(model.hasRange ? mfePct : null)}，即時損益 ${pct(model.hasCurrent ? currentPct : null)}，${rangeState}`;
+  const style = { "--excursion-zero": `${model.zeroPosition * 100}%`, "--excursion-current": `${model.markerPosition * 100}%` } as CSSProperties;
+  const markerPath = model.overflow === "left" ? "M13 4 5 10l8 6v-4h6V8h-6Z" : model.overflow === "right" ? "m11 4 8 6-8 6v-4H5V8h6Z" : "M12 3 19 10 12 17 5 10Z";
+  return <div className={`position-excursion-gauge${model.hasRange ? "" : " is-empty"}`} role="img" aria-label={label} title={label}>
+    <div className="position-excursion-track" style={style} aria-hidden="true">
+      {model.hasRange && <><span className="position-excursion-loss"/><span className="position-excursion-gain"/>{model.zeroPosition > 0.02 && model.zeroPosition < 0.98 && <span className="position-excursion-zero"/>}</>}
+      {model.hasRange && model.hasCurrent && <span className={`position-excursion-marker ${holdingPnlTone(currentPct)} overflow-${model.overflow}`}><svg viewBox="0 0 24 20" focusable="false"><path d={markerPath}/>{model.overflow === "none" && <circle cx="12" cy="10" r="2"/>}</svg></span>}
+    </div>
+    <div className="position-excursion-values"><span><small>MAE</small><b className={holdingPnlTone(maePct)}>{pct(model.hasRange ? maePct : null)}</b></span><span><small>MFE</small><b className={holdingPnlTone(mfePct)}>{pct(model.hasRange ? mfePct : null)}</b></span></div>
+    {rangeState !== "位於歷史區間內" && <small className="position-excursion-status">{rangeState}</small>}
+  </div>;
+}
+
 function PositionDayCell({ position, quote }: { position: any; quote: Quote | null | undefined }) {
   const valuation=useValuation();
   const { amount, rate } = positionDayChange(position, quote);
@@ -870,18 +932,16 @@ function MobilePositionList({rows,accountNames,onOpenChart}:{rows:any[];accountN
  const day=positionDayChange(position,quote);
  const item=(label:string,value:any,hint?:any,toneValue?:number|null,hintTone?:number|null)=><div key={label}><dt>{label}</dt><dd className={holdingPnlTone(toneValue)}><FitNumber>{String(value)}</FitNumber>{hint!=null&&<small className={holdingPnlTone(hintTone??toneValue)}>{hint}</small>}</dd></div>;
  return <article className="mobile-position" key={positionPlanKey(position)}><header><b>{index+1}. {position.symbol}</b><span className={`direction ${position.direction.toLowerCase()}`}>{position.direction==='SHORT'?'空':'多'}</span><span>{position.quantity} 股</span>{metrics.stopBreached&&<strong className="position-alert">停損觸發</strong>}{!quote&&<strong className="position-alert">缺少報價</strong>}</header><div className="position-value-line" aria-label="部位金額與占比"><FitNumber>{valuation.formatNative(metrics.marketValue,position.currency)}</FitNumber><span>{metrics.allocationPct==null?'—':`${(metrics.allocationPct*100).toFixed(1)}%`}</span></div>
- <dl className="mobile-position-values">{item('當日損益',valuation.formatNative(day.amount,position.currency),pct(day.rate),day.amount)}{item('未實現損益',valuation.formatNative(metrics.unrealized,position.currency),pct(positionReturnRate(position,metrics.unrealized)),metrics.unrealized)}</dl>
- <details className="position-inline-details"><summary aria-label={`${position.symbol} 展開持倉明細`}><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg><span className="sr-only">持倉明細</span></summary><div className="position-account">{accountNames[position.accountId]||position.accountId}</div><InfoPopover label={`${position.symbol} 計畫計算`} mobilePresentation="sheet"><p>計畫盈虧以計畫價相對即時價的損益，除以全部未平倉部位總市值。預估停損虧損率為停損損失除以目前持倉成本；風險報酬比為當下損益除以停損損失。</p><p>當日損益：隔夜部位以昨收、當日新增以成交價計算，不含已平倉損益及手續費。缺少行情或必要資料時顯示 —。</p></InfoPopover><dl className="mobile-position-values">
+ <dl className="mobile-position-values">{item('持有天數',metrics.holdingDays==null?'—':`${metrics.holdingDays} 天`)}{item('當日損益',valuation.formatNative(day.amount,position.currency),pct(day.rate),day.amount)}{item('未實現損益',valuation.formatNative(metrics.unrealized,position.currency),pct(positionReturnRate(position,metrics.unrealized)),metrics.unrealized)}<div className="mobile-position-excursion"><dt>持倉波動區間</dt><dd><PositionExcursionGauge maePct={metrics.maePct} mfePct={metrics.mfePct} currentPct={positionReturnRate(position,metrics.unrealized)} hasHistory={metrics.excursionBarCount > 0}/></dd></div></dl>
+ <details className="position-inline-details"><summary aria-label={`${position.symbol} 展開持倉明細`}><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg><span className="sr-only">持倉明細</span></summary><div className="position-account">{accountNames[position.accountId]||position.accountId}</div><InfoPopover label={`${position.symbol} 指標計算`} mobilePresentation="sheet"><p>MAE／MFE 以持倉期間日線高低價相對目前 FIFO 均價計算，屬日線近似；沒有涵蓋期間的行情時顯示 —。持有天數採進場日至目前的日曆日。</p><p>當日損益：隔夜部位以昨收、當日新增以成交價計算，不含已平倉損益及手續費。缺少行情或必要資料時顯示 —。</p></InfoPopover><dl className="mobile-position-values">
  {item('部位金額',valuation.formatNative(metrics.marketValue,position.currency))}{item('即時價',positionMoney(quote?.price??null,position.currency),pct(quote?.changePct),quote?.changePct)}{item('FIFO 均價',positionMoney(position.averageCost,position.currency))}
  {item('停利價',positionMoney(plan.takeProfit,position.currency),metrics.takeProfitPortfolioPct==null?'尚未設定':`總持倉 ${pct(metrics.takeProfitPortfolioPct)}`,undefined,metrics.takeProfitPortfolioPct)}{item('停損價',positionMoney(plan.stopLoss,position.currency),metrics.stopPortfolioPct==null?'尚未設定':`總持倉 ${pct(metrics.stopPortfolioPct)}`,undefined,metrics.stopPortfolioPct)}
- {item('距停損',positionMoney(metrics.stopDistance,position.currency),metrics.stopDistancePct==null?'尚未設定':pct(metrics.stopDistancePct))}{item('預估停損風險',valuation.formatNative(metrics.stopLossAmount,position.currency),pct(positionReturnRate(position,metrics.stopLossAmount==null?null:-metrics.stopLossAmount)),metrics.stopLossAmount==null?null:-metrics.stopLossAmount)}
- {item('即時風險報酬比',metrics.riskReward==null?'—':`${metrics.riskReward.toFixed(2)}x`,undefined,metrics.riskReward)}
  </dl><PositionTransactions position={position} accountName={accountNames[position.accountId]||position.accountId} onOpenChart={onOpenChart}/></details>
  <div className="position-actions"><button className="ghost" type="button" onClick={()=>onOpenChart(position)} aria-label={`${position.symbol} 交易計畫與 K 線`}><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3v14m5-13v12m5-15v14M3 7h4v5H3zm5-1h4v4H8zm5-2h4v5h-4z" fill="none" stroke="currentColor" strokeWidth="1.3"/></svg>交易計畫</button></div></article>;
  }):<Empty text="目前沒有未平倉部位"/>}</section>;
 }
 
-function PositionsPanel({ positions, quotes, plans, accounts, totalAssetUsd, fxRate, onOpenChart }: { positions: any[]; quotes: Record<string, Quote>; plans: Record<string, PositionPlan>; accounts: Dataset["accounts"]; totalAssetUsd: number | null; fxRate: number | null; onOpenChart: (position: any, eventId?: string) => void }) {
+function PositionsPanel({ positions, quotes, plans, accounts, marketBars, asOf, totalAssetUsd, fxRate, onOpenChart }: { positions: any[]; quotes: Record<string, Quote>; plans: Record<string, PositionPlan>; accounts: Dataset["accounts"]; marketBars?: Record<string, unknown>[]; asOf?: string; totalAssetUsd: number | null; fxRate: number | null; onOpenChart: (position: any, eventId?: string) => void }) {
  const valuation=useValuation();
   const [expandedPositions, setExpandedPositions] = useState<Set<string>>(() => new Set());
   function togglePosition(id: string) {
@@ -891,10 +951,10 @@ function PositionsPanel({ positions, quotes, plans, accounts, totalAssetUsd, fxR
       return next;
     });
   }
-  const rows = positionRows(positions, quotes, plans, totalAssetUsd, fxRate);
+  const rows = positionRows(positions, quotes, plans, totalAssetUsd, fxRate, marketBars, asOf);
   const accountNames = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
 
-  return <><MobilePositionList rows={rows} accountNames={accountNames} onOpenChart={onOpenChart}/><div className="position-plan-notice desktop-only"><b>停利／停損為個人交易計畫</b><span>下方盈虧比率＝計畫價相對即時價的預估盈虧 ÷ 全部未平倉部位總市值；計畫會沿同一筆交易 ID 進入閉環與行為分析。</span></div><article className="panel positions-panel desktop-only"><div className="panel-head"><div><h3>全部持倉計畫</h3></div><span className="muted">依持倉佔比排序・{positions.length} 個未平倉部位</span></div>{rows.length ? <div className="table-wrap positions-wrap" tabIndex={0} role="region" aria-label="持倉明細，可橫向捲動"><table className="positions-table"><thead><tr className="column-groups"><th colSpan={2} scope="colgroup">標的與部位</th><th colSpan={3} scope="colgroup">持倉與市值</th><th colSpan={2} scope="colgroup">損益</th><th colSpan={6} scope="colgroup">交易計畫與風險</th></tr><tr><th>排名</th><th>標的／部位</th><th>即時價</th><th>部位金額</th><th>持倉佔比</th><th title="剩餘持倉日損益：隔夜以昨收、當日新增以成交價為基準">即時當日損益</th><th>未實現損益</th><th>停利價／總持倉盈虧</th><th>停損價／總持倉盈虧</th><th>距停損</th><th>預估停損風險</th><th>即時風險報酬比</th><th>K線</th></tr></thead><tbody>{rows.map(({ position, quote, plan, metrics }, index) => <Fragment key={positionPlanKey(position)}><tr className={`${metrics.stopBreached ? "stop-breached" : ""} ${expandedPositions.has(position.id) ? "position-expanded" : ""}`}><td className="rank-cell">{index + 1}</td><td><div className="position-symbol-row"><button type="button" className="position-ledger-toggle" aria-expanded={expandedPositions.has(position.id)} aria-controls={`position-ledger-${encodeURIComponent(position.id)}`} title={`${expandedPositions.has(position.id) ? "收合" : "展開"}交易紀錄 · ${position.fills?.length || 0} 筆`} aria-label={`${position.symbol} 交易紀錄 ${position.fills?.length || 0} 筆`} onClick={() => togglePosition(position.id)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button><span className={`stop-light ${metrics.stopBreached ? "breach" : "safe"}`} role="img" aria-label={metrics.stopBreached ? "停損觸發" : "正常，尚未觸發停損"} title={metrics.stopBreached ? "即時價格已越過停損價位" : "尚未觸發停損"}/><b>{position.symbol} <span className={`direction ${position.direction.toLowerCase()}`}>{position.direction === "SHORT" ? "空" : "多"}</span></b></div><small className="block">{position.quantity} 股・均價 {positionMoney(position.averageCost, position.currency)}</small></td><td><b className={holdingPnlTone(quote?.changePct)}>{quote ? positionMoney(quote.price, position.currency) : "更新中"}</b><small className={`${holdingPnlTone(quote?.changePct)} block`}>{quote?.changePct == null ? "—" : pct(quote.changePct)}</small></td><td><b>{metrics.marketValue == null ? "—" : valuation.formatNative(metrics.marketValue, position.currency)}</b><small className="block">{positionMoney(metrics.marketValue,position.currency)} 原幣</small></td><td><b>{metrics.allocationPct == null ? "—" : `${(metrics.allocationPct * 100).toFixed(1)}%`}</b></td><PositionDayCell position={position} quote={quote}/><td><b className={holdingPnlTone(metrics.unrealized)}>{metrics.unrealized == null ? "—" : valuation.formatNative(metrics.unrealized, position.currency)}</b><small className={`${holdingPnlTone(metrics.unrealized)} block`} title="損益率＝未實現損益 ÷ 目前持倉成本">{pct(positionReturnRate(position, metrics.unrealized))}</small></td><td><b>{plan.takeProfit == null ? "—" : positionMoney(plan.takeProfit, position.currency)}</b><small className={`${holdingPnlTone(metrics.takeProfitPortfolioPct)} block`}>{metrics.takeProfitPortfolioPct == null ? "尚未設定" : `總持倉 ${pct(metrics.takeProfitPortfolioPct)}`}</small></td><td><b>{plan.stopLoss == null ? "—" : positionMoney(plan.stopLoss, position.currency)}</b><small className={`${holdingPnlTone(metrics.stopPortfolioPct)} block`}>{metrics.stopPortfolioPct == null ? "尚未設定" : `總持倉 ${pct(metrics.stopPortfolioPct)}`}</small></td><td><b className={metrics.stopDistance == null ? "" : metrics.stopDistance >= 0 ? "" : "holding-loss"}>{metrics.stopDistance == null ? "—" : positionMoney(metrics.stopDistance, position.currency)}</b><small className="block">{metrics.stopDistancePct == null ? "尚未設定" : `${(metrics.stopDistancePct * 100).toFixed(1)}%`}</small></td><td><b className={holdingPnlTone(metrics.stopLossAmount == null ? null : -metrics.stopLossAmount)}>{metrics.stopLossAmount == null ? "—" : valuation.formatNative(metrics.stopLossAmount, position.currency)}</b><small className={`${holdingPnlTone(metrics.stopLossAmount == null ? null : -metrics.stopLossAmount)} block`} title="預估虧損率＝停損損失 ÷ 目前持倉成本（均價 × 股數）；以負值表示">{pct(positionReturnRate(position, metrics.stopLossAmount == null ? null : -metrics.stopLossAmount))}</small></td><td><b className={holdingPnlTone(metrics.riskReward)}>{metrics.riskReward == null ? "—" : `${metrics.riskReward.toFixed(2)}x`}</b><small className="block">當下損益 ÷ 停損損失</small></td><td><button type="button" className="ghost" onClick={() => onOpenChart(position)}>看進場與停損K線</button></td></tr><tr className="position-ledger-row" id={`position-ledger-${encodeURIComponent(position.id)}`} hidden={!expandedPositions.has(position.id)}><td colSpan={13}>{expandedPositions.has(position.id) && <PositionTransactions position={position} accountName={accountNames[position.accountId] || position.accountId} onOpenChart={onOpenChart}/>}</td></tr></Fragment>)}</tbody></table></div> : <Empty text="目前沒有未平倉部位"/>}</article></>;
+  return <><MobilePositionList rows={rows} accountNames={accountNames} onOpenChart={onOpenChart}/><div className="position-plan-notice desktop-only"><b>停利／停損為個人交易計畫</b><span>計畫價相對即時價的預估盈虧，會沿同一筆交易 ID 進入閉環與行為分析。</span></div><article className="panel positions-panel desktop-only"><div className="panel-head"><div><h3>全部持倉計畫</h3></div><span className="muted">依持倉佔比排序・{positions.length} 個未平倉部位</span></div>{rows.length ? <div className="table-wrap positions-wrap" tabIndex={0} role="region" aria-label="持倉明細，可橫向捲動"><table className="positions-table"><thead><tr className="column-groups"><th colSpan={2} scope="colgroup">標的與部位</th><th colSpan={4} scope="colgroup">持倉與市值</th><th className="position-group-pnl" colSpan={3} scope="colgroup">損益</th><th className="position-group-plan" colSpan={3} scope="colgroup">交易計畫與風險</th></tr><tr><th>排名</th><th>標的／部位</th><th>即時價</th><th>部位金額</th><th>持倉佔比</th><th>持有天數</th><th className="position-subgroup-pnl" title="剩餘持倉日損益：隔夜以昨收、當日新增以成交價為基準">即時當日損益</th><th className="position-subgroup-pnl">未實現損益</th><th className="position-subgroup-pnl" title="左側為持倉期間 MAE、右側為 MFE，浮標為即時未實現損益率；歷史波動依日線高低價近似">持倉波動區間</th><th className="position-subgroup-plan">停利價／總持倉盈虧</th><th className="position-subgroup-plan">停損價／總持倉盈虧</th><th className="position-subgroup-plan">K線</th></tr></thead><tbody>{rows.map(({ position, quote, plan, metrics }, index) => <Fragment key={positionPlanKey(position)}><tr className={`${metrics.stopBreached ? "stop-breached" : ""} ${expandedPositions.has(position.id) ? "position-expanded" : ""}`}><td className="rank-cell">{index + 1}</td><td><div className="position-symbol-row"><button type="button" className="position-ledger-toggle" aria-expanded={expandedPositions.has(position.id)} aria-controls={`position-ledger-${encodeURIComponent(position.id)}`} title={`${expandedPositions.has(position.id) ? "收合" : "展開"}交易紀錄 · ${position.fills?.length || 0} 筆`} aria-label={`${position.symbol} 交易紀錄 ${position.fills?.length || 0} 筆`} onClick={() => togglePosition(position.id)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button><span className={`stop-light ${metrics.stopBreached ? "breach" : "safe"}`} role="img" aria-label={metrics.stopBreached ? "停損觸發" : "正常，尚未觸發停損"} title={metrics.stopBreached ? "即時價格已越過停損價位" : "尚未觸發停損"}/><b>{position.symbol} <span className={`direction ${position.direction.toLowerCase()}`}>{position.direction === "SHORT" ? "空" : "多"}</span></b></div><small className="block">{position.quantity} 股・均價 {positionMoney(position.averageCost, position.currency)}</small></td><td><b className={holdingPnlTone(quote?.changePct)}>{quote ? positionMoney(quote.price, position.currency) : "更新中"}</b><small className={`${holdingPnlTone(quote?.changePct)} block`}>{quote?.changePct == null ? "—" : pct(quote.changePct)}</small></td><td><b>{metrics.marketValue == null ? "—" : valuation.formatNative(metrics.marketValue, position.currency)}</b><small className="block">{positionMoney(metrics.marketValue,position.currency)} 原幣</small></td><td><b>{metrics.allocationPct == null ? "—" : `${(metrics.allocationPct * 100).toFixed(1)}%`}</b></td><td><b>{metrics.holdingDays == null ? "—" : `${metrics.holdingDays} 天`}</b><small className="block">日曆日</small></td><PositionDayCell position={position} quote={quote}/><td><b className={holdingPnlTone(metrics.unrealized)}>{metrics.unrealized == null ? "—" : valuation.formatNative(metrics.unrealized, position.currency)}</b><small className={`${holdingPnlTone(metrics.unrealized)} block`} title="損益率＝未實現損益 ÷ 目前持倉成本">{pct(positionReturnRate(position, metrics.unrealized))}</small></td><td className="position-excursion-cell"><PositionExcursionGauge maePct={metrics.maePct} mfePct={metrics.mfePct} currentPct={positionReturnRate(position,metrics.unrealized)} hasHistory={metrics.excursionBarCount > 0}/></td><td><b>{plan.takeProfit == null ? "—" : positionMoney(plan.takeProfit, position.currency)}</b><small className={`${holdingPnlTone(metrics.takeProfitPortfolioPct)} block`}>{metrics.takeProfitPortfolioPct == null ? "尚未設定" : `總持倉 ${pct(metrics.takeProfitPortfolioPct)}`}</small></td><td><b>{plan.stopLoss == null ? "—" : positionMoney(plan.stopLoss, position.currency)}</b><small className={`${holdingPnlTone(metrics.stopPortfolioPct)} block`}>{metrics.stopPortfolioPct == null ? "尚未設定" : `總持倉 ${pct(metrics.stopPortfolioPct)}`}</small></td><td><button type="button" className="ghost" onClick={() => onOpenChart(position)}>看進場與停損K線</button></td></tr><tr className="position-ledger-row" id={`position-ledger-${encodeURIComponent(position.id)}`} hidden={!expandedPositions.has(position.id)}><td colSpan={12}>{expandedPositions.has(position.id) && <PositionTransactions position={position} accountName={accountNames[position.accountId] || position.accountId} onOpenChart={onOpenChart}/>}</td></tr></Fragment>)}</tbody></table></div> : <Empty text="目前沒有未平倉部位"/>}</article></>;
 }
 
 function TradeMetrics({ cycles, monthKey, fxRate, onSelect }: { cycles: any[]; monthKey: string; fxRate: number | null; onSelect: (cycle: any) => void }) {
