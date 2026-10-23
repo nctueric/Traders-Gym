@@ -2,6 +2,7 @@
 "use client";
 
 import {BACKGROUND_SAVE_MS,storageRetryDelay} from '@/lib/storage-retry.mjs';
+import {scheduleLedgerAutosave,isCurrentCheckpoint} from '@/lib/ledger-autosave.mjs';
 import { FitNumber, MobileDetails } from "./mobile-ui";
 import { ProductOnboarding } from "./product-onboarding";
 import { CashLedger,CashEditor } from './cash-ledger';
@@ -269,15 +270,18 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     if (storageConflict) throw Object.assign(new Error("尚有版本衝突，請先匯出備份並確認版本"), { status: 409, retryable: false });
     const captured = latestSaveRef.current;
     if (captured.accountId !== activeRecordAccountId) return;
+    if(!force && !navigator.onLine)throw new Error("目前離線，尚未儲存；當頁修改仍保留，可匯出或稍後重試");
+    if (canRefreshCloudRecord(captured.serialized,lastSavedJsonRef.current) && recordVersionRef.current != null) {
+      lastSavedSnapshotRef.current = captured.dataset;
+      const account=recordAccounts.find(item=>item.id===captured.accountId);
+      const baseline=lastSavedJsonRef.current;
+      const cached=account&&await writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current},accounts:recordAccounts,dataset:captured.dataset},pending:false,baselineJson:baseline,acknowledgedJson:JSON.stringify(captured.dataset)});
+      if(isCurrentCheckpoint(captured,latestSaveRef.current,baseline,lastSavedJsonRef.current))setSaveState(cached?'雲端已儲存・帳本沒有變更': '雲端已儲存・帳本沒有變更；本機備援失敗，請匯出 JSON');
+      return;
+    }
     const serialized = await serializeInBackground(compactCloudSnapshot(captured.dataset, performanceResource.getSnapshot().history?.cache));
     sessionScope.assertActive();
     if (latestSaveRef.current.accountId !== captured.accountId) return;
-    if(!force && !navigator.onLine)throw new Error("目前離線，尚未儲存；當頁修改仍保留，可匯出或稍後重試");
-    if (canRefreshCloudRecord(serialized,lastSavedJsonRef.current) && recordVersionRef.current != null) {
-      lastSavedSnapshotRef.current = captured.dataset;
-      if(force)setSaveState('帳本沒有變更，無需重複儲存');
-      return;
-    }
     const account=recordAccounts.find(item=>item.id===captured.accountId);
     const backedUp=account&&await writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current??account.version},accounts:recordAccounts,dataset:captured.dataset},pending:true,baselineJson:lastSavedJsonRef.current,...(quotaPauseRef.current?{retryAt:quotaPauseRef.current.retryAt,retryCode:quotaPauseRef.current.code}:{})});
     if(!backedUp)setSaveState('本機備援失敗，請勿關閉頁面，請匯出 JSON');
@@ -285,12 +289,12 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     quotaPauseRef.current=null;
     setSaveState(`正在${label}儲存至雲端…`);
     const saved = await saveTradeRecord({ accountId: captured.accountId, accountName: activeRecordAccountName, serialized, baseVersion: recordVersionRef.current, baselineJson: lastSavedJsonRef.current, saveMode: force ? "manual" : "auto", incremental:activeRecordIncremental, fetcher: sessionScope.fetch });
+    saved.account={...account,...saved.account};
     sessionScope.assertActive();
     if (latestSaveRef.current.accountId !== captured.accountId) return;
     if (saved.dataset && durableDatasetJson(saved.dataset) !== captured.serialized && latestSaveRef.current.serialized !== captured.serialized) {
       throw Object.assign(new Error("同步期間又有當頁修改；已停止覆寫，請先匯出備份再確認版本"), { status: 409, retryable: false });
     }
-    if(saved.unchanged){lastSavedJsonRef.current=saved.serialized;setSaveState('帳本沒有變更，無需重複儲存');return;}
     recordVersionRef.current = saved.account.version;
     lastSavedJsonRef.current = saved.serialized;
     lastSavedSnapshotRef.current = captured.dataset;
@@ -307,7 +311,9 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     setRecordAccounts(current => [saved.account, ...current.filter(account => account.id !== saved.account.id)]);
     const newerEdits = !canRefreshCloudRecord(completeTradeJson(pending.dataset),saved.serialized);
     const cached=await writeLedgerRecordCache({userId:user.id,record:{account:saved.account,accounts:[saved.account,...recordAccounts.filter(account=>account.id!==saved.account.id)],dataset:newerEdits?pending.dataset:JSON.parse(saved.serialized)},pending:newerEdits,baselineJson:saved.serialized,acknowledgedJson:JSON.stringify(captured.dataset)});
+    if(latestSaveRef.current.accountId!==captured.accountId)return saved;
     if(!cached){setSaveState('雲端已儲存；較新修改的本機備援失敗，請匯出 JSON');return saved;}
+    if(!canRefreshCloudRecord(latestSaveRef.current.serialized,saved.serialized)){setSaveState('較新修改待雲端同步');return saved;}
     setSaveState(`雲端已儲存（${label}）・${new Date(saved.account.updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}・v${saved.account.version}${saved.sync?.status==='updating'?'；摘要與復原快照背景更新中':newerEdits ? "；較新資料待背景儲存" : ""}`);
     return saved;
   }), [activeRecordAccountId, activeRecordAccountName, activeRecordIncremental, loadDataset, storageConflict, sessionScope,demo,noLedger,user.id,recordAccounts,performanceResource]);
@@ -324,7 +330,8 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     if(error?.code==='D1_DAILY_LIMIT')quotaPauseRef.current={code:error.code,retryAt:error.retryAt};
     const delay = storageRetryDelay(error,retryCountRef.current++);
     const current=latestSaveRef.current,account=recordAccounts.find(item=>item.id===current.accountId);
-    if(account)void writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current??account.version},accounts:recordAccounts,dataset:current.dataset},pending:true,baselineJson:lastSavedJsonRef.current,retryAt:error?.retryAt,retryCode:error?.code}).then(ok=>{if(ok)setSaveState(`已保存本機・待雲端同步：${error.message}${error?.retryAt?`；${localDateTime(error.retryAt)} 後重試`:''}`);});
+    const baseline=lastSavedJsonRef.current;
+    if(account)void writeLedgerRecordCache({userId:user.id,record:{account:{...account,version:recordVersionRef.current??account.version},accounts:recordAccounts,dataset:current.dataset},pending:true,baselineJson:baseline,retryAt:error?.retryAt,retryCode:error?.code}).then(ok=>{if(ok&&isCurrentCheckpoint(current,latestSaveRef.current,baseline,lastSavedJsonRef.current))setSaveState(`已保存本機・待雲端同步：${error.message}${error?.retryAt?`；${localDateTime(error.retryAt)} 後重試`:''}`);});
     setSaveState(`${retryable ? "等待重試" : "儲存失敗"}：${error instanceof Error ? error.message : "未知錯誤"}；修改只保留於當頁，請勿重整，可匯出 JSON${retryable ? `；${Math.ceil(delay / 1000)} 秒後重試` : ""}`);
     clearTimeout(retryTimerRef.current);
     if (retryable) retryTimerRef.current = setTimeout(() => setSaveRetry(current => current + 1), delay);
@@ -359,9 +366,19 @@ export function TradeWorkspaceContent({ user, requestedAccountId, initialRecord,
     const account = recordAccounts.find(item => item.id === activeRecordAccountId);
     if (!account || !lastSavedJsonRef.current) return;
     const pending = !canRefreshCloudRecord(durableJson, lastSavedJsonRef.current);
-    const timer = window.setTimeout(() => { void writeLedgerRecordCache({ localEdit:true, userId: user.id, record: { account: { ...account, version: recordVersionRef.current ?? account.version }, accounts: recordAccounts, dataset: completeSnapshot }, pending, baselineJson: lastSavedJsonRef.current,...(quotaPauseRef.current?{retryAt:quotaPauseRef.current.retryAt,retryCode:quotaPauseRef.current.code}:{}) }).then(ok=>{if(pending)setSaveState(ok?'已保存本機・待雲端同步':'本機備援失敗；請勿關閉頁面，可匯出 JSON');}); }, 150);
-    return () => window.clearTimeout(timer);
+    const captured={accountId:activeRecordAccountId,serialized:durableJson};
+    const baseline=lastSavedJsonRef.current;
+    let active=true;
+    const timer = window.setTimeout(() => { void writeLedgerRecordCache({ localEdit:true, userId: user.id, record: { account: { ...account, version: recordVersionRef.current ?? account.version }, accounts: recordAccounts, dataset: completeSnapshot }, pending, baselineJson: baseline,...(quotaPauseRef.current?{retryAt:quotaPauseRef.current.retryAt,retryCode:quotaPauseRef.current.code}:{}) }).then(ok=>{
+      if(active&&pending&&isCurrentCheckpoint(captured,latestSaveRef.current,baseline,lastSavedJsonRef.current))setSaveState(previous=>/正在|失敗|等待重試|待雲端同步：|衝突/.test(previous)?previous:ok?'已保存本機・待雲端同步':'本機備援失敗；請勿關閉頁面，可匯出 JSON');
+    }); }, 150);
+    return () => {active=false;window.clearTimeout(timer);};
   }, [demo, noLedger, storageReady, cloudReady, storageConflict, recordAccounts, activeRecordAccountId, durableJson, completeSnapshot, user.id]);
+  useEffect(()=>scheduleLedgerAutosave({serialized:durableJson,baselineJson:lastSavedJsonRef.current,
+    schedule:window.setTimeout,cancel:window.clearTimeout,
+    blocked:!!demo||noLedger||!storageReady||!cloudReady||!online||storageConflict,
+    save:()=>{if(!quotaPauseRef.current||Date.parse(quotaPauseRef.current.retryAt)<=Date.now())backgroundSaveRef.current();}
+  }),[demo,noLedger,storageReady,cloudReady,online,storageConflict,activeRecordAccountId,durableJson]);
   useEffect(()=>{if(!demo&&storageReady&&cloudReady&&online&&!storageConflict){const timer=window.setInterval(()=>{if(!quotaPauseRef.current||Date.parse(quotaPauseRef.current.retryAt)<=Date.now())backgroundSaveRef.current();},BACKGROUND_SAVE_MS);return()=>window.clearInterval(timer);}},[demo,storageReady,cloudReady,online,storageConflict]);
   useEffect(()=>{if(saveRetry&&storageReady&&cloudReady&&!storageConflict&&online)backgroundSaveRef.current();},[saveRetry,storageReady,cloudReady,storageConflict,online]);
   useEffect(()=>{if(!demo&&!noLedger&&storageReady)setOnboardingOpen(!preferences.onboardingDone);},[demo,noLedger,storageReady,preferences.onboardingDone]);

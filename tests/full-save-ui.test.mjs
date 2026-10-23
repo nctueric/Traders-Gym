@@ -78,6 +78,16 @@ function harness(initial = source(), values = new Map(), initialRecord, loadingF
 const navigate = (h,page) => { find(h.tree,n=>n.type?.name==="WorkspaceNavigation").props.onNavigate(page); h.render(); };
 const manual = h => { navigate(h,"ledgers"); return find(h.tree,n => n.type === "button" && ["立即儲存","儲存中…"].includes(n.props.children)); };
 
+test('new draft syncs after idle without waiting ten minutes, and quote ticks do not rewrite it',async t=>{
+  const h=harness();t.after(()=>h.close());await h.settle();
+  find(h.tree,n=>n.type==='button'&&n.props.children==='新增交易').props.onClick();await h.settle();
+  assert.equal(h.writes.length,0);
+  h.runTimers(2000);await h.settle();assert.equal(h.writes.length,1);
+  const event={preventDefault(){this.warned=true;}};h.events.get('beforeunload')(event);assert.equal(event.warned,undefined);
+  h.online=true;h.runTimers(30_000);await h.settle();h.runTimers(2000);await h.settle();
+  assert.equal(h.writes.length,1);
+});
+
 test("homepage manual button waits for full write, prevents duplicates, and restored evidence survives offline", async t => {
   const h=harness();t.after(()=>h.close());h.render();assert.equal(manual(h).props.disabled,true);
   await h.settle();assert.equal(manual(h).props.disabled,false);
